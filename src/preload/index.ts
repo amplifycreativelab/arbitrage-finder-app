@@ -43,12 +43,8 @@ const api = {
   credentials: credentialsApi
 }
 
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
-process.once('loaded', async () => {
-  exposeElectronTRPC()
-})
+// Register the TRPC bridge immediately so renderer imports can find it during module init.
+exposeElectronTRPC()
 
 if (process.contextIsolated) {
   try {
