@@ -4,11 +4,17 @@ import { format, parseISO } from 'date-fns'
 import type { ArbitrageOpportunity } from '../../../../../shared/types'
 import { cn } from '../../lib/utils'
 import type { FeedSortDirection, FeedSortKey } from './stores/feedStore'
+import { getStalenessInfo } from './staleness'
 
 export interface FeedTableProps {
   opportunities?: ArbitrageOpportunity[]
   initialSortBy?: FeedSortKey
   initialSortDirection?: FeedSortDirection
+  /**
+   * Epoch milliseconds used to compute staleness.
+   * When omitted, Date.now() is used.
+   */
+  stalenessNow?: number
 }
 
 const ROW_HEIGHT_PX = 40
@@ -65,12 +71,14 @@ function getAriaSort(sortBy: FeedSortKey, current: FeedSortKey, direction: FeedS
 export function FeedTable({
   opportunities = [],
   initialSortBy = 'time',
-  initialSortDirection = 'asc'
+  initialSortDirection = 'asc',
+  stalenessNow
 }: FeedTableProps): React.JSX.Element {
   const [sortBy, setSortBy] = React.useState<FeedSortKey>(initialSortBy)
   const [sortDirection, setSortDirection] =
     React.useState<FeedSortDirection>(initialSortDirection)
   const [scrollOffset, setScrollOffset] = React.useState(0)
+  const effectiveNow = stalenessNow ?? Date.now()
 
   const sorted = React.useMemo(
     () => sortOpportunities(opportunities, sortBy, sortDirection),
@@ -179,7 +187,11 @@ export function FeedTable({
               style={{ transform: `translateY(${offsetY}px)` }}
             >
               {visibleOpportunities.map((opportunity) => (
-                <FeedRow key={opportunity.id} opportunity={opportunity} />
+                <FeedRow
+                  key={opportunity.id}
+                  opportunity={opportunity}
+                  stalenessNow={effectiveNow}
+                />
               ))}
             </div>
           </div>
@@ -188,7 +200,11 @@ export function FeedTable({
         {totalCount > 0 && !virtualizationEnabled && (
           <div>
             {visibleOpportunities.map((opportunity) => (
-              <FeedRow key={opportunity.id} opportunity={opportunity} />
+              <FeedRow
+                key={opportunity.id}
+                opportunity={opportunity}
+                stalenessNow={effectiveNow}
+              />
             ))}
           </div>
         )}
@@ -199,23 +215,32 @@ export function FeedTable({
 
 interface FeedRowProps {
   opportunity: ArbitrageOpportunity
+  stalenessNow?: number
 }
 
-function FeedRow({ opportunity }: FeedRowProps): React.JSX.Element {
+function FeedRow({ opportunity, stalenessNow }: FeedRowProps): React.JSX.Element {
   const timeLabel = formatTime(opportunity)
   const eventLabel = opportunity.event.name
   const roiLabel = formatRoi(opportunity.roi)
+  const nowMs = stalenessNow ?? Date.now()
+  const { label: stalenessLabel, isStale } = getStalenessInfo(opportunity, nowMs)
+  const combinedTimeLabel =
+    stalenessLabel.length > 0 ? `${timeLabel} · ${stalenessLabel}` : timeLabel
 
   return (
     <div
-      className="flex items-center justify-between border-b border-white/5 py-1.5 text-[11px]"
+      className={cn(
+        'flex items-center justify-between border-b border-white/5 py-1.5 text-[11px]',
+        isStale ? 'opacity-50' : ''
+      )}
       data-testid="feed-row"
+      data-staleness={isStale ? 'stale' : 'fresh'}
     >
       <div
         className="w-[72px] shrink-0 text-ot-foreground/70"
         data-testid="feed-cell-time"
       >
-        {timeLabel}
+        {combinedTimeLabel}
       </div>
       <div
         className="mx-2 min-w-0 flex-1 truncate text-ot-foreground"

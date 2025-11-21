@@ -33,26 +33,18 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-const jsx_runtime_1 = require("react/jsx-runtime");
+exports.useStalenessTicker = useStalenessTicker;
 const React = __importStar(require("react"));
-const feedStore_1 = require("./stores/feedStore");
-const FeedTable_1 = require("./FeedTable");
-const useStalenessTicker_1 = require("./useStalenessTicker");
-function FeedPane() {
-    const opportunities = (0, feedStore_1.useFeedStore)((state) => state.opportunities);
-    const isLoading = (0, feedStore_1.useFeedStore)((state) => state.isLoading);
-    const error = (0, feedStore_1.useFeedStore)((state) => state.error);
-    const refreshSnapshot = (0, feedStore_1.useFeedStore)((state) => state.refreshSnapshot);
-    const stalenessNow = (0, useStalenessTicker_1.useStalenessTicker)();
+const DEFAULT_INTERVAL_MS = 30_000;
+function useStalenessTicker(intervalMs = DEFAULT_INTERVAL_MS) {
+    const [now, setNow] = React.useState(() => Date.now());
     React.useEffect(() => {
-        void refreshSnapshot();
-    }, [refreshSnapshot]);
-    if (error && opportunities.length === 0) {
-        return ((0, jsx_runtime_1.jsxs)("div", { className: "flex h-full items-center justify-center text-[11px] text-red-400", role: "status", "data-testid": "feed-error", children: ["Unable to load opportunities. ", error] }));
-    }
-    if (isLoading && opportunities.length === 0) {
-        return ((0, jsx_runtime_1.jsx)("div", { className: "flex h-full items-center justify-center text-[11px] text-ot-foreground/60", role: "status", "data-testid": "feed-loading", children: "Loading opportunities..." }));
-    }
-    return (0, jsx_runtime_1.jsx)(FeedTable_1.FeedTable, { opportunities: opportunities, stalenessNow: stalenessNow });
+        const id = setInterval(() => {
+            setNow(Date.now());
+        }, intervalMs);
+        return () => {
+            clearInterval(id);
+        };
+    }, [intervalMs]);
+    return now;
 }
-exports.default = FeedPane;

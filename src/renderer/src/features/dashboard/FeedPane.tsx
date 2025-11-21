@@ -2,12 +2,14 @@ import * as React from 'react'
 
 import { useFeedStore } from './stores/feedStore'
 import { FeedTable } from './FeedTable'
+import { useStalenessTicker } from './useStalenessTicker'
 
 function FeedPane(): React.JSX.Element {
   const opportunities = useFeedStore((state) => state.opportunities)
   const isLoading = useFeedStore((state) => state.isLoading)
   const error = useFeedStore((state) => state.error)
   const refreshSnapshot = useFeedStore((state) => state.refreshSnapshot)
+  const stalenessNow = useStalenessTicker()
 
   React.useEffect(() => {
     void refreshSnapshot()
@@ -37,8 +39,7 @@ function FeedPane(): React.JSX.Element {
     )
   }
 
-  return <FeedTable opportunities={opportunities} />
+  return <FeedTable opportunities={opportunities} stalenessNow={stalenessNow} />
 }
 
 export default FeedPane
-
