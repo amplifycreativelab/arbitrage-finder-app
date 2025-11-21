@@ -43,5 +43,24 @@ exports.appRouter = t.router({
     acknowledgeFallbackWarning: t.procedure.mutation(async () => {
         await (0, credentials_1.acknowledgeFallbackWarning)();
         return { ok: true };
+    }),
+    getFeedSnapshot: t.procedure.query(async () => {
+        const providerId = (0, storage_1.getActiveProviderId)();
+        const snapshot = (0, poller_1.getLatestSnapshotForProvider)(providerId);
+        return {
+            providerId,
+            opportunities: snapshot.opportunities,
+            fetchedAt: snapshot.fetchedAt
+        };
+    }),
+    pollAndGetFeedSnapshot: t.procedure.mutation(async () => {
+        const providerId = (0, storage_1.getActiveProviderId)();
+        await (0, poller_1.pollOnceForActiveProvider)();
+        const snapshot = (0, poller_1.getLatestSnapshotForProvider)(providerId);
+        return {
+            providerId,
+            opportunities: snapshot.opportunities,
+            fetchedAt: snapshot.fetchedAt
+        };
     })
 });

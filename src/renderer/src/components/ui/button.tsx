@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-import { cn } from '@renderer/lib/utils';
+import { cn } from '../../lib/utils';
 
 export type ButtonVariant = 'primary' | 'outline';
 
@@ -33,4 +33,3 @@ export function Button({
     />
   );
 }
-

@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { cn } from '@renderer/lib/utils'
+import { cn } from '../../lib/utils'
 
 export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   onValueChange?: (value: string) => void
@@ -29,4 +29,3 @@ export function Select({
     </select>
   )
 }
-

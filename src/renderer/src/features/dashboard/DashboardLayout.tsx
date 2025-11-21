@@ -1,6 +1,7 @@
 import * as React from 'react'
 
 import ProviderSettings from '../settings/ProviderSettings'
+import FeedPane from './FeedPane'
 
 interface DashboardLayoutProps {
   feed?: React.ReactNode
@@ -26,14 +27,7 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
         </header>
 
         <div className="flex-1 rounded-md border border-white/10 bg-black/40 p-3 text-[11px] text-ot-foreground/70">
-          {feed ?? (
-            <>
-              <p className="font-medium text-ot-foreground">Feed placeholder</p>
-              <p className="mt-1">
-                Story 3.2 will render the live opportunities grid in this left pane.
-              </p>
-            </>
-          )}
+          {feed ?? <FeedPane />}
         </div>
       </section>
 
@@ -80,4 +74,3 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
 }
 
 export default DashboardLayout
-

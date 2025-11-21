@@ -39,8 +39,8 @@
     "electron-store": "^11.0.2",
     "electron-trpc": "^0.7.1",
     "tailwind-merge": "^3.4.0",
-    "zustand": "^5.0.8",
-    "zod": "^4.1.0"
+    "zod": "^4.1.0",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
@@ -58,6 +58,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
+    "jsdom": "^24.1.0",
     "postcss": "^8.4.49",
     "prettier": "^3.6.2",
     "react": "^19.1.1",

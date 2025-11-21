@@ -4,10 +4,19 @@
     "outDir": "out-tests",
     "module": "commonjs",
     "moduleResolution": "node",
-    "composite": false
+    "composite": false,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@renderer/*": [
+        "src/renderer/src/*"
+      ]
+    }
   },
   "include": [
     "src/main/**/*",
+    "src/preload/**/*",
+    "src/renderer/src/**/*",
     "shared/**/*"
   ]
 }
