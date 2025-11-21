@@ -1,0 +1,17 @@
+[
+  {
+    "id": "the-odds-api-1",
+    "providerId": "the-odds-api",
+    "sport": "soccer",
+    "description": "Raw odds snapshot for The-Odds-API.com matching the local arbitrage behavior validated in Story 2.5.",
+    "eventName": "Team A vs Team B",
+    "eventDate": "2025-11-21T18:00:00Z",
+    "league": "Serie A",
+    "market": "match-winner",
+    "homeBookmaker": "Book-1",
+    "homeOdds": 2.1,
+    "awayBookmaker": "Book-2",
+    "awayOdds": 2.1
+  }
+]
+

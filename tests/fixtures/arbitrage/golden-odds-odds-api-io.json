@@ -1,0 +1,17 @@
+[
+  {
+    "id": "odds-api-io-1",
+    "providerId": "odds-api-io",
+    "sport": "tennis",
+    "description": "Pre-calculated arbitrage snapshot for Odds-API.io based on a simple tennis moneyline market.",
+    "eventName": "Player A vs Player B",
+    "eventDate": "2025-11-20T19:00:00Z",
+    "league": "ATP",
+    "market": "moneyline",
+    "homeBookmaker": "Book-1",
+    "homeOdds": 2.1,
+    "awayBookmaker": "Book-2",
+    "awayOdds": 2.1
+  }
+]
+

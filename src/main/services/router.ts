@@ -16,6 +16,9 @@ const t = initTRPC.create()
 
 registerAdapters([new OddsApiIoAdapter(), new TheOddsApiAdapter()])
 
+const initialProviderId = getActiveProviderId() as ProviderId
+notifyActiveProviderChanged(initialProviderId)
+
 export const appRouter = t.router({
   saveApiKey: t.procedure
     .input(saveApiKeyInputSchema)

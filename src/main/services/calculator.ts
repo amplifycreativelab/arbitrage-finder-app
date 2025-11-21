@@ -1,4 +1,4 @@
-import type { ArbitrageOpportunity } from '../../../shared/types'
+import type { ArbitrageOpportunity, ProviderId } from '../../../shared/types'
 import { arbitrageOpportunityListSchema } from '../../../shared/schemas'
 
 export function calculateTwoLegArbitrageRoi(oddsA: number, oddsB: number): number {
@@ -19,6 +19,64 @@ export function calculateTwoLegArbitrageRoi(oddsA: number, oddsB: number): numbe
   const roi = 1 - inverseSum
 
   return roi < 0 ? 0 : roi
+}
+
+export interface GoldenOddsSnapshot {
+  id: string
+  providerId: ProviderId
+  sport: string
+  description?: string
+  eventName: string
+  eventDate: string
+  league: string
+  market: string
+  homeBookmaker: string
+  homeOdds: number
+  awayBookmaker: string
+  awayOdds: number
+}
+
+export function calculateArbitrageFromSnapshots(
+  snapshots: GoldenOddsSnapshot[],
+  foundAt: string = new Date().toISOString()
+): ArbitrageOpportunity[] {
+  const opportunities: ArbitrageOpportunity[] = []
+
+  for (const snapshot of snapshots) {
+    const roi = calculateTwoLegArbitrageRoi(snapshot.homeOdds, snapshot.awayOdds)
+
+    if (roi <= 0) continue
+
+    const opportunity: ArbitrageOpportunity = {
+      id: snapshot.id,
+      sport: snapshot.sport,
+      event: {
+        name: snapshot.eventName,
+        date: snapshot.eventDate,
+        league: snapshot.league
+      },
+      legs: [
+        {
+          bookmaker: snapshot.homeBookmaker,
+          market: snapshot.market,
+          odds: snapshot.homeOdds,
+          outcome: 'home'
+        },
+        {
+          bookmaker: snapshot.awayBookmaker,
+          market: snapshot.market,
+          odds: snapshot.awayOdds,
+          outcome: 'away'
+        }
+      ],
+      roi,
+      foundAt
+    }
+
+    opportunities.push(opportunity)
+  }
+
+  return arbitrageOpportunityListSchema.parse(opportunities)
 }
 
 export function mergeProviderOpportunities(

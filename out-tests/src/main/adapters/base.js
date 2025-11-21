@@ -10,7 +10,7 @@ class BaseArbitrageAdapter {
         if (!apiKey) {
             throw new Error(`API key not configured for provider ${this.id}`);
         }
-        return (0, poller_1.scheduleProviderRequest)(this.id, () => this.fetchWithApiKey(apiKey));
+        return (0, poller_1.scheduleProviderRequest)(this.id, (context) => this.fetchWithApiKey(apiKey, context));
     }
 }
 exports.BaseArbitrageAdapter = BaseArbitrageAdapter;

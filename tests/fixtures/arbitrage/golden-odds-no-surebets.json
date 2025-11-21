@@ -1,0 +1,17 @@
+[
+  {
+    "id": "no-surebets-1",
+    "providerId": "the-odds-api",
+    "sport": "soccer",
+    "description": "Control scenario where implied probabilities exceed 1.0, ensuring no arbitrage opportunities are emitted.",
+    "eventName": "No Surebets United vs Arbitrage City",
+    "eventDate": "2025-11-23T18:00:00Z",
+    "league": "Serie B",
+    "market": "match-winner",
+    "homeBookmaker": "Book-1",
+    "homeOdds": 1.8,
+    "awayBookmaker": "Book-2",
+    "awayOdds": 1.8
+  }
+]
+

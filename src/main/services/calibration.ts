@@ -1,6 +1,12 @@
-import log from 'electron-log'
 import type { ProviderId } from '../../../shared/types'
 import * as poller from './poller'
+import { logError, logInfo, logWarn, type StructuredLogBase } from './logger'
+
+interface CalibrationLogger {
+  info(event: string, payload: Record<string, unknown>): void
+  warn(event: string, payload: Record<string, unknown>): void
+  error(event: string, payload: Record<string, unknown>): void
+}
 
 export interface CalibrationOptions {
   /**
@@ -24,8 +30,10 @@ export interface CalibrationOptions {
   minLoopIntervalMs?: number
   /**
    * Optional logger override (primarily for tests).
+   * Receives an event name and a payload object that will be treated as
+   * structured log fields by the central logger.
    */
-  logger?: Pick<typeof log, 'info' | 'warn' | 'error'>
+  logger?: CalibrationLogger
 }
 
 export interface ProviderSampleMetrics {
@@ -117,7 +125,7 @@ async function runProviderLoop(
   providerId: ProviderId,
   endAt: number,
   options: Required<Pick<CalibrationOptions, 'maxIterationsPerProvider' | 'minLoopIntervalMs'>>,
-  logger: Pick<typeof log, 'info' | 'warn' | 'error'>
+  logger: CalibrationLogger
 ): Promise<ProviderSampleMetrics> {
   const metrics: ProviderSampleMetrics = {
     providerId,
@@ -163,10 +171,15 @@ async function runProviderLoop(
         metrics.http4xx += 1
       }
 
+      const safeMessage =
+        typeof status === 'number'
+          ? `calibration request error (status ${status})`
+          : 'calibration request error'
+
       logger.warn('calibration.request.error', {
         providerId,
-        message: (error as Error)?.message ?? 'calibration error',
-        status
+        status,
+        message: safeMessage
       })
     } finally {
       const elapsed = Date.now() - startedAt
@@ -198,7 +211,34 @@ export async function runCalibration(options: CalibrationOptions = {}): Promise<
 
   poller.registerAdapters([new OddsApiIoAdapter(), new TheOddsApiAdapter()])
 
-  const logger = options.logger ?? log
+  const logger: CalibrationLogger =
+    options.logger ??
+    {
+      info(event, payload) {
+        const base: StructuredLogBase = {
+          context: 'service:calibration',
+          operation: event,
+          ...payload
+        }
+        logInfo(event, base)
+      },
+      warn(event, payload) {
+        const base: StructuredLogBase = {
+          context: 'service:calibration',
+          operation: event,
+          ...payload
+        }
+        logWarn(event, base)
+      },
+      error(event, payload) {
+        const base: StructuredLogBase = {
+          context: 'service:calibration',
+          operation: event,
+          ...payload
+        }
+        logError(event, base)
+      }
+    }
   const durationMs = options.durationMs ?? 10_000
   const maxIterationsPerProvider = options.maxIterationsPerProvider ?? 50
   const minLoopIntervalMs = options.minLoopIntervalMs ?? 0
@@ -279,28 +319,35 @@ async function runCli(): Promise<void> {
     const result = await runCalibration(isCiMode ? ciOptions : {})
 
     if (!result.overallPass) {
-      log.error('calibration.failure', {
+      logError('calibration.failure', {
+        context: 'service:calibration',
+        operation: 'runCli',
         providerSummaries: result.providerSummaries.map((s) => ({
           providerId: s.providerId,
           theoreticalRequestsPerHour: s.theoreticalRequestsPerHour,
           quotaSafe: s.quotaSafe
         }))
-      })
+      } as StructuredLogBase)
       process.exitCode = 1
     } else if (isCiMode) {
-      log.info('calibration.ci.pass', {
+      logInfo('calibration.ci.pass', {
+        context: 'service:calibration',
+        operation: 'runCli',
         providerSummaries: result.providerSummaries.map((s) => ({
           providerId: s.providerId,
           theoreticalRequestsPerHour: s.theoreticalRequestsPerHour,
           quotaSafe: s.quotaSafe
         }))
-      })
+      } as StructuredLogBase)
     }
   } catch (error) {
-    log.error('calibration.exception', {
+    logError('calibration.exception', {
+      context: 'service:calibration',
+      operation: 'runCli',
+      errorCategory: 'SystemError',
       message: (error as Error)?.message ?? 'Calibration run failed',
       stack: (error as Error)?.stack
-    })
+    } as StructuredLogBase)
     process.exitCode = 1
   }
 }
@@ -309,4 +356,3 @@ if (require.main === module) {
   // eslint-disable-next-line @typescript-eslint/no-floating-promises
   runCli()
 }
-

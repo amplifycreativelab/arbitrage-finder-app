@@ -32,13 +32,10 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runCalibration = runCalibration;
-const electron_log_1 = __importDefault(require("electron-log"));
 const poller = __importStar(require("./poller"));
+const logger_1 = require("./logger");
 function defaultProviders() {
     // These provider IDs are owned by poller.ts and adapters.
     return ['odds-api-io', 'the-odds-api'];
@@ -119,10 +116,13 @@ async function runProviderLoop(providerId, endAt, options, logger) {
             else if (typeof status === 'number' && status >= 400 && status < 500) {
                 metrics.http4xx += 1;
             }
+            const safeMessage = typeof status === 'number'
+                ? `calibration request error (status ${status})`
+                : 'calibration request error';
             logger.warn('calibration.request.error', {
                 providerId,
-                message: error?.message ?? 'calibration error',
-                status
+                status,
+                message: safeMessage
             });
         }
         finally {
@@ -148,7 +148,33 @@ async function runCalibration(options = {}) {
     const { OddsApiIoAdapter } = await Promise.resolve().then(() => __importStar(require('../adapters/odds-api-io')));
     const { TheOddsApiAdapter } = await Promise.resolve().then(() => __importStar(require('../adapters/the-odds-api')));
     poller.registerAdapters([new OddsApiIoAdapter(), new TheOddsApiAdapter()]);
-    const logger = options.logger ?? electron_log_1.default;
+    const logger = options.logger ??
+        {
+            info(event, payload) {
+                const base = {
+                    context: 'service:calibration',
+                    operation: event,
+                    ...payload
+                };
+                (0, logger_1.logInfo)(event, base);
+            },
+            warn(event, payload) {
+                const base = {
+                    context: 'service:calibration',
+                    operation: event,
+                    ...payload
+                };
+                (0, logger_1.logWarn)(event, base);
+            },
+            error(event, payload) {
+                const base = {
+                    context: 'service:calibration',
+                    operation: event,
+                    ...payload
+                };
+                (0, logger_1.logError)(event, base);
+            }
+        };
     const durationMs = options.durationMs ?? 10_000;
     const maxIterationsPerProvider = options.maxIterationsPerProvider ?? 50;
     const minLoopIntervalMs = options.minLoopIntervalMs ?? 0;
@@ -209,7 +235,9 @@ async function runCli() {
     try {
         const result = await runCalibration(isCiMode ? ciOptions : {});
         if (!result.overallPass) {
-            electron_log_1.default.error('calibration.failure', {
+            (0, logger_1.logError)('calibration.failure', {
+                context: 'service:calibration',
+                operation: 'runCli',
                 providerSummaries: result.providerSummaries.map((s) => ({
                     providerId: s.providerId,
                     theoreticalRequestsPerHour: s.theoreticalRequestsPerHour,
@@ -219,7 +247,9 @@ async function runCli() {
             process.exitCode = 1;
         }
         else if (isCiMode) {
-            electron_log_1.default.info('calibration.ci.pass', {
+            (0, logger_1.logInfo)('calibration.ci.pass', {
+                context: 'service:calibration',
+                operation: 'runCli',
                 providerSummaries: result.providerSummaries.map((s) => ({
                     providerId: s.providerId,
                     theoreticalRequestsPerHour: s.theoreticalRequestsPerHour,
@@ -229,7 +259,10 @@ async function runCli() {
         }
     }
     catch (error) {
-        electron_log_1.default.error('calibration.exception', {
+        (0, logger_1.logError)('calibration.exception', {
+            context: 'service:calibration',
+            operation: 'runCli',
+            errorCategory: 'SystemError',
             message: error?.message ?? 'Calibration run failed',
             stack: error?.stack
         });

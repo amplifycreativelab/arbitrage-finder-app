@@ -1,7 +1,7 @@
 import Bottleneck from 'bottleneck'
-import log from 'electron-log'
 import type { ArbitrageAdapter, ArbitrageOpportunity, ProviderId } from '../../../shared/types'
 import { arbitrageOpportunityListSchema } from '../../../shared/schemas'
+import { createCorrelationId, logHeartbeat, logWarn, type StructuredLogBase } from './logger'
 
 /**
  * Rate limit parameters derived from PRD FR8 (5,000 req/hour) and Architecture R-001 (NFR1).
@@ -40,6 +40,7 @@ interface BackoffState {
 const limiterByProvider = new Map<ProviderId, Bottleneck>()
 const backoffByProvider: Partial<Record<ProviderId, BackoffState>> = {}
 const providerStatus: Partial<Record<ProviderId, ProviderQuotaStatus>> = {}
+let currentCorrelationId: string | null = null
 
 const BASE_BACKOFF_MS = 1000
 const MAX_BACKOFF_MS = 15000
@@ -115,10 +116,15 @@ async function dropQueuedJobsAndResetLimiter(providerId: ProviderId): Promise<vo
       dropErrorMessage: 'Dropped due to provider rate limiting backoff'
     })
   } catch (error) {
-    log.warn('provider.rate-limit.stop-error', {
+    logWarn('provider.rate-limit.stop-error', {
+      context: 'service:poller',
+      operation: 'dropQueuedJobsAndResetLimiter',
       providerId,
+      correlationId: currentCorrelationId ?? undefined,
+      durationMs: null,
+      errorCategory: 'ProviderError',
       message: (error as Error)?.message ?? 'failed to stop limiter after rate limit signal'
-    })
+    } satisfies StructuredLogBase)
   }
 }
 
@@ -170,6 +176,10 @@ const latestSnapshotTimestampByProviderId: Partial<Record<ProviderId, string>> =
 clearBackoff('odds-api-io')
 clearBackoff('the-odds-api')
 
+export interface ProviderRequestContext {
+  correlationId: string
+}
+
 export function getRateLimiterConfig(providerId: ProviderId): RateLimiterConfig {
   return resolveLimiterConfig(providerId)
 }
@@ -180,11 +190,12 @@ export function getProviderQuotaStatus(providerId: ProviderId): ProviderQuotaSta
 
 export async function scheduleProviderRequest<T>(
   providerId: ProviderId,
-  fn: () => Promise<T>
+  fn: (context: ProviderRequestContext) => Promise<T>
 ): Promise<T> {
+  const correlationId = currentCorrelationId ?? createCorrelationId()
   await waitForCooldown(providerId)
   try {
-    const result = await getLimiter(providerId).schedule(fn)
+    const result = await getLimiter(providerId).schedule(() => fn({ correlationId }))
 
     if (isRateLimitSignal(result)) {
       const delayMs = markRateLimited(providerId)
@@ -196,14 +207,21 @@ export async function scheduleProviderRequest<T>(
         message?: string
       }
 
-      log.warn('provider.rate-limit', {
+      const statusCode = signal.status ?? signal.statusCode ?? signal.response?.status
+
+      logWarn('provider.rate-limit', {
+        context: 'service:poller',
+        operation: 'scheduleProviderRequest',
         providerId,
+        correlationId,
+        durationMs: null,
+        errorCategory: 'ProviderError',
         providerStatus: getProviderQuotaStatus(providerId),
         delayMs,
         message: signal.message ?? 'rate limit signal (response)',
         code: signal.code,
-        statusCode: signal.status ?? signal.statusCode ?? signal.response?.status
-      })
+        statusCode
+      } satisfies StructuredLogBase)
 
       const error = new Error(signal.message ?? 'Rate limited')
       ;(error as { status?: number }).status =
@@ -221,17 +239,24 @@ export async function scheduleProviderRequest<T>(
       !(error as { __fromRateLimitResult?: boolean }).__fromRateLimitResult
     ) {
       const delayMs = markRateLimited(providerId)
-      log.warn('provider.rate-limit', {
+      const statusCode =
+        (error as { status?: number }).status ??
+        (error as { statusCode?: number }).statusCode ??
+        (error as { response?: { status?: number } }).response?.status
+
+      logWarn('provider.rate-limit', {
+        context: 'service:poller',
+        operation: 'scheduleProviderRequest',
         providerId,
+        correlationId,
+        durationMs: null,
+        errorCategory: 'ProviderError',
         providerStatus: getProviderQuotaStatus(providerId),
         delayMs,
         message: (error as Error)?.message ?? 'rate limit signal',
         code: (error as { code?: string }).code,
-        statusCode:
-          (error as { status?: number }).status ??
-          (error as { statusCode?: number }).statusCode ??
-          (error as { response?: { status?: number } }).response?.status
-      })
+        statusCode
+      } satisfies StructuredLogBase)
     }
     throw error
   }
@@ -288,13 +313,91 @@ export async function pollOnceForActiveProvider(): Promise<ArbitrageOpportunity[
     return []
   }
 
-  const opportunities = await adapter.fetchOpportunities()
-  const validated = arbitrageOpportunityListSchema.parse(opportunities)
+  const correlationId = createCorrelationId()
+  const tickStartedAt = Date.now()
+  let success = false
+  let opportunities: ArbitrageOpportunity[] = []
+  let errorCategory: StructuredLogBase['errorCategory'] = null
+  let errorMessage: string | undefined
 
-  latestSnapshotByProviderId[providerId] = validated
-  latestSnapshotTimestampByProviderId[providerId] = new Date().toISOString()
+  currentCorrelationId = correlationId
 
-  return validated
+  try {
+    const result = await adapter.fetchOpportunities()
+    const validated = arbitrageOpportunityListSchema.parse(result)
+
+    opportunities = validated
+    latestSnapshotByProviderId[providerId] = validated
+    latestSnapshotTimestampByProviderId[providerId] = new Date().toISOString()
+    success = true
+
+    return validated
+  } catch (error) {
+    const status =
+      (error as { status?: number }).status ??
+      (error as { statusCode?: number }).statusCode ??
+      (error as { response?: { status?: number } }).response?.status
+
+    if (typeof status === 'number' && status >= 400) {
+      errorCategory = 'ProviderError'
+    } else {
+      errorCategory = 'SystemError'
+    }
+
+    errorMessage = (error as Error)?.message ?? 'pollOnceForActiveProvider error'
+    throw error
+  } finally {
+    currentCorrelationId = null
+
+    const durationMs = Date.now() - tickStartedAt
+    const nowIso = new Date().toISOString()
+
+    const providerStatuses: Record<ProviderId, ProviderQuotaStatus> = {
+      'odds-api-io': getProviderQuotaStatus('odds-api-io'),
+      'the-odds-api': getProviderQuotaStatus('the-odds-api')
+    }
+
+    const lastSuccessfulFetchTimestamps: Record<ProviderId, string | null> = {
+      'odds-api-io': latestSnapshotTimestampByProviderId['odds-api-io'] ?? null,
+      'the-odds-api': latestSnapshotTimestampByProviderId['the-odds-api'] ?? null
+    }
+
+    const staleThresholdMs = 5 * 60 * 1000
+    const hasStaleProvider = Object.values(lastSuccessfulFetchTimestamps).some((ts) => {
+      if (!ts) return false
+      const ageMs = Date.now() - new Date(ts).getTime()
+      return ageMs > staleThresholdMs
+    })
+
+    let systemStatus: 'OK' | 'Degraded' | 'Error' | 'Stale' = 'OK'
+
+    if (!success && errorCategory === 'SystemError') {
+      systemStatus = 'Error'
+    } else if (
+      Object.values(providerStatuses).some((status) => status === 'QuotaLimited' || status === 'Degraded')
+    ) {
+      systemStatus = 'Degraded'
+    } else if (hasStaleProvider) {
+      systemStatus = 'Stale'
+    }
+
+    logHeartbeat({
+      context: 'service:poller',
+      operation: 'pollOnceForActiveProvider',
+      providerId,
+      correlationId,
+      durationMs,
+      errorCategory,
+      success,
+      opportunitiesCount: opportunities.length,
+      providerStatuses,
+      lastSuccessfulFetchTimestamps,
+      systemStatus,
+      tickStartedAt: new Date(tickStartedAt).toISOString(),
+      tickCompletedAt: nowIso,
+      errorMessage
+    } satisfies StructuredLogBase)
+  }
 }
 
 export function getLatestSnapshotForProvider(

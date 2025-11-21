@@ -12,7 +12,6 @@
   }
 
   #root {
-    @apply min-h-screen;
+    @apply min-h-screen min-w-[900px];
   }
 }
-

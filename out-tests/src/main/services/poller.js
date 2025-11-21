@@ -15,8 +15,8 @@ exports.getRegisteredAdapter = getRegisteredAdapter;
 exports.pollOnceForActiveProvider = pollOnceForActiveProvider;
 exports.getLatestSnapshotForProvider = getLatestSnapshotForProvider;
 const bottleneck_1 = __importDefault(require("bottleneck"));
-const electron_log_1 = __importDefault(require("electron-log"));
 const schemas_1 = require("../../../shared/schemas");
+const logger_1 = require("./logger");
 const PRD_REQUESTS_PER_HOUR = 5000;
 const DEFAULT_LIMITER_CONFIG = {
     minTime: 720, // 3600s / 5000 req => ~0.72s spacing (FR8, NFR1)
@@ -32,6 +32,7 @@ const rateLimiterConfigByProvider = {
 const limiterByProvider = new Map();
 const backoffByProvider = {};
 const providerStatus = {};
+let currentCorrelationId = null;
 const BASE_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 15000;
 const JITTER_MS = 300;
@@ -94,8 +95,13 @@ async function dropQueuedJobsAndResetLimiter(providerId) {
         });
     }
     catch (error) {
-        electron_log_1.default.warn('provider.rate-limit.stop-error', {
+        (0, logger_1.logWarn)('provider.rate-limit.stop-error', {
+            context: 'service:poller',
+            operation: 'dropQueuedJobsAndResetLimiter',
             providerId,
+            correlationId: currentCorrelationId ?? undefined,
+            durationMs: null,
+            errorCategory: 'ProviderError',
             message: error?.message ?? 'failed to stop limiter after rate limit signal'
         });
     }
@@ -143,19 +149,26 @@ function getProviderQuotaStatus(providerId) {
     return providerStatus[providerId] ?? 'OK';
 }
 async function scheduleProviderRequest(providerId, fn) {
+    const correlationId = currentCorrelationId ?? (0, logger_1.createCorrelationId)();
     await waitForCooldown(providerId);
     try {
-        const result = await getLimiter(providerId).schedule(fn);
+        const result = await getLimiter(providerId).schedule(() => fn({ correlationId }));
         if (isRateLimitSignal(result)) {
             const delayMs = markRateLimited(providerId);
             const signal = result;
-            electron_log_1.default.warn('provider.rate-limit', {
+            const statusCode = signal.status ?? signal.statusCode ?? signal.response?.status;
+            (0, logger_1.logWarn)('provider.rate-limit', {
+                context: 'service:poller',
+                operation: 'scheduleProviderRequest',
                 providerId,
+                correlationId,
+                durationMs: null,
+                errorCategory: 'ProviderError',
                 providerStatus: getProviderQuotaStatus(providerId),
                 delayMs,
                 message: signal.message ?? 'rate limit signal (response)',
                 code: signal.code,
-                statusCode: signal.status ?? signal.statusCode ?? signal.response?.status
+                statusCode
             });
             const error = new Error(signal.message ?? 'Rate limited');
             error.status =
@@ -170,15 +183,21 @@ async function scheduleProviderRequest(providerId, fn) {
         if (isRateLimitSignal(error) &&
             !error.__fromRateLimitResult) {
             const delayMs = markRateLimited(providerId);
-            electron_log_1.default.warn('provider.rate-limit', {
+            const statusCode = error.status ??
+                error.statusCode ??
+                error.response?.status;
+            (0, logger_1.logWarn)('provider.rate-limit', {
+                context: 'service:poller',
+                operation: 'scheduleProviderRequest',
                 providerId,
+                correlationId,
+                durationMs: null,
+                errorCategory: 'ProviderError',
                 providerStatus: getProviderQuotaStatus(providerId),
                 delayMs,
                 message: error?.message ?? 'rate limit signal',
                 code: error.code,
-                statusCode: error.status ??
-                    error.statusCode ??
-                    error.response?.status
+                statusCode
             });
         }
         throw error;
@@ -223,11 +242,81 @@ async function pollOnceForActiveProvider() {
     if (!adapter) {
         return [];
     }
-    const opportunities = await adapter.fetchOpportunities();
-    const validated = schemas_1.arbitrageOpportunityListSchema.parse(opportunities);
-    latestSnapshotByProviderId[providerId] = validated;
-    latestSnapshotTimestampByProviderId[providerId] = new Date().toISOString();
-    return validated;
+    const correlationId = (0, logger_1.createCorrelationId)();
+    const tickStartedAt = Date.now();
+    let success = false;
+    let opportunities = [];
+    let errorCategory = null;
+    let errorMessage;
+    currentCorrelationId = correlationId;
+    try {
+        const result = await adapter.fetchOpportunities();
+        const validated = schemas_1.arbitrageOpportunityListSchema.parse(result);
+        opportunities = validated;
+        latestSnapshotByProviderId[providerId] = validated;
+        latestSnapshotTimestampByProviderId[providerId] = new Date().toISOString();
+        success = true;
+        return validated;
+    }
+    catch (error) {
+        const status = error.status ??
+            error.statusCode ??
+            error.response?.status;
+        if (typeof status === 'number' && status >= 400) {
+            errorCategory = 'ProviderError';
+        }
+        else {
+            errorCategory = 'SystemError';
+        }
+        errorMessage = error?.message ?? 'pollOnceForActiveProvider error';
+        throw error;
+    }
+    finally {
+        currentCorrelationId = null;
+        const durationMs = Date.now() - tickStartedAt;
+        const nowIso = new Date().toISOString();
+        const providerStatuses = {
+            'odds-api-io': getProviderQuotaStatus('odds-api-io'),
+            'the-odds-api': getProviderQuotaStatus('the-odds-api')
+        };
+        const lastSuccessfulFetchTimestamps = {
+            'odds-api-io': latestSnapshotTimestampByProviderId['odds-api-io'] ?? null,
+            'the-odds-api': latestSnapshotTimestampByProviderId['the-odds-api'] ?? null
+        };
+        const staleThresholdMs = 5 * 60 * 1000;
+        const hasStaleProvider = Object.values(lastSuccessfulFetchTimestamps).some((ts) => {
+            if (!ts)
+                return false;
+            const ageMs = Date.now() - new Date(ts).getTime();
+            return ageMs > staleThresholdMs;
+        });
+        let systemStatus = 'OK';
+        if (!success && errorCategory === 'SystemError') {
+            systemStatus = 'Error';
+        }
+        else if (Object.values(providerStatuses).some((status) => status === 'QuotaLimited' || status === 'Degraded')) {
+            systemStatus = 'Degraded';
+        }
+        else if (hasStaleProvider) {
+            systemStatus = 'Stale';
+        }
+        (0, logger_1.logHeartbeat)({
+            context: 'service:poller',
+            operation: 'pollOnceForActiveProvider',
+            providerId,
+            correlationId,
+            durationMs,
+            errorCategory,
+            success,
+            opportunitiesCount: opportunities.length,
+            providerStatuses,
+            lastSuccessfulFetchTimestamps,
+            systemStatus,
+            tickStartedAt: new Date(tickStartedAt).toISOString(),
+            tickCompletedAt: nowIso,
+            errorMessage
+        });
+    }
 }
 function getLatestSnapshotForProvider(providerId) {
     return {

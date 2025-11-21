@@ -36,6 +36,7 @@ function createWindow(): void {
 
   const mainWindow = new BrowserWindow({
     width: 900,
+    minWidth: 900,
     height: 670,
     show: false,
     autoHideMenuBar: true,

@@ -10,6 +10,8 @@ const odds_api_io_1 = require("../adapters/odds-api-io");
 const the_odds_api_1 = require("../adapters/the-odds-api");
 const t = server_1.initTRPC.create();
 (0, poller_1.registerAdapters)([new odds_api_io_1.OddsApiIoAdapter(), new the_odds_api_1.TheOddsApiAdapter()]);
+const initialProviderId = (0, storage_1.getActiveProviderId)();
+(0, poller_1.notifyActiveProviderChanged)(initialProviderId);
 exports.appRouter = t.router({
     saveApiKey: t.procedure
         .input(schemas_1.saveApiKeyInputSchema)

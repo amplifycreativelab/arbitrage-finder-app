@@ -1,12 +1,15 @@
 import type { ArbitrageAdapter, ArbitrageOpportunity, ProviderId } from '../../../shared/types'
 import { getApiKeyForAdapter } from '../credentials'
-import { scheduleProviderRequest } from '../services/poller'
+import { scheduleProviderRequest, type ProviderRequestContext } from '../services/poller'
 
 export abstract class BaseArbitrageAdapter implements ArbitrageAdapter {
   readonly __usesCentralRateLimiter = true as const
   abstract readonly id: ProviderId
 
-  protected abstract fetchWithApiKey(apiKey: string): Promise<ArbitrageOpportunity[]>
+  protected abstract fetchWithApiKey(
+    apiKey: string,
+    context?: ProviderRequestContext
+  ): Promise<ArbitrageOpportunity[]>
 
   async fetchOpportunities(): Promise<ArbitrageOpportunity[]> {
     const apiKey = await getApiKeyForAdapter(this.id)
@@ -15,6 +18,6 @@ export abstract class BaseArbitrageAdapter implements ArbitrageAdapter {
       throw new Error(`API key not configured for provider ${this.id}`)
     }
 
-    return scheduleProviderRequest(this.id, () => this.fetchWithApiKey(apiKey))
+    return scheduleProviderRequest(this.id, (context) => this.fetchWithApiKey(apiKey, context))
   }
 }
