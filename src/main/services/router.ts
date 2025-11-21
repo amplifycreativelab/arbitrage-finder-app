@@ -1,7 +1,7 @@
 import { initTRPC } from '@trpc/server'
 import { getActiveProviderId, setActiveProviderId } from './storage'
 import { activeProviderSchema, saveApiKeyInputSchema, providerIdParamSchema } from '../../../shared/schemas'
-import { notifyActiveProviderChanged } from './poller'
+import { notifyActiveProviderChanged, registerAdapters } from './poller'
 import type { ProviderId } from '../../../shared/types'
 import {
   acknowledgeFallbackWarning,
@@ -9,8 +9,12 @@ import {
   isProviderConfigured,
   saveApiKey
 } from '../credentials'
+import { OddsApiIoAdapter } from '../adapters/odds-api-io'
+import { TheOddsApiAdapter } from '../adapters/the-odds-api'
 
 const t = initTRPC.create()
+
+registerAdapters([new OddsApiIoAdapter(), new TheOddsApiAdapter()])
 
 export const appRouter = t.router({
   saveApiKey: t.procedure

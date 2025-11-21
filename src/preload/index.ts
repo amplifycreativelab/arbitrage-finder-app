@@ -1,8 +1,7 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { exposeElectronTRPC } from 'electron-trpc/main'
 import { createTRPCProxyClient } from '@trpc/client'
-import { ipcLink } from 'electron-trpc/renderer'
+import { ELECTRON_TRPC_CHANNEL, ipcLink } from 'electron-trpc/renderer'
 import type { AppRouter } from '../main/services/router'
 import type { ProviderId } from '../../shared/types'
 
@@ -17,6 +16,31 @@ type CredentialsAPI = {
   getStorageStatus: () => Promise<CredentialsStorageStatus>
   acknowledgeFallbackWarning: () => Promise<void>
 }
+
+// Electron-TRPC bridge: attach to both preload globalThis and renderer via contextBridge
+const exposeElectronTRPC = (): void => {
+  const handler = {
+    sendMessage: (operation: unknown) => ipcRenderer.send(ELECTRON_TRPC_CHANNEL, operation),
+    onMessage: (callback: (payload: unknown) => void) =>
+      ipcRenderer.on(ELECTRON_TRPC_CHANNEL, (_event, payload) => callback(payload))
+  }
+
+  ;(globalThis as typeof globalThis & { electronTRPC?: typeof handler }).electronTRPC = handler
+
+  if (process.contextIsolated) {
+    try {
+      contextBridge.exposeInMainWorld('electronTRPC', handler)
+    } catch {
+      // no-op if already exposed
+    }
+  } else {
+    // @ts-ignore
+    window.electronTRPC = handler
+  }
+}
+
+// Register the TRPC bridge immediately so renderer and preload can find it before creating clients.
+exposeElectronTRPC()
 
 const trpcClient = createTRPCProxyClient<AppRouter>({
   links: [ipcLink()]
@@ -42,9 +66,6 @@ const credentialsApi: CredentialsAPI = {
 const api = {
   credentials: credentialsApi
 }
-
-// Register the TRPC bridge immediately so renderer imports can find it during module init.
-exposeElectronTRPC()
 
 if (process.contextIsolated) {
   try {

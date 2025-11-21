@@ -2,6 +2,37 @@ export const PROVIDER_IDS = ['odds-api-io', 'the-odds-api'] as const
 
 export type ProviderId = (typeof PROVIDER_IDS)[number]
 
+export interface ArbitrageOpportunity {
+  id: string
+  sport: string
+  event: {
+    name: string
+    date: string
+    league: string
+  }
+  legs: [
+    {
+      bookmaker: string
+      market: string
+      odds: number
+      outcome: string
+    },
+    {
+      bookmaker: string
+      market: string
+      odds: number
+      outcome: string
+    }
+  ]
+  roi: number
+  foundAt: string
+}
+
+export interface ArbitrageAdapter {
+  id: ProviderId
+  fetchOpportunities(): Promise<ArbitrageOpportunity[]>
+}
+
 export interface ProviderMetadata {
   id: ProviderId
   label: string

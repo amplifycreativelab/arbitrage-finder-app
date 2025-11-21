@@ -7,7 +7,7 @@
     "composite": false
   },
   "include": [
-    "src/main/services/storage.ts",
-    "src/main/services/router.ts"
+    "src/main/**/*",
+    "shared/**/*"
   ]
 }
