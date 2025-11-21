@@ -31,6 +31,11 @@ export interface ArbitrageOpportunity {
 export interface ArbitrageAdapter {
   id: ProviderId
   fetchOpportunities(): Promise<ArbitrageOpportunity[]>
+  /**
+   * Marker indicating that this adapter's fetchOpportunities implementation
+   * already routes all outbound HTTP calls through the centralized rate limiter.
+   */
+  __usesCentralRateLimiter?: true
 }
 
 export interface ProviderMetadata {

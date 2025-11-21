@@ -1,5 +1,165 @@
+import Bottleneck from 'bottleneck'
+import log from 'electron-log'
 import type { ArbitrageAdapter, ArbitrageOpportunity, ProviderId } from '../../../shared/types'
 import { arbitrageOpportunityListSchema } from '../../../shared/schemas'
+
+/**
+ * Rate limit parameters derived from PRD FR8 (5,000 req/hour) and Architecture R-001 (NFR1).
+ * minTime = 3600_000ms / 5000req = 720ms; reservoir enforces per-hour ceiling.
+ */
+export interface RateLimiterConfig {
+  minTime: number
+  maxConcurrent: number
+  reservoir: number
+  reservoirRefreshAmount: number
+  reservoirRefreshInterval: number
+}
+
+const PRD_REQUESTS_PER_HOUR = 5000
+const DEFAULT_LIMITER_CONFIG: RateLimiterConfig = {
+  minTime: 720, // 3600s / 5000 req => ~0.72s spacing (FR8, NFR1)
+  maxConcurrent: 1,
+  reservoir: PRD_REQUESTS_PER_HOUR,
+  reservoirRefreshAmount: PRD_REQUESTS_PER_HOUR,
+  reservoirRefreshInterval: 60 * 60 * 1000
+}
+
+const rateLimiterConfigByProvider: Record<ProviderId, RateLimiterConfig> = {
+  'odds-api-io': DEFAULT_LIMITER_CONFIG,
+  'the-odds-api': DEFAULT_LIMITER_CONFIG
+}
+
+export type ProviderQuotaStatus = 'OK' | 'QuotaLimited' | 'Degraded'
+
+interface BackoffState {
+  consecutive429s: number
+  cooldownUntil: number | null
+  lastBackoffMs: number
+}
+
+const limiterByProvider = new Map<ProviderId, Bottleneck>()
+const backoffByProvider: Partial<Record<ProviderId, BackoffState>> = {}
+const providerStatus: Partial<Record<ProviderId, ProviderQuotaStatus>> = {}
+
+const BASE_BACKOFF_MS = 1000
+const MAX_BACKOFF_MS = 15000
+const JITTER_MS = 300
+
+function resolveLimiterConfig(providerId: ProviderId): RateLimiterConfig {
+  return rateLimiterConfigByProvider[providerId] ?? DEFAULT_LIMITER_CONFIG
+}
+
+function getLimiter(providerId: ProviderId): Bottleneck {
+  const existing = limiterByProvider.get(providerId)
+  if (existing) {
+    return existing
+  }
+
+  const cfg = resolveLimiterConfig(providerId)
+  const limiter = new Bottleneck({
+    minTime: cfg.minTime,
+    maxConcurrent: cfg.maxConcurrent,
+    reservoir: cfg.reservoir,
+    reservoirRefreshAmount: cfg.reservoirRefreshAmount,
+    reservoirRefreshInterval: cfg.reservoirRefreshInterval
+  })
+
+  limiterByProvider.set(providerId, limiter)
+  return limiter
+}
+
+function setProviderStatus(providerId: ProviderId, status: ProviderQuotaStatus): void {
+  providerStatus[providerId] = status
+}
+
+function clearBackoff(providerId: ProviderId): void {
+  backoffByProvider[providerId] = {
+    consecutive429s: 0,
+    cooldownUntil: null,
+    lastBackoffMs: 0
+  }
+  setProviderStatus(providerId, 'OK')
+}
+
+function ensureBackoffState(providerId: ProviderId): BackoffState {
+  if (!backoffByProvider[providerId]) {
+    backoffByProvider[providerId] = {
+      consecutive429s: 0,
+      cooldownUntil: null,
+      lastBackoffMs: 0
+    }
+  }
+
+  return backoffByProvider[providerId] as BackoffState
+}
+
+function computeBackoffMs(consecutive429s: number): number {
+  const exponent = Math.max(0, consecutive429s - 1)
+  const base = BASE_BACKOFF_MS * Math.pow(2, exponent)
+  const jitter = Math.floor(Math.random() * JITTER_MS)
+  return Math.min(MAX_BACKOFF_MS, base + jitter)
+}
+
+async function dropQueuedJobsAndResetLimiter(providerId: ProviderId): Promise<void> {
+  const limiter = limiterByProvider.get(providerId)
+
+  if (!limiter) {
+    return
+  }
+
+  limiterByProvider.delete(providerId)
+
+  try {
+    await limiter.stop({
+      dropWaitingJobs: true,
+      dropErrorMessage: 'Dropped due to provider rate limiting backoff'
+    })
+  } catch (error) {
+    log.warn('provider.rate-limit.stop-error', {
+      providerId,
+      message: (error as Error)?.message ?? 'failed to stop limiter after rate limit signal'
+    })
+  }
+}
+
+function markRateLimited(providerId: ProviderId): number {
+  const state = ensureBackoffState(providerId)
+  state.consecutive429s += 1
+  const backoffMs = computeBackoffMs(state.consecutive429s)
+  state.lastBackoffMs = backoffMs
+  state.cooldownUntil = Date.now() + backoffMs
+
+  const status: ProviderQuotaStatus = state.consecutive429s >= 2 ? 'Degraded' : 'QuotaLimited'
+  setProviderStatus(providerId, status)
+  void dropQueuedJobsAndResetLimiter(providerId)
+
+  return backoffMs
+}
+
+function isRateLimitSignal(signal: unknown): boolean {
+  const err = signal as { status?: number; statusCode?: number; response?: { status?: number }; code?: string }
+  return (
+    err?.status === 429 ||
+    err?.statusCode === 429 ||
+    err?.response?.status === 429 ||
+    err?.code === 'RATE_LIMITED'
+  )
+}
+
+async function waitForCooldown(providerId: ProviderId): Promise<void> {
+  const state = backoffByProvider[providerId]
+  if (!state?.cooldownUntil) {
+    return
+  }
+
+  const now = Date.now()
+  if (state.cooldownUntil <= now) {
+    return
+  }
+
+  const waitMs = state.cooldownUntil - now
+  await new Promise((resolve) => setTimeout(resolve, waitMs))
+}
 
 let activeProviderIdForPolling: ProviderId | null = null
 
@@ -7,8 +167,94 @@ const adaptersByProviderId: Partial<Record<ProviderId, ArbitrageAdapter>> = {}
 const latestSnapshotByProviderId: Partial<Record<ProviderId, ArbitrageOpportunity[]>> = {}
 const latestSnapshotTimestampByProviderId: Partial<Record<ProviderId, string>> = {}
 
+clearBackoff('odds-api-io')
+clearBackoff('the-odds-api')
+
+export function getRateLimiterConfig(providerId: ProviderId): RateLimiterConfig {
+  return resolveLimiterConfig(providerId)
+}
+
+export function getProviderQuotaStatus(providerId: ProviderId): ProviderQuotaStatus {
+  return providerStatus[providerId] ?? 'OK'
+}
+
+export async function scheduleProviderRequest<T>(
+  providerId: ProviderId,
+  fn: () => Promise<T>
+): Promise<T> {
+  await waitForCooldown(providerId)
+  try {
+    const result = await getLimiter(providerId).schedule(fn)
+
+    if (isRateLimitSignal(result)) {
+      const delayMs = markRateLimited(providerId)
+      const signal = result as {
+        status?: number
+        statusCode?: number
+        response?: { status?: number }
+        code?: string
+        message?: string
+      }
+
+      log.warn('provider.rate-limit', {
+        providerId,
+        providerStatus: getProviderQuotaStatus(providerId),
+        delayMs,
+        message: signal.message ?? 'rate limit signal (response)',
+        code: signal.code,
+        statusCode: signal.status ?? signal.statusCode ?? signal.response?.status
+      })
+
+      const error = new Error(signal.message ?? 'Rate limited')
+      ;(error as { status?: number }).status =
+        signal.status ?? signal.statusCode ?? signal.response?.status ?? 429
+      ;(error as { __fromRateLimitResult?: boolean }).__fromRateLimitResult = true
+
+      throw error
+    }
+
+    clearBackoff(providerId)
+    return result
+  } catch (error) {
+    if (
+      isRateLimitSignal(error) &&
+      !(error as { __fromRateLimitResult?: boolean }).__fromRateLimitResult
+    ) {
+      const delayMs = markRateLimited(providerId)
+      log.warn('provider.rate-limit', {
+        providerId,
+        providerStatus: getProviderQuotaStatus(providerId),
+        delayMs,
+        message: (error as Error)?.message ?? 'rate limit signal',
+        code: (error as { code?: string }).code,
+        statusCode:
+          (error as { status?: number }).status ??
+          (error as { statusCode?: number }).statusCode ??
+          (error as { response?: { status?: number } }).response?.status
+      })
+    }
+    throw error
+  }
+}
+
 export function registerAdapter(adapter: ArbitrageAdapter): void {
-  adaptersByProviderId[adapter.id] = adapter
+  const usesCentralLimiter = (adapter as { __usesCentralRateLimiter?: true }).__usesCentralRateLimiter === true
+
+  if (usesCentralLimiter) {
+    adaptersByProviderId[adapter.id] = adapter
+    return
+  }
+
+  const providerId = adapter.id
+  const originalFetch = adapter.fetchOpportunities.bind(adapter)
+
+  adaptersByProviderId[providerId] = {
+    id: providerId,
+    async fetchOpportunities(): Promise<ArbitrageOpportunity[]> {
+      return scheduleProviderRequest(providerId, () => originalFetch())
+    },
+    __usesCentralRateLimiter: true
+  }
 }
 
 export function registerAdapters(adapters: ArbitrageAdapter[]): void {
@@ -57,5 +303,19 @@ export function getLatestSnapshotForProvider(
   return {
     opportunities: latestSnapshotByProviderId[providerId] ?? [],
     fetchedAt: latestSnapshotTimestampByProviderId[providerId] ?? null
+  }
+}
+
+export const __test = {
+  resetLimiterState(): void {
+    limiterByProvider.clear()
+    ;(Object.keys(backoffByProvider) as ProviderId[]).forEach((providerId) => clearBackoff(providerId))
+    ;(Object.keys(providerStatus) as ProviderId[]).forEach((providerId) => setProviderStatus(providerId, 'OK'))
+  },
+  getLimiterCounts(providerId: ProviderId): Bottleneck.Counts {
+    return getLimiter(providerId).counts()
+  },
+  getBackoffState(providerId: ProviderId): BackoffState {
+    return ensureBackoffState(providerId)
   }
 }

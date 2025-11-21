@@ -6,6 +6,9 @@
   "author": "example.com",
   "homepage": "https://electron-vite.org",
   "scripts": {
+    "precalibrate:providers": "tsc -p tsconfig.storage-test.json",
+    "calibrate:providers": "node ./out-tests/src/main/services/calibration.js",
+    "test:calibrate": "node ./out-tests/src/main/services/calibration.js --ci",
     "pretest": "tsc -p tsconfig.storage-test.json",
     "test": "node --test tests/**/*.test.cjs",
     "test:p0": "node --test --test-name-pattern='[P0]' tests/**/*.test.cjs",
