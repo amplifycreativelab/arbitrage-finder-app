@@ -2,6 +2,7 @@ import * as React from 'react'
 
 import ProviderSettings from '../settings/ProviderSettings'
 import FeedPane from './FeedPane'
+import SignalPreview from './SignalPreview'
 
 interface DashboardLayoutProps {
   feed?: React.ReactNode
@@ -47,21 +48,7 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
           </header>
 
           <div className="mt-2 flex h-full flex-col rounded-md border border-white/10 bg-black/60 p-3 text-[11px] font-mono text-ot-foreground/80">
-            {signalPreview ?? (
-              <>
-                <p>Bet365 (Full)</p>
-                <p>Calcio 21/11</p>
-                <p>21:00 Preston - Blackburn</p>
-                <p>England Championship Rigori: SA?</p>
-                <p>4.50</p>
-                <p className="mt-2">--- break ---</p>
-                <p>Staryes (IT)</p>
-                <p>Calcio 21/11</p>
-                <p>21:00 Preston - Blackburn</p>
-                <p>Inghilterra - Championship Rigori: No</p>
-                <p>1.32</p>
-              </>
-            )}
+            {signalPreview ?? <SignalPreview />}
           </div>
         </div>
 

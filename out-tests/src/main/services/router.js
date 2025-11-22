@@ -6,6 +6,7 @@ const storage_1 = require("./storage");
 const schemas_1 = require("../../../shared/schemas");
 const poller_1 = require("./poller");
 const credentials_1 = require("../credentials");
+const clipboard_1 = require("./clipboard");
 const odds_api_io_1 = require("../adapters/odds-api-io");
 const the_odds_api_1 = require("../adapters/the-odds-api");
 const t = server_1.initTRPC.create();
@@ -66,5 +67,11 @@ exports.appRouter = t.router({
             fetchedAt: snapshot.fetchedAt,
             status
         };
+    }),
+    copySignalToClipboard: t.procedure
+        .input(schemas_1.copySignalToClipboardInputSchema)
+        .mutation(async ({ input }) => {
+        (0, clipboard_1.copyTextToClipboard)(input.text);
+        return { ok: true };
     })
 });

@@ -38,16 +38,14 @@ const jsx_runtime_1 = require("react/jsx-runtime");
 const React = __importStar(require("react"));
 const date_fns_1 = require("date-fns");
 const utils_1 = require("../../lib/utils");
+const copyAndAdvance_1 = require("./copyAndAdvance");
+const sortOpportunities_1 = require("./sortOpportunities");
+const feedStore_1 = require("./stores/feedStore");
 const staleness_1 = require("./staleness");
 const ROW_HEIGHT_PX = 40;
 const VIRTUALIZATION_THRESHOLD = 50;
 const VISIBLE_WINDOW_ROWS = 40;
 const OVERSCAN_ROWS = 8;
-function getTimeValue(opportunity) {
-    const source = opportunity.event.date || opportunity.foundAt;
-    const value = Date.parse(source);
-    return Number.isNaN(value) ? 0 : value;
-}
 function formatTime(opportunity) {
     const source = opportunity.event.date || opportunity.foundAt;
     try {
@@ -61,18 +59,6 @@ function formatTime(opportunity) {
 function formatRoi(roi) {
     return `${(roi * 100).toFixed(1)}%`;
 }
-function sortOpportunities(opportunities, sortBy, direction) {
-    if (!Array.isArray(opportunities)) {
-        return [];
-    }
-    const factor = direction === 'asc' ? 1 : -1;
-    return [...opportunities].sort((a, b) => {
-        if (sortBy === 'roi') {
-            return (a.roi - b.roi) * factor;
-        }
-        return (getTimeValue(a) - getTimeValue(b)) * factor;
-    });
-}
 function getAriaSort(sortBy, current, direction) {
     if (sortBy !== current)
         return 'none';
@@ -82,8 +68,14 @@ function FeedTable({ opportunities = [], initialSortBy = 'time', initialSortDire
     const [sortBy, setSortBy] = React.useState(initialSortBy);
     const [sortDirection, setSortDirection] = React.useState(initialSortDirection);
     const [scrollOffset, setScrollOffset] = React.useState(0);
+    const scrollContainerRef = React.useRef(null);
     const effectiveNow = stalenessNow ?? Date.now();
-    const sorted = React.useMemo(() => sortOpportunities(opportunities, sortBy, sortDirection), [opportunities, sortBy, sortDirection]);
+    const selectedOpportunityId = (0, feedStore_1.useFeedStore)((state) => state.selectedOpportunityId);
+    const selectedOpportunityIndex = (0, feedStore_1.useFeedStore)((state) => state.selectedOpportunityIndex);
+    const setSelectedOpportunityId = (0, feedStore_1.useFeedStore)((state) => state.setSelectedOpportunityId);
+    const moveSelectionByOffset = (0, feedStore_1.useFeedStore)((state) => state.moveSelectionByOffset);
+    const setSortGlobal = (0, feedStore_1.useFeedStore)((state) => state.setSort);
+    const sorted = React.useMemo(() => (0, sortOpportunities_1.sortOpportunities)(opportunities, sortBy, sortDirection), [opportunities, sortBy, sortDirection]);
     const totalCount = sorted.length;
     const virtualizationEnabled = totalCount > VIRTUALIZATION_THRESHOLD;
     const baseWindow = virtualizationEnabled ? VISIBLE_WINDOW_ROWS : totalCount;
@@ -97,7 +89,31 @@ function FeedTable({ opportunities = [], initialSortBy = 'time', initialSortDire
     const visibleOpportunities = sorted.slice(startIndex, endIndex);
     const totalHeight = virtualizationEnabled ? totalCount * ROW_HEIGHT_PX : undefined;
     const offsetY = virtualizationEnabled ? startIndex * ROW_HEIGHT_PX : 0;
+    const effectiveSelectedId = React.useMemo(() => {
+        if (sorted.length === 0) {
+            return null;
+        }
+        if (selectedOpportunityId) {
+            const found = sorted.find((opportunity) => opportunity.id === selectedOpportunityId);
+            if (found) {
+                return selectedOpportunityId;
+            }
+        }
+        if (selectedOpportunityIndex != null &&
+            selectedOpportunityIndex >= 0 &&
+            selectedOpportunityIndex < sorted.length) {
+            const candidate = sorted[selectedOpportunityIndex];
+            if (candidate) {
+                return candidate.id;
+            }
+        }
+        return sorted[0]?.id ?? null;
+    }, [sorted, selectedOpportunityId, selectedOpportunityIndex]);
+    const handleRowSelect = (id, index) => {
+        setSelectedOpportunityId(id, index);
+    };
     const handleSortChange = (key) => {
+        setSortGlobal(key);
         setSortBy((currentSort) => {
             if (currentSort === key) {
                 setSortDirection((currentDirection) => currentDirection === 'asc' ? 'desc' : 'asc');
@@ -112,15 +128,62 @@ function FeedTable({ opportunities = [], initialSortBy = 'time', initialSortDire
             return;
         setScrollOffset(event.currentTarget.scrollTop);
     };
-    return ((0, jsx_runtime_1.jsxs)("div", { className: "flex h-full flex-col", "data-testid": "feed-table", "data-virtualized": virtualizationEnabled ? 'true' : 'false', children: [(0, jsx_runtime_1.jsxs)("div", { className: "mb-2 flex items-center border-b border-white/10 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-foreground/60", children: [(0, jsx_runtime_1.jsxs)("button", { type: "button", className: (0, utils_1.cn)('mr-3 flex items-center gap-1 text-left', sortBy === 'time' ? 'text-ot-foreground' : 'text-ot-foreground/70'), "aria-label": "Sort by time", "aria-sort": getAriaSort(sortBy, 'time', sortDirection), "data-testid": "feed-header-time", onClick: () => handleSortChange('time'), children: [(0, jsx_runtime_1.jsx)("span", { className: "w-12", children: "Time" }), (0, jsx_runtime_1.jsx)("span", { "aria-hidden": "true", children: sortBy === 'time' ? (sortDirection === 'asc' ? '▲' : '▼') : '' })] }), (0, jsx_runtime_1.jsx)("button", { type: "button", className: (0, utils_1.cn)('mr-3 flex flex-1 items-center gap-1 text-left', sortBy === 'time' ? 'text-ot-foreground' : 'text-ot-foreground/70'), "aria-disabled": "true", "data-testid": "feed-header-event", children: (0, jsx_runtime_1.jsx)("span", { children: "Event" }) }), (0, jsx_runtime_1.jsxs)("button", { type: "button", className: (0, utils_1.cn)('ml-auto flex items-center gap-1 text-right', sortBy === 'roi' ? 'text-ot-foreground' : 'text-ot-foreground/70'), "aria-label": "Sort by ROI", "aria-sort": getAriaSort(sortBy, 'roi', sortDirection), "data-testid": "feed-header-roi", onClick: () => handleSortChange('roi'), children: [(0, jsx_runtime_1.jsx)("span", { className: "w-14", children: "ROI" }), (0, jsx_runtime_1.jsx)("span", { "aria-hidden": "true", children: sortBy === 'roi' ? (sortDirection === 'asc' ? '▲' : '▼') : '' })] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "relative flex-1 overflow-y-auto", "data-testid": "feed-scroll-container", onScroll: handleScroll, children: [totalCount === 0 && ((0, jsx_runtime_1.jsx)("div", { className: "flex h-full items-center justify-center text-[11px] text-ot-foreground/50", children: "No opportunities yet. Configure a provider to start the feed." })), totalCount > 0 && virtualizationEnabled && ((0, jsx_runtime_1.jsx)("div", { style: { height: totalHeight }, children: (0, jsx_runtime_1.jsx)("div", { className: "absolute left-0 right-0", style: { transform: `translateY(${offsetY}px)` }, children: visibleOpportunities.map((opportunity) => ((0, jsx_runtime_1.jsx)(FeedRow, { opportunity: opportunity, stalenessNow: effectiveNow }, opportunity.id))) }) })), totalCount > 0 && !virtualizationEnabled && ((0, jsx_runtime_1.jsx)("div", { children: visibleOpportunities.map((opportunity) => ((0, jsx_runtime_1.jsx)(FeedRow, { opportunity: opportunity, stalenessNow: effectiveNow }, opportunity.id))) }))] })] }));
+    const ensureIndexVisible = React.useCallback((index) => {
+        const container = scrollContainerRef.current;
+        if (!container)
+            return;
+        if (index == null || index < 0 || index >= sorted.length)
+            return;
+        const rowTop = index * ROW_HEIGHT_PX;
+        const rowBottom = rowTop + ROW_HEIGHT_PX;
+        const { scrollTop, clientHeight } = container;
+        let nextScrollTop = scrollTop;
+        if (rowTop < scrollTop) {
+            nextScrollTop = rowTop;
+        }
+        else if (rowBottom > scrollTop + clientHeight) {
+            nextScrollTop = rowBottom - clientHeight;
+        }
+        if (nextScrollTop !== scrollTop) {
+            container.scrollTop = nextScrollTop;
+        }
+    }, [sorted.length]);
+    const handleKeyDown = (event) => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            if (!Array.isArray(sorted) || sorted.length === 0) {
+                return;
+            }
+            event.preventDefault();
+            const offset = event.key === 'ArrowDown' ? 1 : -1;
+            const visibleIds = sorted.map((opportunity) => opportunity.id);
+            moveSelectionByOffset(offset, visibleIds);
+            const { selectedOpportunityIndex: nextIndex } = feedStore_1.useFeedStore.getState();
+            ensureIndexVisible(nextIndex ?? null);
+            return;
+        }
+        if (event.key === 'Enter') {
+            if (!Array.isArray(sorted) || sorted.length === 0) {
+                return;
+            }
+            event.preventDefault();
+            void (0, copyAndAdvance_1.copyAndAdvanceCurrentOpportunity)().then(() => {
+                const { selectedOpportunityIndex: nextIndex } = feedStore_1.useFeedStore.getState();
+                ensureIndexVisible(nextIndex ?? null);
+            });
+        }
+    };
+    return ((0, jsx_runtime_1.jsxs)("div", { className: "flex h-full flex-col", "data-testid": "feed-table", "data-virtualized": virtualizationEnabled ? 'true' : 'false', children: [(0, jsx_runtime_1.jsxs)("div", { className: "mb-2 flex items-center border-b border-white/10 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-foreground/60", children: [(0, jsx_runtime_1.jsxs)("button", { type: "button", className: (0, utils_1.cn)('mr-3 flex items-center gap-1 text-left', sortBy === 'time' ? 'text-ot-foreground' : 'text-ot-foreground/70'), "aria-label": "Sort by time", "aria-sort": getAriaSort(sortBy, 'time', sortDirection), "data-testid": "feed-header-time", onClick: () => handleSortChange('time'), children: [(0, jsx_runtime_1.jsx)("span", { className: "w-12", children: "Time" }), (0, jsx_runtime_1.jsx)("span", { "aria-hidden": "true", children: sortBy === 'time' ? (sortDirection === 'asc' ? '▲' : '▼') : '' })] }), (0, jsx_runtime_1.jsx)("button", { type: "button", className: (0, utils_1.cn)('mr-3 flex flex-1 items-center gap-1 text-left', sortBy === 'time' ? 'text-ot-foreground' : 'text-ot-foreground/70'), "aria-disabled": "true", "data-testid": "feed-header-event", children: (0, jsx_runtime_1.jsx)("span", { children: "Event" }) }), (0, jsx_runtime_1.jsxs)("button", { type: "button", className: (0, utils_1.cn)('ml-auto flex items-center gap-1 text-right', sortBy === 'roi' ? 'text-ot-foreground' : 'text-ot-foreground/70'), "aria-label": "Sort by ROI", "aria-sort": getAriaSort(sortBy, 'roi', sortDirection), "data-testid": "feed-header-roi", onClick: () => handleSortChange('roi'), children: [(0, jsx_runtime_1.jsx)("span", { className: "w-14", children: "ROI" }), (0, jsx_runtime_1.jsx)("span", { "aria-hidden": "true", children: sortBy === 'roi' ? (sortDirection === 'asc' ? '▲' : '▼') : '' })] })] }), (0, jsx_runtime_1.jsxs)("div", { ref: scrollContainerRef, className: "relative flex-1 overflow-y-auto outline-none", "data-testid": "feed-scroll-container", tabIndex: totalCount > 0 ? 0 : -1, role: "listbox", "aria-label": "Arbitrage opportunities", "aria-activedescendant": effectiveSelectedId != null ? `feed-row-${effectiveSelectedId}` : undefined, onKeyDown: handleKeyDown, onScroll: handleScroll, children: [totalCount === 0 && ((0, jsx_runtime_1.jsx)("div", { className: "flex h-full items-center justify-center text-[11px] text-ot-foreground/50", children: "No opportunities yet. Configure a provider to start the feed." })), totalCount > 0 && virtualizationEnabled && ((0, jsx_runtime_1.jsx)("div", { style: { height: totalHeight }, children: (0, jsx_runtime_1.jsx)("div", { className: "absolute left-0 right-0", style: { transform: `translateY(${offsetY}px)` }, children: visibleOpportunities.map((opportunity, index) => {
+                                const rowIndex = startIndex + index;
+                                return ((0, jsx_runtime_1.jsx)(FeedRow, { opportunity: opportunity, stalenessNow: effectiveNow, isSelected: opportunity.id === effectiveSelectedId, onSelect: () => handleRowSelect(opportunity.id, rowIndex) }, opportunity.id));
+                            }) }) })), totalCount > 0 && !virtualizationEnabled && ((0, jsx_runtime_1.jsx)("div", { children: visibleOpportunities.map((opportunity, index) => ((0, jsx_runtime_1.jsx)(FeedRow, { opportunity: opportunity, stalenessNow: effectiveNow, isSelected: opportunity.id === effectiveSelectedId, onSelect: () => handleRowSelect(opportunity.id, index) }, opportunity.id))) }))] })] }));
 }
-function FeedRow({ opportunity, stalenessNow }) {
+function FeedRow({ opportunity, stalenessNow, isSelected, onSelect }) {
     const timeLabel = formatTime(opportunity);
     const eventLabel = opportunity.event.name;
     const roiLabel = formatRoi(opportunity.roi);
     const nowMs = stalenessNow ?? Date.now();
     const { label: stalenessLabel, isStale } = (0, staleness_1.getStalenessInfo)(opportunity, nowMs);
     const combinedTimeLabel = stalenessLabel.length > 0 ? `${timeLabel} · ${stalenessLabel}` : timeLabel;
-    return ((0, jsx_runtime_1.jsxs)("div", { className: (0, utils_1.cn)('flex items-center justify-between border-b border-white/5 py-1.5 text-[11px]', isStale ? 'opacity-50' : ''), "data-testid": "feed-row", "data-staleness": isStale ? 'stale' : 'fresh', children: [(0, jsx_runtime_1.jsx)("div", { className: "w-[72px] shrink-0 text-ot-foreground/70", "data-testid": "feed-cell-time", children: combinedTimeLabel }), (0, jsx_runtime_1.jsx)("div", { className: "mx-2 min-w-0 flex-1 truncate text-ot-foreground", "data-testid": "feed-cell-event", title: eventLabel, children: eventLabel }), (0, jsx_runtime_1.jsx)("div", { className: "w-[64px] shrink-0 text-right font-semibold text-ot-accent", "data-testid": "feed-cell-roi", children: roiLabel })] }));
+    return ((0, jsx_runtime_1.jsxs)("div", { id: `feed-row-${opportunity.id}`, className: (0, utils_1.cn)('flex cursor-pointer items-center justify-between border-b border-white/5 py-1.5 text-[11px]', isStale ? 'opacity-50' : '', isSelected ? 'bg-ot-accent/10' : 'hover:bg-white/5'), "data-testid": "feed-row", "data-staleness": isStale ? 'stale' : 'fresh', "data-state": isSelected ? 'selected' : 'idle', onClick: onSelect, role: "option", "aria-selected": isSelected ? 'true' : 'false', children: [(0, jsx_runtime_1.jsx)("div", { className: "w-[72px] shrink-0 text-ot-foreground/70", "data-testid": "feed-cell-time", children: combinedTimeLabel }), (0, jsx_runtime_1.jsx)("div", { className: "mx-2 min-w-0 flex-1 truncate text-ot-foreground", "data-testid": "feed-cell-event", title: eventLabel, children: eventLabel }), (0, jsx_runtime_1.jsx)("div", { className: "w-[64px] shrink-0 text-right font-semibold text-ot-accent", "data-testid": "feed-cell-roi", children: roiLabel })] }));
 }
 exports.default = FeedTable;

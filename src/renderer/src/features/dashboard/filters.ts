@@ -20,6 +20,12 @@ export interface DashboardFilterState {
   sports: SportFilterValue[]
   markets: MarketFilterValue[]
   /**
+   * When empty, no bookmaker filtering is applied.
+   * When non-empty, only opportunities involving at least one of the selected
+   * bookmakers are shown.
+   */
+  bookmakers: string[]
+  /**
    * Minimum ROI threshold as a decimal (e.g., 0.03 for 3%).
    */
   minRoi: number
@@ -108,14 +114,22 @@ export function applyDashboardFilters(
   const regions = Array.isArray(filters.regions) ? filters.regions : []
   const sports = Array.isArray(filters.sports) ? filters.sports : []
   const markets = Array.isArray(filters.markets) ? filters.markets : []
+  const bookmakers = Array.isArray(filters.bookmakers) ? filters.bookmakers : []
   const minRoi = Number.isFinite(filters.minRoi) && filters.minRoi > 0 ? filters.minRoi : 0
 
   const hasSportFilter = !arraysMatchIgnoringOrder(sports, ALL_SPORT_FILTERS)
   const hasRegionFilter = !arraysMatchIgnoringOrder(regions, ALL_REGION_CODES)
   const hasMarketFilter = !arraysMatchIgnoringOrder(markets, ALL_MARKET_FILTERS)
+  const hasBookmakerFilter = bookmakers.length > 0
   const hasRoiFilter = minRoi > 0
 
-  if (!hasSportFilter && !hasRegionFilter && !hasMarketFilter && !hasRoiFilter) {
+  if (
+    !hasSportFilter &&
+    !hasRegionFilter &&
+    !hasMarketFilter &&
+    !hasBookmakerFilter &&
+    !hasRoiFilter
+  ) {
     return source
   }
 
@@ -134,6 +148,14 @@ export function applyDashboardFilters(
     if (hasMarketFilter) {
       const marketType = inferMarketTypeFromOpportunity(opportunity)
       if (!marketType || !markets.includes(marketType)) {
+        return false
+      }
+    }
+
+    if (hasBookmakerFilter) {
+      const involvedBookmakers = opportunity.legs.map((leg) => leg.bookmaker)
+      const matchesBookmaker = involvedBookmakers.some((name) => bookmakers.includes(name))
+      if (!matchesBookmaker) {
         return false
       }
     }

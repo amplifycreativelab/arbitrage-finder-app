@@ -22,6 +22,10 @@ export const providerIdParamSchema = z.object({
   providerId: providerIdSchema
 })
 
+export const copySignalToClipboardInputSchema = z.object({
+  text: z.string().min(1)
+})
+
 const arbitrageLegSchema = z.object({
   bookmaker: z.string(),
   market: z.string(),

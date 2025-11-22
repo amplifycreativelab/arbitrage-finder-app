@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.arbitrageOpportunityListSchema = exports.arbitrageOpportunitySchema = exports.providerIdParamSchema = exports.setActiveProviderInputSchema = exports.activeProviderSchema = exports.getApiKeyInputSchema = exports.saveApiKeyInputSchema = exports.providerIdSchema = void 0;
+exports.arbitrageOpportunityListSchema = exports.arbitrageOpportunitySchema = exports.copySignalToClipboardInputSchema = exports.providerIdParamSchema = exports.setActiveProviderInputSchema = exports.activeProviderSchema = exports.getApiKeyInputSchema = exports.saveApiKeyInputSchema = exports.providerIdSchema = void 0;
 const zod_1 = require("zod");
 const types_1 = require("./types");
 exports.providerIdSchema = zod_1.z.enum(types_1.PROVIDER_IDS);
@@ -17,6 +17,9 @@ exports.activeProviderSchema = zod_1.z.object({
 exports.setActiveProviderInputSchema = exports.activeProviderSchema;
 exports.providerIdParamSchema = zod_1.z.object({
     providerId: exports.providerIdSchema
+});
+exports.copySignalToClipboardInputSchema = zod_1.z.object({
+    text: zod_1.z.string().min(1)
 });
 const arbitrageLegSchema = zod_1.z.object({
     bookmaker: zod_1.z.string(),

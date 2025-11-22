@@ -1,6 +1,11 @@
 import { initTRPC } from '@trpc/server'
 import { getActiveProviderId, setActiveProviderId } from './storage'
-import { activeProviderSchema, saveApiKeyInputSchema, providerIdParamSchema } from '../../../shared/schemas'
+import {
+  activeProviderSchema,
+  copySignalToClipboardInputSchema,
+  saveApiKeyInputSchema,
+  providerIdParamSchema
+} from '../../../shared/schemas'
 import {
   getDashboardStatusSnapshot,
   getLatestSnapshotForProvider,
@@ -15,6 +20,7 @@ import {
   isProviderConfigured,
   saveApiKey
 } from '../credentials'
+import { copyTextToClipboard } from './clipboard'
 import { OddsApiIoAdapter } from '../adapters/odds-api-io'
 import { TheOddsApiAdapter } from '../adapters/the-odds-api'
 
@@ -82,7 +88,13 @@ export const appRouter = t.router({
       fetchedAt: snapshot.fetchedAt,
       status
     }
-  })
+  }),
+  copySignalToClipboard: t.procedure
+    .input(copySignalToClipboardInputSchema)
+    .mutation(async ({ input }) => {
+      copyTextToClipboard(input.text)
+      return { ok: true }
+    })
 })
 
 export type AppRouter = typeof appRouter

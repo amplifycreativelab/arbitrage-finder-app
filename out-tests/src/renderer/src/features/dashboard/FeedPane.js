@@ -43,11 +43,12 @@ const FeedTable_1 = require("./FeedTable");
 const filters_1 = require("./filters");
 const feedFiltersStore_1 = require("./stores/feedFiltersStore");
 const useStalenessTicker_1 = require("./useStalenessTicker");
+const types_1 = require("../../../../../shared/types");
 const input_1 = require("../../components/ui/input");
 const utils_1 = require("../../lib/utils");
 const StatusBar_1 = __importDefault(require("./StatusBar"));
 const staleness_1 = require("./staleness");
-function FeedFilters({ totalCount, filteredCount }) {
+function FeedFilters({ totalCount, filteredCount, availableBookmakers }) {
     const [filterState, setFilterState] = React.useState(() => feedFiltersStore_1.useFeedFiltersStore.getState());
     React.useEffect(() => {
         const unsubscribe = feedFiltersStore_1.useFeedFiltersStore.subscribe((nextState) => {
@@ -57,7 +58,7 @@ function FeedFilters({ totalCount, filteredCount }) {
             unsubscribe();
         };
     }, []);
-    const { regions, sports, markets, minRoi, toggleRegion, toggleSport, toggleMarket, setMinRoi, resetFilters } = filterState;
+    const { regions, sports, markets, bookmakers, minRoi, toggleRegion, toggleSport, toggleMarket, toggleBookmaker, setMinRoi, resetFilters } = filterState;
     const hasActiveRoi = minRoi > 0;
     const hasNonDefaultRegions = regions.length !== filters_1.ALL_REGION_CODES.length ||
         !filters_1.ALL_REGION_CODES.every((code) => regions.includes(code));
@@ -65,7 +66,12 @@ function FeedFilters({ totalCount, filteredCount }) {
         !filters_1.ALL_SPORT_FILTERS.every((sport) => sports.includes(sport));
     const hasNonDefaultMarkets = markets.length !== filters_1.ALL_MARKET_FILTERS.length ||
         !filters_1.ALL_MARKET_FILTERS.every((market) => markets.includes(market));
-    const hasActiveFilters = hasNonDefaultRegions || hasNonDefaultSports || hasNonDefaultMarkets || hasActiveRoi;
+    const hasBookmakerFilters = Array.isArray(bookmakers) && bookmakers.length > 0;
+    const hasActiveFilters = hasNonDefaultRegions ||
+        hasNonDefaultSports ||
+        hasNonDefaultMarkets ||
+        hasBookmakerFilters ||
+        hasActiveRoi;
     const handleToggleRegion = (region) => {
         toggleRegion(region);
     };
@@ -74,6 +80,9 @@ function FeedFilters({ totalCount, filteredCount }) {
     };
     const handleToggleMarket = (market) => {
         toggleMarket(market);
+    };
+    const handleToggleBookmaker = (bookmaker) => {
+        toggleBookmaker(bookmaker);
     };
     const handleMinRoiChange = (event) => {
         const value = event.target.value.trim();
@@ -94,7 +103,7 @@ function FeedFilters({ totalCount, filteredCount }) {
                 ? 'border-ot-accent bg-ot-accent/20 text-ot-accent'
                 : 'border-white/20 text-ot-foreground/60 hover:border-ot-accent/60 hover:text-ot-accent'), "data-testid": testId, "aria-pressed": active ? 'true' : 'false', onClick: onClick, children: label }, testId));
     };
-    return ((0, jsx_runtime_1.jsxs)("section", { className: "mb-2 space-y-2 border-b border-white/10 pb-2 text-[10px]", "aria-label": "Feed filters", children: [(0, jsx_runtime_1.jsxs)("div", { className: "flex items-center justify-between gap-2", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-foreground/60", children: "Filters" }), (0, jsx_runtime_1.jsxs)("span", { className: "text-[10px] text-ot-foreground/60", children: [filteredCount, " of ", totalCount, " shown"] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap gap-2", children: [(0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Region" }), ['AU', 'UK', 'IT', 'RO'].map((code) => renderFilterChip(code, regions.includes(code), () => handleToggleRegion(code), `feed-filters-region-${code}`))] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Sport" }), ['soccer', 'tennis'].map((sport) => renderFilterChip(sport === 'soccer' ? 'Soccer' : 'Tennis', sports.includes(sport), () => handleToggleSport(sport), `feed-filters-sport-${sport}`))] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Market" }), ['moneyline', 'draw-no-bet', 'totals'].map((market) => renderFilterChip(market === 'moneyline'
+    return ((0, jsx_runtime_1.jsxs)("section", { className: "mb-2 space-y-2 border-b border-white/10 pb-2 text-[10px]", "aria-label": "Feed filters", children: [(0, jsx_runtime_1.jsxs)("div", { className: "flex items-center justify-between gap-2", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-foreground/60", children: "Filters" }), (0, jsx_runtime_1.jsxs)("span", { className: "text-[10px] text-ot-foreground/60", children: [filteredCount, " of ", totalCount, " shown"] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap gap-2", children: [(0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Region" }), ['AU', 'UK', 'IT', 'RO'].map((code) => renderFilterChip(code, regions.includes(code), () => handleToggleRegion(code), `feed-filters-region-${code}`))] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Sport" }), ['soccer', 'tennis'].map((sport) => renderFilterChip(sport === 'soccer' ? 'Soccer' : 'Tennis', sports.includes(sport), () => handleToggleSport(sport), `feed-filters-sport-${sport}`))] }), availableBookmakers.length > 0 && ((0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Bookmaker" }), availableBookmakers.map((name) => renderFilterChip(name, bookmakers.includes(name), () => handleToggleBookmaker(name), `feed-filters-bookmaker-${name.replace(/[^a-zA-Z0-9]/g, '_')}`))] })), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Market" }), ['moneyline', 'draw-no-bet', 'totals'].map((market) => renderFilterChip(market === 'moneyline'
                                 ? 'Moneyline'
                                 : market === 'draw-no-bet'
                                     ? 'Draw No Bet'
@@ -130,11 +139,13 @@ function ProviderFailureBanner({ statusSnapshot, stalenessNow }) {
     if (problematic.length === 0) {
         return null;
     }
-    return ((0, jsx_runtime_1.jsxs)("div", { className: "mb-2 space-y-1 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-2 text-[10px] text-yellow-100", "data-testid": "provider-failure-banner", "aria-label": "Provider health issues", children: [(0, jsx_runtime_1.jsx)("div", { className: "font-semibold uppercase tracking-[0.14em]", children: "Provider issues" }), (0, jsx_runtime_1.jsx)("ul", { className: "space-y-1", children: problematic.map((entry) => ((0, jsx_runtime_1.jsxs)("li", { className: "leading-snug", children: [(0, jsx_runtime_1.jsx)("span", { className: "font-semibold", children: entry.providerId }), (0, jsx_runtime_1.jsxs)("span", { className: "mx-1", children: ["- ", entry.status] }), (0, jsx_runtime_1.jsxs)("span", { className: "mx-1", children: ["Last success: ", formatLastSuccess(entry.lastSuccessfulFetchAt, stalenessNow)] }), (0, jsx_runtime_1.jsxs)("span", { className: "block text-[9px] text-yellow-200/90", children: ["Recommended action: ", getProviderRecommendedAction(entry.status)] })] }, entry.providerId))) })] }));
+    const providerLabelById = new Map(types_1.PROVIDERS.map((provider) => [provider.id, provider.displayName]));
+    return ((0, jsx_runtime_1.jsxs)("div", { className: "mb-2 space-y-1 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-2 text-[10px] text-yellow-100", "data-testid": "provider-failure-banner", "aria-label": "Provider health issues", children: [(0, jsx_runtime_1.jsx)("div", { className: "font-semibold uppercase tracking-[0.14em]", children: "Provider issues" }), (0, jsx_runtime_1.jsx)("ul", { className: "space-y-1", children: problematic.map((entry) => ((0, jsx_runtime_1.jsxs)("li", { className: "leading-snug", children: [(0, jsx_runtime_1.jsx)("span", { className: "font-semibold", children: providerLabelById.get(entry.providerId) ?? entry.providerId }), (0, jsx_runtime_1.jsxs)("span", { className: "mx-1", children: ["- ", entry.status] }), (0, jsx_runtime_1.jsxs)("span", { className: "mx-1", children: ["Last success: ", formatLastSuccess(entry.lastSuccessfulFetchAt, stalenessNow)] }), (0, jsx_runtime_1.jsxs)("span", { className: "block text-[9px] text-yellow-200/90", children: ["Recommended action: ", getProviderRecommendedAction(entry.status)] })] }, entry.providerId))) })] }));
 }
 function FeedPane() {
     const [feedState, setFeedState] = React.useState(() => feedStore_1.useFeedStore.getState());
     const refreshSnapshot = (0, feedStore_1.useFeedStore)((state) => state.refreshSnapshot);
+    const syncSelectionWithVisibleIds = (0, feedStore_1.useFeedStore)((state) => state.syncSelectionWithVisibleIds);
     React.useEffect(() => {
         const unsubscribe = feedStore_1.useFeedStore.subscribe((nextState) => {
             setFeedState(nextState);
@@ -153,18 +164,47 @@ function FeedPane() {
             unsubscribeFilters();
         };
     }, []);
-    const { regions, sports, markets, minRoi } = filterStateForTable;
+    const { regions, sports, markets, bookmakers, minRoi } = filterStateForTable;
     const stalenessNow = (0, useStalenessTicker_1.useStalenessTicker)();
     React.useEffect(() => {
         void refreshSnapshot();
     }, [refreshSnapshot]);
     const safeOpportunities = Array.isArray(opportunities) ? opportunities : [];
+    const availableBookmakersForRegions = React.useMemo(() => {
+        const seen = new Set();
+        const result = [];
+        const hasRegionFilter = regions.length !== filters_1.ALL_REGION_CODES.length ||
+            !filters_1.ALL_REGION_CODES.every((code) => regions.includes(code));
+        for (const opportunity of safeOpportunities) {
+            const region = (0, filters_1.inferRegionFromOpportunity)(opportunity);
+            if (hasRegionFilter) {
+                if (!region || !regions.includes(region)) {
+                    continue;
+                }
+            }
+            for (const leg of opportunity.legs) {
+                const name = leg.bookmaker;
+                if (!seen.has(name)) {
+                    seen.add(name);
+                    result.push(name);
+                }
+            }
+        }
+        return result.sort((a, b) => a.localeCompare(b));
+    }, [safeOpportunities, regions]);
     const filteredOpportunities = React.useMemo(() => (0, filters_1.applyDashboardFilters)(safeOpportunities, {
         regions,
         sports,
         markets,
+        bookmakers,
         minRoi
-    }), [safeOpportunities, regions, sports, markets, minRoi]);
+    }), [safeOpportunities, regions, sports, markets, bookmakers, minRoi]);
+    React.useEffect(() => {
+        const visibleIds = Array.isArray(filteredOpportunities)
+            ? filteredOpportunities.map((opportunity) => opportunity.id)
+            : [];
+        syncSelectionWithVisibleIds(visibleIds);
+    }, [filteredOpportunities, syncSelectionWithVisibleIds]);
     const totalCount = safeOpportunities.length;
     const filteredCount = Array.isArray(filteredOpportunities)
         ? filteredOpportunities.length
@@ -202,6 +242,6 @@ function FeedPane() {
     else {
         content = (0, jsx_runtime_1.jsx)(FeedTable_1.FeedTable, { opportunities: filteredOpportunities, stalenessNow: stalenessNow });
     }
-    return ((0, jsx_runtime_1.jsxs)("div", { className: "flex h-full flex-col", children: [(0, jsx_runtime_1.jsx)(StatusBar_1.default, { stalenessNow: stalenessNow, statusSnapshot: status ?? null, fetchedAt: fetchedAt }), (0, jsx_runtime_1.jsx)(ProviderFailureBanner, { statusSnapshot: status ?? null, stalenessNow: stalenessNow }), (0, jsx_runtime_1.jsx)(FeedFilters, { totalCount: totalCount, filteredCount: filteredCount }), (0, jsx_runtime_1.jsx)("div", { className: "flex-1", children: content })] }));
+    return ((0, jsx_runtime_1.jsxs)("div", { className: "flex h-full flex-col", children: [(0, jsx_runtime_1.jsx)(StatusBar_1.default, { stalenessNow: stalenessNow, statusSnapshot: status ?? null, fetchedAt: fetchedAt }), (0, jsx_runtime_1.jsx)(ProviderFailureBanner, { statusSnapshot: status ?? null, stalenessNow: stalenessNow }), (0, jsx_runtime_1.jsx)(FeedFilters, { totalCount: totalCount, filteredCount: filteredCount, availableBookmakers: availableBookmakersForRegions }), (0, jsx_runtime_1.jsx)("div", { className: "flex-1", children: content })] }));
 }
 exports.default = FeedPane;

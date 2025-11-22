@@ -66,12 +66,18 @@ function applyDashboardFilters(opportunities, filters) {
     const regions = Array.isArray(filters.regions) ? filters.regions : [];
     const sports = Array.isArray(filters.sports) ? filters.sports : [];
     const markets = Array.isArray(filters.markets) ? filters.markets : [];
+    const bookmakers = Array.isArray(filters.bookmakers) ? filters.bookmakers : [];
     const minRoi = Number.isFinite(filters.minRoi) && filters.minRoi > 0 ? filters.minRoi : 0;
     const hasSportFilter = !arraysMatchIgnoringOrder(sports, exports.ALL_SPORT_FILTERS);
     const hasRegionFilter = !arraysMatchIgnoringOrder(regions, exports.ALL_REGION_CODES);
     const hasMarketFilter = !arraysMatchIgnoringOrder(markets, exports.ALL_MARKET_FILTERS);
+    const hasBookmakerFilter = bookmakers.length > 0;
     const hasRoiFilter = minRoi > 0;
-    if (!hasSportFilter && !hasRegionFilter && !hasMarketFilter && !hasRoiFilter) {
+    if (!hasSportFilter &&
+        !hasRegionFilter &&
+        !hasMarketFilter &&
+        !hasBookmakerFilter &&
+        !hasRoiFilter) {
         return source;
     }
     return source.filter((opportunity) => {
@@ -87,6 +93,13 @@ function applyDashboardFilters(opportunities, filters) {
         if (hasMarketFilter) {
             const marketType = inferMarketTypeFromOpportunity(opportunity);
             if (!marketType || !markets.includes(marketType)) {
+                return false;
+            }
+        }
+        if (hasBookmakerFilter) {
+            const involvedBookmakers = opportunity.legs.map((leg) => leg.bookmaker);
+            const matchesBookmaker = involvedBookmakers.some((name) => bookmakers.includes(name));
+            if (!matchesBookmaker) {
                 return false;
             }
         }

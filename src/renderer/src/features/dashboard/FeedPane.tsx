@@ -6,7 +6,8 @@ import {
   ALL_MARKET_FILTERS,
   ALL_REGION_CODES,
   ALL_SPORT_FILTERS,
-  applyDashboardFilters
+  applyDashboardFilters,
+  inferRegionFromOpportunity
 } from './filters'
 import { useFeedFiltersStore } from './stores/feedFiltersStore'
 import { useStalenessTicker } from './useStalenessTicker'
@@ -29,7 +30,15 @@ interface FeedFiltersProps {
   filteredCount: number
 }
 
-function FeedFilters({ totalCount, filteredCount }: FeedFiltersProps): React.JSX.Element {
+interface FeedFiltersPropsInternal extends FeedFiltersProps {
+  availableBookmakers: string[]
+}
+
+function FeedFilters({
+  totalCount,
+  filteredCount,
+  availableBookmakers
+}: FeedFiltersPropsInternal): React.JSX.Element {
   const [filterState, setFilterState] = React.useState(() => useFeedFiltersStore.getState())
 
   React.useEffect(() => {
@@ -46,10 +55,12 @@ function FeedFilters({ totalCount, filteredCount }: FeedFiltersProps): React.JSX
     regions,
     sports,
     markets,
+    bookmakers,
     minRoi,
     toggleRegion,
     toggleSport,
     toggleMarket,
+    toggleBookmaker,
     setMinRoi,
     resetFilters
   } = filterState
@@ -64,9 +75,14 @@ function FeedFilters({ totalCount, filteredCount }: FeedFiltersProps): React.JSX
   const hasNonDefaultMarkets =
     markets.length !== ALL_MARKET_FILTERS.length ||
     !ALL_MARKET_FILTERS.every((market) => markets.includes(market))
+  const hasBookmakerFilters = Array.isArray(bookmakers) && bookmakers.length > 0
 
   const hasActiveFilters =
-    hasNonDefaultRegions || hasNonDefaultSports || hasNonDefaultMarkets || hasActiveRoi
+    hasNonDefaultRegions ||
+    hasNonDefaultSports ||
+    hasNonDefaultMarkets ||
+    hasBookmakerFilters ||
+    hasActiveRoi
 
   const handleToggleRegion = (region: RegionCode): void => {
     toggleRegion(region)
@@ -78,6 +94,10 @@ function FeedFilters({ totalCount, filteredCount }: FeedFiltersProps): React.JSX
 
   const handleToggleMarket = (market: MarketFilterValue): void => {
     toggleMarket(market)
+  }
+
+  const handleToggleBookmaker = (bookmaker: string): void => {
+    toggleBookmaker(bookmaker)
   }
 
   const handleMinRoiChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
@@ -163,6 +183,20 @@ function FeedFilters({ totalCount, filteredCount }: FeedFiltersProps): React.JSX
             )
           )}
         </div>
+
+        {availableBookmakers.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-[10px] text-ot-foreground/60">Bookmaker</span>
+            {availableBookmakers.map((name) =>
+              renderFilterChip(
+                name,
+                bookmakers.includes(name),
+                () => handleToggleBookmaker(name),
+                `feed-filters-bookmaker-${name.replace(/[^a-zA-Z0-9]/g, '_')}`
+              )
+            )}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-1">
           <span className="text-[10px] text-ot-foreground/60">Market</span>
@@ -295,6 +329,9 @@ function ProviderFailureBanner({
 function FeedPane(): React.JSX.Element {
   const [feedState, setFeedState] = React.useState(() => useFeedStore.getState())
   const refreshSnapshot = useFeedStore((state) => state.refreshSnapshot)
+  const syncSelectionWithVisibleIds = useFeedStore(
+    (state) => state.syncSelectionWithVisibleIds
+  )
 
   React.useEffect(() => {
     const unsubscribe = useFeedStore.subscribe((nextState) => {
@@ -321,7 +358,7 @@ function FeedPane(): React.JSX.Element {
     }
   }, [])
 
-  const { regions, sports, markets, minRoi } = filterStateForTable
+  const { regions, sports, markets, bookmakers, minRoi } = filterStateForTable
   const stalenessNow = useStalenessTicker()
 
   React.useEffect(() => {
@@ -330,16 +367,54 @@ function FeedPane(): React.JSX.Element {
 
   const safeOpportunities = Array.isArray(opportunities) ? opportunities : []
 
+  const availableBookmakersForRegions = React.useMemo(() => {
+    const seen = new Set<string>()
+    const result: string[] = []
+
+    const hasRegionFilter =
+      regions.length !== ALL_REGION_CODES.length ||
+      !ALL_REGION_CODES.every((code) => regions.includes(code))
+
+    for (const opportunity of safeOpportunities) {
+      const region = inferRegionFromOpportunity(opportunity)
+
+      if (hasRegionFilter) {
+        if (!region || !regions.includes(region)) {
+          continue
+        }
+      }
+
+      for (const leg of opportunity.legs) {
+        const name = leg.bookmaker
+        if (!seen.has(name)) {
+          seen.add(name)
+          result.push(name)
+        }
+      }
+    }
+
+    return result.sort((a, b) => a.localeCompare(b))
+  }, [safeOpportunities, regions])
+
   const filteredOpportunities = React.useMemo(
     () =>
       applyDashboardFilters(safeOpportunities, {
         regions,
         sports,
         markets,
+        bookmakers,
         minRoi
       }),
-    [safeOpportunities, regions, sports, markets, minRoi]
+    [safeOpportunities, regions, sports, markets, bookmakers, minRoi]
   )
+
+  React.useEffect(() => {
+    const visibleIds = Array.isArray(filteredOpportunities)
+      ? filteredOpportunities.map((opportunity) => opportunity.id)
+      : []
+
+    syncSelectionWithVisibleIds(visibleIds)
+  }, [filteredOpportunities, syncSelectionWithVisibleIds])
 
   const totalCount = safeOpportunities.length
   const filteredCount = Array.isArray(filteredOpportunities)
@@ -435,7 +510,11 @@ function FeedPane(): React.JSX.Element {
     <div className="flex h-full flex-col">
       <StatusBar stalenessNow={stalenessNow} statusSnapshot={status ?? null} fetchedAt={fetchedAt} />
       <ProviderFailureBanner statusSnapshot={status ?? null} stalenessNow={stalenessNow} />
-      <FeedFilters totalCount={totalCount} filteredCount={filteredCount} />
+      <FeedFilters
+        totalCount={totalCount}
+        filteredCount={filteredCount}
+        availableBookmakers={availableBookmakersForRegions}
+      />
       <div className="flex-1">{content}</div>
     </div>
   )

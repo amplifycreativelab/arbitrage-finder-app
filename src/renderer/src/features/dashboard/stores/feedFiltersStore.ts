@@ -49,10 +49,12 @@ export interface FeedFiltersState extends DashboardFilterState {
   setRegions: (regions: RegionCode[]) => void
   setSports: (sports: SportFilterValue[]) => void
   setMarkets: (markets: MarketFilterValue[]) => void
+  setBookmakers: (bookmakers: string[]) => void
   setMinRoi: (minRoi: number) => void
   toggleRegion: (region: RegionCode) => void
   toggleSport: (sport: SportFilterValue) => void
   toggleMarket: (market: MarketFilterValue) => void
+  toggleBookmaker: (bookmaker: string) => void
   resetFilters: () => void
 }
 
@@ -60,6 +62,7 @@ const defaultState: DashboardFilterState = {
   regions: ALL_REGION_CODES,
   sports: ALL_SPORT_FILTERS,
   markets: ALL_MARKET_FILTERS,
+  bookmakers: [],
   minRoi: 0
 }
 
@@ -80,6 +83,11 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
       setMarkets: (markets: MarketFilterValue[]) => {
         set({
           markets: [...markets]
+        })
+      },
+      setBookmakers: (bookmakers: string[]) => {
+        set({
+          bookmakers: [...bookmakers]
         })
       },
       setMinRoi: (minRoi: number) => {
@@ -123,6 +131,18 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
           })
         }
       },
+      toggleBookmaker: (bookmaker: string) => {
+        const { bookmakers } = get()
+        if (bookmakers.includes(bookmaker)) {
+          set({
+            bookmakers: bookmakers.filter((value) => value !== bookmaker)
+          })
+        } else {
+          set({
+            bookmakers: [...bookmakers, bookmaker]
+          })
+        }
+      },
       resetFilters: () => {
         set({
           ...defaultState
@@ -136,6 +156,7 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
         regions: state.regions,
         sports: state.sports,
         markets: state.markets,
+        bookmakers: state.bookmakers,
         minRoi: state.minRoi
       })
     }
