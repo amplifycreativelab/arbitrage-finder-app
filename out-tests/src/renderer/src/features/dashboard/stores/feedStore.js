@@ -6,6 +6,7 @@ const trpc_1 = require("../../../lib/trpc");
 exports.useFeedStore = (0, zustand_1.create)((set, get) => ({
     opportunities: [],
     fetchedAt: null,
+    status: null,
     isLoading: false,
     error: null,
     sortBy: 'time',
@@ -27,7 +28,8 @@ exports.useFeedStore = (0, zustand_1.create)((set, get) => ({
     setSnapshot: (snapshot) => {
         set({
             opportunities: snapshot.opportunities ?? [],
-            fetchedAt: snapshot.fetchedAt
+            fetchedAt: snapshot.fetchedAt,
+            status: snapshot.status
         });
     },
     refreshSnapshot: async () => {
@@ -40,6 +42,7 @@ exports.useFeedStore = (0, zustand_1.create)((set, get) => ({
             set({
                 opportunities: result.opportunities,
                 fetchedAt: result.fetchedAt,
+                status: result.status ?? null,
                 isLoading: false,
                 error: null
             });

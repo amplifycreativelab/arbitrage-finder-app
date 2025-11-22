@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-import type { ArbitrageOpportunity } from '../../../../../../shared/types'
+import type { ArbitrageOpportunity, DashboardStatusSnapshot } from '../../../../../../shared/types'
 import { trpcClient } from '../../../lib/trpc'
 
 export type FeedSortKey = 'time' | 'roi'
@@ -9,11 +9,13 @@ export type FeedSortDirection = 'asc' | 'desc'
 export interface FeedSnapshot {
   opportunities: ArbitrageOpportunity[]
   fetchedAt: string | null
+  status: DashboardStatusSnapshot | null
 }
 
 interface FeedState {
   opportunities: ArbitrageOpportunity[]
   fetchedAt: string | null
+  status: DashboardStatusSnapshot | null
   isLoading: boolean
   error: string | null
   sortBy: FeedSortKey
@@ -26,6 +28,7 @@ interface FeedState {
 export const useFeedStore = create<FeedState>((set, get) => ({
   opportunities: [],
   fetchedAt: null,
+  status: null,
   isLoading: false,
   error: null,
   sortBy: 'time',
@@ -49,7 +52,8 @@ export const useFeedStore = create<FeedState>((set, get) => ({
   setSnapshot: (snapshot: FeedSnapshot) => {
     set({
       opportunities: snapshot.opportunities ?? [],
-      fetchedAt: snapshot.fetchedAt
+      fetchedAt: snapshot.fetchedAt,
+      status: snapshot.status
     })
   },
   refreshSnapshot: async () => {
@@ -64,6 +68,7 @@ export const useFeedStore = create<FeedState>((set, get) => ({
       set({
         opportunities: result.opportunities,
         fetchedAt: result.fetchedAt,
+        status: result.status ?? null,
         isLoading: false,
         error: null
       })

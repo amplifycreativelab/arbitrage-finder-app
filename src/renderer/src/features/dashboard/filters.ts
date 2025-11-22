@@ -1,0 +1,147 @@
+import type { ArbitrageOpportunity } from '../../../../../shared/types'
+import type { RegionCode } from '../../../../../shared/filters'
+
+export type SportFilterValue = 'soccer' | 'tennis'
+
+export type MarketFilterValue = 'moneyline' | 'draw-no-bet' | 'totals'
+
+export const ALL_REGION_CODES: RegionCode[] = ['AU', 'UK', 'IT', 'RO']
+
+export const ALL_SPORT_FILTERS: SportFilterValue[] = ['soccer', 'tennis']
+
+export const ALL_MARKET_FILTERS: MarketFilterValue[] = [
+  'moneyline',
+  'draw-no-bet',
+  'totals'
+]
+
+export interface DashboardFilterState {
+  regions: RegionCode[]
+  sports: SportFilterValue[]
+  markets: MarketFilterValue[]
+  /**
+   * Minimum ROI threshold as a decimal (e.g., 0.03 for 3%).
+   */
+  minRoi: number
+}
+
+function normalizeLeague(value: string | undefined | null): string {
+  return (value ?? '').toLowerCase()
+}
+
+export function inferRegionFromOpportunity(
+  opportunity: ArbitrageOpportunity
+): RegionCode | null {
+  const league = normalizeLeague(opportunity.event.league)
+
+  if (!league) {
+    return null
+  }
+
+  if (league.includes('serie a') || league.includes('serie b') || league.includes('coppa italia')) {
+    return 'IT'
+  }
+
+  if (
+    league.includes('wimbledon') ||
+    league.includes('premier league') ||
+    league.includes('championship') ||
+    league.includes('england')
+  ) {
+    return 'UK'
+  }
+
+  if (league.includes('a-league') || league.includes('a league') || league.includes('australia')) {
+    return 'AU'
+  }
+
+  if (
+    league.includes('liga i') ||
+    league.includes('liga 1') ||
+    league.includes('romania')
+  ) {
+    return 'RO'
+  }
+
+  return null
+}
+
+export function inferMarketTypeFromOpportunity(
+  opportunity: ArbitrageOpportunity
+): MarketFilterValue | null {
+  const primaryMarket = opportunity.legs[0]?.market ?? ''
+  const normalized = primaryMarket.toLowerCase()
+
+  if (normalized === 'moneyline' || normalized === 'match-winner' || normalized === 'h2h') {
+    return 'moneyline'
+  }
+
+  if (
+    normalized === 'draw-no-bet' ||
+    normalized === 'draw no bet' ||
+    normalized === 'dnb'
+  ) {
+    return 'draw-no-bet'
+  }
+
+  if (
+    normalized === 'totals' ||
+    normalized === 'over/under' ||
+    normalized === 'over_under'
+  ) {
+    return 'totals'
+  }
+
+  return null
+}
+
+function arraysMatchIgnoringOrder<T>(a: readonly T[], b: readonly T[]): boolean {
+  if (a.length !== b.length) return false
+  return b.every((value) => a.includes(value))
+}
+
+export function applyDashboardFilters(
+  opportunities: ArbitrageOpportunity[] | undefined | null,
+  filters: DashboardFilterState
+): ArbitrageOpportunity[] {
+  const source = Array.isArray(opportunities) ? opportunities : []
+  const regions = Array.isArray(filters.regions) ? filters.regions : []
+  const sports = Array.isArray(filters.sports) ? filters.sports : []
+  const markets = Array.isArray(filters.markets) ? filters.markets : []
+  const minRoi = Number.isFinite(filters.minRoi) && filters.minRoi > 0 ? filters.minRoi : 0
+
+  const hasSportFilter = !arraysMatchIgnoringOrder(sports, ALL_SPORT_FILTERS)
+  const hasRegionFilter = !arraysMatchIgnoringOrder(regions, ALL_REGION_CODES)
+  const hasMarketFilter = !arraysMatchIgnoringOrder(markets, ALL_MARKET_FILTERS)
+  const hasRoiFilter = minRoi > 0
+
+  if (!hasSportFilter && !hasRegionFilter && !hasMarketFilter && !hasRoiFilter) {
+    return source
+  }
+
+  return source.filter((opportunity) => {
+    if (hasSportFilter && !sports.includes(opportunity.sport as SportFilterValue)) {
+      return false
+    }
+
+    if (hasRegionFilter) {
+      const region = inferRegionFromOpportunity(opportunity)
+      if (!region || !regions.includes(region)) {
+        return false
+      }
+    }
+
+    if (hasMarketFilter) {
+      const marketType = inferMarketTypeFromOpportunity(opportunity)
+      if (!marketType || !markets.includes(marketType)) {
+        return false
+      }
+    }
+
+    if (hasRoiFilter && opportunity.roi < minRoi) {
+      return false
+    }
+
+    return true
+  })
+}

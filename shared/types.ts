@@ -2,6 +2,22 @@ export const PROVIDER_IDS = ['odds-api-io', 'the-odds-api'] as const
 
 export type ProviderId = (typeof PROVIDER_IDS)[number]
 
+export type SystemStatus = 'OK' | 'Degraded' | 'Error' | 'Stale'
+
+export type ProviderStatus = 'OK' | 'Degraded' | 'Down' | 'QuotaLimited' | 'ConfigMissing'
+
+export interface ProviderStatusSummary {
+  providerId: ProviderId
+  status: ProviderStatus
+  lastSuccessfulFetchAt: string | null
+}
+
+export interface DashboardStatusSnapshot {
+  systemStatus: SystemStatus
+  providers: ProviderStatusSummary[]
+  lastUpdatedAt: string | null
+}
+
 export interface ArbitrageOpportunity {
   id: string
   sport: string

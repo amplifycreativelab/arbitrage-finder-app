@@ -189,3 +189,61 @@ test('[P1][3.3-STALENESS-003] staleness threshold treats rows under 5 minutes as
     'Expected row older than 5 minutes to be treated as stale'
   );
 });
+
+test('[P1][3.3-STALENESS-004] staleness labels can be updated over a tick without triggering network calls', () => {
+  const opportunity = createOpportunity('timer-1', {
+    foundAt: '2025-11-22T18:00:00Z'
+  });
+
+  const initialNow = Date.parse('2025-11-22T18:04:00Z');
+  const laterNow = initialNow + 60 * 1000;
+
+  let fetchCalled = false;
+  const originalFetch = global.fetch;
+  global.fetch = function wrappedFetch() {
+    fetchCalled = true;
+    throw new Error('Network calls are not expected during staleness label updates');
+  };
+
+  try {
+    const htmlInitial = renderToHtml(
+      React.createElement(FeedTable, {
+        opportunities: [opportunity],
+        initialSortBy: 'time',
+        initialSortDirection: 'asc',
+        stalenessNow: initialNow
+      })
+    );
+
+    const htmlLater = renderToHtml(
+      React.createElement(FeedTable, {
+        opportunities: [opportunity],
+        initialSortBy: 'time',
+        initialSortDirection: 'asc',
+        stalenessNow: laterNow
+      })
+    );
+
+    const initialLabel = extractFirstTimeCellLabel(htmlInitial);
+    const laterLabel = extractFirstTimeCellLabel(htmlLater);
+
+    assert.notStrictEqual(
+      initialLabel,
+      laterLabel,
+      'Expected staleness label to change after advancing the effective clock tick'
+    );
+
+    assert.ok(
+      laterLabel.includes('5m') || laterLabel.includes('5m+'),
+      'Expected later label to reflect stale state (around 5 minutes) after advancing the tick'
+    );
+
+    assert.strictEqual(
+      fetchCalled,
+      false,
+      'Expected no network calls while recomputing staleness labels for a later tick'
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

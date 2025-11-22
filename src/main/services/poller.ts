@@ -1,7 +1,15 @@
 import Bottleneck from 'bottleneck'
-import type { ArbitrageAdapter, ArbitrageOpportunity, ProviderId } from '../../../shared/types'
+import type {
+  ArbitrageAdapter,
+  ArbitrageOpportunity,
+  DashboardStatusSnapshot,
+  ProviderId,
+  ProviderStatus,
+  SystemStatus
+} from '../../../shared/types'
 import { arbitrageOpportunityListSchema } from '../../../shared/schemas'
 import { createCorrelationId, logHeartbeat, logWarn, type StructuredLogBase } from './logger'
+import { isProviderConfigured } from '../credentials'
 
 /**
  * Rate limit parameters derived from PRD FR8 (5,000 req/hour) and Architecture R-001 (NFR1).
@@ -41,6 +49,11 @@ const limiterByProvider = new Map<ProviderId, Bottleneck>()
 const backoffByProvider: Partial<Record<ProviderId, BackoffState>> = {}
 const providerStatus: Partial<Record<ProviderId, ProviderQuotaStatus>> = {}
 let currentCorrelationId: string | null = null
+const lastProviderErrorTimestampByProviderId: Partial<Record<ProviderId, string>> = {}
+const lastProviderErrorCategoryByProviderId: Partial<
+  Record<ProviderId, StructuredLogBase['errorCategory'] | null>
+> = {}
+let lastSystemErrorTimestamp: string | null = null
 
 const BASE_BACKOFF_MS = 1000
 const MAX_BACKOFF_MS = 15000
@@ -99,6 +112,24 @@ function computeBackoffMs(consecutive429s: number): number {
   const base = BASE_BACKOFF_MS * Math.pow(2, exponent)
   const jitter = Math.floor(Math.random() * JITTER_MS)
   return Math.min(MAX_BACKOFF_MS, base + jitter)
+}
+
+function markErrorForStatus(
+  providerId: ProviderId,
+  category: StructuredLogBase['errorCategory'] | null,
+  _error: unknown
+): void {
+  const nowIso = new Date().toISOString()
+
+  if (category === 'ProviderError') {
+    lastProviderErrorTimestampByProviderId[providerId] = nowIso
+    lastProviderErrorCategoryByProviderId[providerId] = category
+  } else if (category === 'SystemError') {
+    lastSystemErrorTimestamp = nowIso
+  }
+
+  // For other categories (UserError, InfrastructureError, null) we do not
+  // currently feed into the status model.
 }
 
 async function dropQueuedJobsAndResetLimiter(providerId: ProviderId): Promise<void> {
@@ -345,6 +376,7 @@ export async function pollOnceForActiveProvider(): Promise<ArbitrageOpportunity[
     }
 
     errorMessage = (error as Error)?.message ?? 'pollOnceForActiveProvider error'
+    markErrorForStatus(providerId, errorCategory, error)
     throw error
   } finally {
     currentCorrelationId = null
@@ -369,7 +401,7 @@ export async function pollOnceForActiveProvider(): Promise<ArbitrageOpportunity[
       return ageMs > staleThresholdMs
     })
 
-    let systemStatus: 'OK' | 'Degraded' | 'Error' | 'Stale' = 'OK'
+    let systemStatus: SystemStatus = 'OK'
 
     if (!success && errorCategory === 'SystemError') {
       systemStatus = 'Error'
@@ -406,6 +438,88 @@ export function getLatestSnapshotForProvider(
   return {
     opportunities: latestSnapshotByProviderId[providerId] ?? [],
     fetchedAt: latestSnapshotTimestampByProviderId[providerId] ?? null
+  }
+}
+
+export async function getDashboardStatusSnapshot(): Promise<DashboardStatusSnapshot> {
+  const providerIds: ProviderId[] = ['odds-api-io', 'the-odds-api']
+  const now = Date.now()
+  const staleThresholdMs = 5 * 60 * 1000
+
+  const providers: DashboardStatusSnapshot['providers'] = []
+
+  let hasQuotaOrDegraded = false
+  let hasStaleProvider = false
+
+  for (const providerId of providerIds) {
+    const quotaStatus = getProviderQuotaStatus(providerId)
+    const lastSuccessfulFetchAt = latestSnapshotTimestampByProviderId[providerId] ?? null
+    const lastErrorAt = lastProviderErrorTimestampByProviderId[providerId] ?? null
+    const isConfigured = await isProviderConfigured(providerId)
+
+    const lastSuccessMs =
+      lastSuccessfulFetchAt !== null ? new Date(lastSuccessfulFetchAt).getTime() : null
+    const isStale = lastSuccessMs !== null && now - lastSuccessMs > staleThresholdMs
+
+    if (isStale) {
+      hasStaleProvider = true
+    }
+
+    let providerStatusResolved: ProviderStatus = 'OK'
+
+    if (!isConfigured) {
+      providerStatusResolved = 'ConfigMissing'
+    } else if (quotaStatus === 'QuotaLimited') {
+      providerStatusResolved = 'QuotaLimited'
+      hasQuotaOrDegraded = true
+    } else if (quotaStatus === 'Degraded') {
+      providerStatusResolved = 'Degraded'
+      hasQuotaOrDegraded = true
+    } else if (
+      lastErrorAt &&
+      lastProviderErrorCategoryByProviderId[providerId] === 'ProviderError' &&
+      now - new Date(lastErrorAt).getTime() <= staleThresholdMs
+    ) {
+      providerStatusResolved = 'Down'
+    }
+
+    providers.push({
+      providerId,
+      status: providerStatusResolved,
+      lastSuccessfulFetchAt
+    })
+  }
+
+  let systemStatus: SystemStatus = 'OK'
+
+  const hasRecentSystemError =
+    lastSystemErrorTimestamp !== null &&
+    now - new Date(lastSystemErrorTimestamp).getTime() <= staleThresholdMs
+
+  if (hasRecentSystemError) {
+    systemStatus = 'Error'
+  } else if (hasQuotaOrDegraded) {
+    systemStatus = 'Degraded'
+  } else if (hasStaleProvider) {
+    systemStatus = 'Stale'
+  }
+
+  const lastUpdatedAt = (() => {
+    const timestamps = providers
+      .map((provider) => provider.lastSuccessfulFetchAt)
+      .filter((value): value is string => typeof value === 'string')
+
+    if (timestamps.length === 0) {
+      return null
+    }
+
+    return timestamps.reduce((latest, ts) => (ts > latest ? ts : latest))
+  })()
+
+  return {
+    systemStatus,
+    providers,
+    lastUpdatedAt
   }
 }
 

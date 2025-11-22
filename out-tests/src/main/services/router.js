@@ -47,20 +47,24 @@ exports.appRouter = t.router({
     getFeedSnapshot: t.procedure.query(async () => {
         const providerId = (0, storage_1.getActiveProviderId)();
         const snapshot = (0, poller_1.getLatestSnapshotForProvider)(providerId);
+        const status = await (0, poller_1.getDashboardStatusSnapshot)();
         return {
             providerId,
             opportunities: snapshot.opportunities,
-            fetchedAt: snapshot.fetchedAt
+            fetchedAt: snapshot.fetchedAt,
+            status
         };
     }),
     pollAndGetFeedSnapshot: t.procedure.mutation(async () => {
         const providerId = (0, storage_1.getActiveProviderId)();
         await (0, poller_1.pollOnceForActiveProvider)();
         const snapshot = (0, poller_1.getLatestSnapshotForProvider)(providerId);
+        const status = await (0, poller_1.getDashboardStatusSnapshot)();
         return {
             providerId,
             opportunities: snapshot.opportunities,
-            fetchedAt: snapshot.fetchedAt
+            fetchedAt: snapshot.fetchedAt,
+            status
         };
     })
 });

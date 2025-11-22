@@ -14,9 +14,11 @@ exports.getActiveProviderForPolling = getActiveProviderForPolling;
 exports.getRegisteredAdapter = getRegisteredAdapter;
 exports.pollOnceForActiveProvider = pollOnceForActiveProvider;
 exports.getLatestSnapshotForProvider = getLatestSnapshotForProvider;
+exports.getDashboardStatusSnapshot = getDashboardStatusSnapshot;
 const bottleneck_1 = __importDefault(require("bottleneck"));
 const schemas_1 = require("../../../shared/schemas");
 const logger_1 = require("./logger");
+const credentials_1 = require("../credentials");
 const PRD_REQUESTS_PER_HOUR = 5000;
 const DEFAULT_LIMITER_CONFIG = {
     minTime: 720, // 3600s / 5000 req => ~0.72s spacing (FR8, NFR1)
@@ -33,6 +35,9 @@ const limiterByProvider = new Map();
 const backoffByProvider = {};
 const providerStatus = {};
 let currentCorrelationId = null;
+const lastProviderErrorTimestampByProviderId = {};
+const lastProviderErrorCategoryByProviderId = {};
+let lastSystemErrorTimestamp = null;
 const BASE_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 15000;
 const JITTER_MS = 300;
@@ -81,6 +86,18 @@ function computeBackoffMs(consecutive429s) {
     const base = BASE_BACKOFF_MS * Math.pow(2, exponent);
     const jitter = Math.floor(Math.random() * JITTER_MS);
     return Math.min(MAX_BACKOFF_MS, base + jitter);
+}
+function markErrorForStatus(providerId, category, _error) {
+    const nowIso = new Date().toISOString();
+    if (category === 'ProviderError') {
+        lastProviderErrorTimestampByProviderId[providerId] = nowIso;
+        lastProviderErrorCategoryByProviderId[providerId] = category;
+    }
+    else if (category === 'SystemError') {
+        lastSystemErrorTimestamp = nowIso;
+    }
+    // For other categories (UserError, InfrastructureError, null) we do not
+    // currently feed into the status model.
 }
 async function dropQueuedJobsAndResetLimiter(providerId) {
     const limiter = limiterByProvider.get(providerId);
@@ -269,6 +286,7 @@ async function pollOnceForActiveProvider() {
             errorCategory = 'SystemError';
         }
         errorMessage = error?.message ?? 'pollOnceForActiveProvider error';
+        markErrorForStatus(providerId, errorCategory, error);
         throw error;
     }
     finally {
@@ -322,6 +340,73 @@ function getLatestSnapshotForProvider(providerId) {
     return {
         opportunities: latestSnapshotByProviderId[providerId] ?? [],
         fetchedAt: latestSnapshotTimestampByProviderId[providerId] ?? null
+    };
+}
+async function getDashboardStatusSnapshot() {
+    const providerIds = ['odds-api-io', 'the-odds-api'];
+    const now = Date.now();
+    const staleThresholdMs = 5 * 60 * 1000;
+    const providers = [];
+    let hasQuotaOrDegraded = false;
+    let hasStaleProvider = false;
+    for (const providerId of providerIds) {
+        const quotaStatus = getProviderQuotaStatus(providerId);
+        const lastSuccessfulFetchAt = latestSnapshotTimestampByProviderId[providerId] ?? null;
+        const lastErrorAt = lastProviderErrorTimestampByProviderId[providerId] ?? null;
+        const isConfigured = await (0, credentials_1.isProviderConfigured)(providerId);
+        const lastSuccessMs = lastSuccessfulFetchAt !== null ? new Date(lastSuccessfulFetchAt).getTime() : null;
+        const isStale = lastSuccessMs !== null && now - lastSuccessMs > staleThresholdMs;
+        if (isStale) {
+            hasStaleProvider = true;
+        }
+        let providerStatusResolved = 'OK';
+        if (!isConfigured) {
+            providerStatusResolved = 'ConfigMissing';
+        }
+        else if (quotaStatus === 'QuotaLimited') {
+            providerStatusResolved = 'QuotaLimited';
+            hasQuotaOrDegraded = true;
+        }
+        else if (quotaStatus === 'Degraded') {
+            providerStatusResolved = 'Degraded';
+            hasQuotaOrDegraded = true;
+        }
+        else if (lastErrorAt &&
+            lastProviderErrorCategoryByProviderId[providerId] === 'ProviderError' &&
+            now - new Date(lastErrorAt).getTime() <= staleThresholdMs) {
+            providerStatusResolved = 'Down';
+        }
+        providers.push({
+            providerId,
+            status: providerStatusResolved,
+            lastSuccessfulFetchAt
+        });
+    }
+    let systemStatus = 'OK';
+    const hasRecentSystemError = lastSystemErrorTimestamp !== null &&
+        now - new Date(lastSystemErrorTimestamp).getTime() <= staleThresholdMs;
+    if (hasRecentSystemError) {
+        systemStatus = 'Error';
+    }
+    else if (hasQuotaOrDegraded) {
+        systemStatus = 'Degraded';
+    }
+    else if (hasStaleProvider) {
+        systemStatus = 'Stale';
+    }
+    const lastUpdatedAt = (() => {
+        const timestamps = providers
+            .map((provider) => provider.lastSuccessfulFetchAt)
+            .filter((value) => typeof value === 'string');
+        if (timestamps.length === 0) {
+            return null;
+        }
+        return timestamps.reduce((latest, ts) => (ts > latest ? ts : latest));
+    })();
+    return {
+        systemStatus,
+        providers,
+        lastUpdatedAt
     };
 }
 exports.__test = {

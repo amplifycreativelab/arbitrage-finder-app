@@ -1,7 +1,13 @@
 import { initTRPC } from '@trpc/server'
 import { getActiveProviderId, setActiveProviderId } from './storage'
 import { activeProviderSchema, saveApiKeyInputSchema, providerIdParamSchema } from '../../../shared/schemas'
-import { getLatestSnapshotForProvider, notifyActiveProviderChanged, pollOnceForActiveProvider, registerAdapters } from './poller'
+import {
+  getDashboardStatusSnapshot,
+  getLatestSnapshotForProvider,
+  notifyActiveProviderChanged,
+  pollOnceForActiveProvider,
+  registerAdapters
+} from './poller'
 import type { ProviderId } from '../../../shared/types'
 import {
   acknowledgeFallbackWarning,
@@ -54,11 +60,13 @@ export const appRouter = t.router({
   getFeedSnapshot: t.procedure.query(async () => {
     const providerId = getActiveProviderId() as ProviderId
     const snapshot = getLatestSnapshotForProvider(providerId)
+    const status = await getDashboardStatusSnapshot()
 
     return {
       providerId,
       opportunities: snapshot.opportunities,
-      fetchedAt: snapshot.fetchedAt
+      fetchedAt: snapshot.fetchedAt,
+      status
     }
   }),
   pollAndGetFeedSnapshot: t.procedure.mutation(async () => {
@@ -66,11 +74,13 @@ export const appRouter = t.router({
 
     await pollOnceForActiveProvider()
     const snapshot = getLatestSnapshotForProvider(providerId)
+    const status = await getDashboardStatusSnapshot()
 
     return {
       providerId,
       opportunities: snapshot.opportunities,
-      fetchedAt: snapshot.fetchedAt
+      fetchedAt: snapshot.fetchedAt,
+      status
     }
   })
 })
