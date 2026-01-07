@@ -8,19 +8,22 @@ import type {
 } from '../../../../../../shared/types'
 import { PROVIDERS } from '../../../../../../shared/types'
 import { trpcClient } from '../../../lib/trpc'
+import { useDashboardErrorStore } from './dashboardErrorStore'
 
 export type FeedSortKey = 'time' | 'roi'
 export type FeedSortDirection = 'asc' | 'desc'
 
 export interface FeedSnapshot {
-  providerId: ProviderId | null
+  providerId: ProviderId | null // Legacy, for backward compatibility
+  enabledProviderIds?: ProviderId[] // Multi-provider mode (Story 5.1)
   opportunities: ArbitrageOpportunity[]
   fetchedAt: string | null
   status: DashboardStatusSnapshot | null
 }
 
 interface FeedState {
-  providerId: ProviderId | null
+  providerId: ProviderId | null // Legacy, for backward compatibility
+  enabledProviderIds: ProviderId[] // Multi-provider mode (Story 5.1)
   providerMetadata: ProviderMetadata | null
   selectedOpportunityId: string | null
   selectedOpportunityIndex: number | null
@@ -42,6 +45,7 @@ interface FeedState {
 
 export const useFeedStore = create<FeedState>((set, get) => ({
   providerId: null,
+  enabledProviderIds: [],
   providerMetadata: null,
   selectedOpportunityId: null,
   selectedOpportunityIndex: null,
@@ -87,6 +91,7 @@ export const useFeedStore = create<FeedState>((set, get) => ({
 
       return {
         providerId: snapshot.providerId,
+        enabledProviderIds: snapshot.enabledProviderIds ?? [],
         providerMetadata,
         opportunities: nextOpportunities,
         fetchedAt: snapshot.fetchedAt,
@@ -104,6 +109,9 @@ export const useFeedStore = create<FeedState>((set, get) => ({
     try {
       const result = await trpcClient.pollAndGetFeedSnapshot.mutate()
 
+      // Clear any previous system error on success
+      useDashboardErrorStore.getState().setSystemError(null)
+
       set((state) => {
         const nextOpportunities = result.opportunities ?? []
         const nextProcessed = new Set<string>()
@@ -116,6 +124,7 @@ export const useFeedStore = create<FeedState>((set, get) => ({
 
         return {
           providerId: result.providerId ?? null,
+          enabledProviderIds: result.enabledProviderIds ?? [],
           providerMetadata:
             result.providerId != null
               ? PROVIDERS.find(
@@ -131,9 +140,20 @@ export const useFeedStore = create<FeedState>((set, get) => ({
         }
       })
     } catch (error) {
+      const errorMessage = (error as Error)?.message ?? 'Unable to load opportunities'
+
+      // Store the simple error message in feed store for backward compatibility
       set({
         isLoading: false,
-        error: (error as Error)?.message ?? 'Unable to load opportunities'
+        error: errorMessage
+      })
+
+      // Also notify the dashboard error store for system error bar display
+      useDashboardErrorStore.getState().setSystemError({
+        category: 'SystemError',
+        code: 'UNEXPECTED_ERROR',
+        message: errorMessage,
+        correlationId: `poll-${Date.now().toString(36)}`
       })
     }
   },

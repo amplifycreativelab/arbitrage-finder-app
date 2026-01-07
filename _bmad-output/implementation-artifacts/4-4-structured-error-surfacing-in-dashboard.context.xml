@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>4</epicId>
+    <storyId>4</storyId>
+    <title>Structured Error Surfacing in Dashboard</title>
+    <status>done</status>
+    <generatedAt>2026-01-07</generatedAt>
+    <generator>BMad Master (retroactive context generation)</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/4-4-structured-error-surfacing-in-dashboard.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>As a User</asA>
+    <iWant>I want clear, consistent error messages in the dashboard</iWant>
+    <soThat>so that I understand what went wrong and what I can do next</soThat>
+    <tasks>
+      See story tasks in _bmad-output/implementation-artifacts/4-4-structured-error-surfacing-in-dashboard.md.
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    See acceptance criteria in _bmad-output/implementation-artifacts/4-4-structured-error-surfacing-in-dashboard.md.
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>_bmad-output/prd.md</path>
+        <title>Arbitrage Finder App - Product Requirements Document</title>
+        <section>NFR3 Zero-Config / NFR4 Data Privacy / Dashboard &amp; Visualization requirements</section>
+        <snippet>PRD defines requirements for clear error messaging, graceful degradation, and user trust through transparent status communication.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/architecture.md</path>
+        <title>Architecture: Arbitrage Finder App</title>
+        <section>Error Handling, Logging, and Observability / UX Error and Degraded States / Implementation Patterns – Format Patterns</section>
+        <snippet>Architecture defines the discriminated union error pattern ({ ok: true, data: T } | { ok: false, error: IpcError }), error categories (UserError, ProviderError, SystemError, InfrastructureError), and mapping to UX treatments (inline, banner, errorBar).</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/ux-design-specification.md</path>
+        <title>UX Design Specification</title>
+        <section>Error messaging patterns / Orange Terminal theme</section>
+        <snippet>UX spec defines the Orange Terminal theme styling for error states, including color treatments for different severity levels and dismissible notification patterns.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/epics.md</path>
+        <title>Arbitrage Finder App -- Epic Breakdown</title>
+        <section>Epic 4 – Interaction &amp; Workflow Efficiency / Story 4.4</section>
+        <snippet>Epic 4 and Story 4.4 describe the error surfacing requirements, linking R-003 (provider failures) and R-005 (frozen/stale data) risks to actionable UX patterns.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/test-design-system.md</path>
+        <title>Test Design: System-Level Testability Review</title>
+        <section>Risk R-005 / P1 dashboard behavior tests</section>
+        <snippet>Test design outlines expectations for error state testing, including frozen/stale data scenarios and dashboard behavior under degraded provider conditions.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/implementation-artifacts/3-5-provider-system-status-indicators.md</path>
+        <title>Story 3.5: Provider &amp; System Status Indicators</title>
+        <section>Dev Notes / StatusBar and provider badges</section>
+        <snippet>Story 3.5 established the StatusBar.tsx and provider status badges (ProviderStatus enum) that Story 4.4 extends with richer error banners and actionable guidance.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/implementation-artifacts/4-3-copy-advance-workflow.md</path>
+        <title>Story 4.3: Copy &amp; Advance Workflow</title>
+        <section>Dev Notes / Learnings</section>
+        <snippet>Story 4.3 established robust interaction patterns with debounced actions and guard states that inform error surfacing design (debounce rapid errors, guard against duplicate banners).</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <artifact>
+        <path>shared/errors.ts</path>
+        <kind>types</kind>
+        <symbol>ErrorCategory / ErrorCode / IpcError / IpcResult / ipcSuccess / ipcFailure</symbol>
+        <lines>1-97</lines>
+        <reason>Defines the discriminated union error types, categories, codes, and helper functions per architecture specification. Foundation for all error handling.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/lib/mapIpcError.ts</path>
+        <kind>utility</kind>
+        <symbol>mapIpcError / categoryToDisplayType / MappedError</symbol>
+        <lines>1-250</lines>
+        <reason>Error mapper that transforms IPC error payloads to UI-friendly formats. Maps error.category to displayType (inline/banner/errorBar) with user-facing messages and guidance.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/features/dashboard/stores/dashboardErrorStore.ts</path>
+        <kind>store</kind>
+        <symbol>useDashboardErrorStore</symbol>
+        <lines>1-167</lines>
+        <reason>Centralized Zustand store for managing all error states (system, provider, inline) without ad-hoc boolean flags. Derives error visibility from structured state.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/components/ui/InlineError.tsx</path>
+        <kind>component</kind>
+        <symbol>InlineError</symbol>
+        <lines>1-85</lines>
+        <reason>Displays user errors inline near controls with message, guidance, and optional dismiss. Styled per Orange Terminal theme.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/components/ui/ErrorBanner.tsx</path>
+        <kind>component</kind>
+        <symbol>ErrorBanner</symbol>
+        <lines>1-144</lines>
+        <reason>Non-blocking banner for provider errors. Shows provider name, status badge, error summary, last-success time, and actionable CTA (Retry, Check Quota).</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/components/ui/SystemErrorBar.tsx</path>
+        <kind>component</kind>
+        <symbol>SystemErrorBar</symbol>
+        <lines>1-116</lines>
+        <reason>Top-of-dashboard alert strip for system/infrastructure errors. Shows generic message, correlation ID, retry action, and View Logs link.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/features/dashboard/DashboardLayout.tsx</path>
+        <kind>component</kind>
+        <symbol>DashboardLayout / errorCodeToProviderStatus</symbol>
+        <lines>1-140</lines>
+        <reason>Main dashboard layout that integrates SystemErrorBar at top and ErrorBanner stack for provider errors. Wires error display to dashboardErrorStore and TRPC actions.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/features/dashboard/stores/feedStore.ts</path>
+        <kind>store</kind>
+        <symbol>useFeedStore / refreshSnapshot</symbol>
+        <lines>1-270</lines>
+        <reason>Feed store extended to notify dashboardErrorStore on polling errors. Clears system errors on successful refresh.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/features/settings/ProviderSettings.tsx</path>
+        <kind>component</kind>
+        <symbol>ProviderSettings</symbol>
+        <lines>1-330</lines>
+        <reason>Provider settings component that uses InlineError for missing API key hints, validation errors, and save failures with specific user guidance.</reason>
+      </artifact>
+      <artifact>
+        <path>src/main/services/logs.ts</path>
+        <kind>service</kind>
+        <symbol>openLogDirectory / openLogFile / getLogFilePath</symbol>
+        <lines>1-54</lines>
+        <reason>Electron service for opening log directory/file via shell. Called by SystemErrorBar "View Logs" action. Returns IpcResult pattern.</reason>
+      </artifact>
+      <artifact>
+        <path>src/main/services/router.ts</path>
+        <kind>router</kind>
+        <symbol>appRouter / openLogDirectory procedure</symbol>
+        <lines>99-102</lines>
+        <reason>TRPC router extended with openLogDirectory mutation for SystemErrorBar integration.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/lib/trpc.ts</path>
+        <kind>client</kind>
+        <symbol>trpcClient / createTestTrpcClient</symbol>
+        <lines>1-47</lines>
+        <reason>TRPC client with openLogDirectory stub for test environments.</reason>
+      </artifact>
+      <artifact>
+        <path>tests/4.4-structured-error-surfacing.test.cjs</path>
+        <kind>test</kind>
+        <symbol>4.4 Structured Error Surfacing tests</symbol>
+        <lines>1-390</lines>
+        <reason>38 tests covering error mapping, IPC contract, error categories, display behavior, Settings integration, and mid-session failure scenarios. Imports real compiled functions.</reason>
+      </artifact>
+    </code>
+
+    <dependencies>
+      <entry>
+        <path>package.json</path>
+        <snippet>React, zustand, electron-trpc, electron-log, and Node.js test runner provide the UI, state management, IPC, logging, and test harnesses used by the error surfacing system.</snippet>
+      </entry>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    Error surfacing must use the architecture-mandated discriminated union pattern for all IPC communication. Error states must flow through SystemStatus and ProviderStatus enums without introducing ad-hoc boolean flags. Error components must derive visibility from the centralized dashboardErrorStore. No additional TRPC calls beyond normal polling cadence should be triggered by error display or dismissal.
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>IpcResult discriminated union</name>
+      <kind>type</kind>
+      <signature>IpcResult&lt;T&gt; = IpcSuccess&lt;T&gt; | IpcFailure</signature>
+      <path>shared/errors.ts</path>
+    </interface>
+    <interface>
+      <name>mapIpcError utility</name>
+      <kind>function</kind>
+      <signature>mapIpcError(error: IpcError): MappedError { displayType, message, guidance, actionText, originalError }</signature>
+      <path>src/renderer/src/lib/mapIpcError.ts</path>
+    </interface>
+    <interface>
+      <name>useDashboardErrorStore API</name>
+      <kind>store</kind>
+      <signature>systemError / providerErrors / inlineErrors / setSystemError / dismissSystemError / setProviderError / dismissProviderError</signature>
+      <path>src/renderer/src/features/dashboard/stores/dashboardErrorStore.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Error surfacing tests should validate the real mapIpcError implementation, IPC contract compliance (ipcSuccess/ipcFailure), category-to-displayType mapping, and integration with existing dashboard states. Tests import compiled modules from out-tests/ directory.
+    </standards>
+    <locations>
+      tests/4.4-structured-error-surfacing.test.cjs
+    </locations>
+    <ideas>
+      - Verify mapIpcError correctly maps each ErrorCategory to the appropriate displayType
+      - Verify ipcSuccess and ipcFailure helpers produce architecture-compliant result shapes
+      - Verify isIpcErrorShape validates the discriminated union structure
+      - Verify InlineError displays missing API key guidance in Settings
+      - Verify SystemErrorBar displays with retry and view logs actions during system errors
+      - Verify provider failures mid-session trigger ErrorBanner without blocking feed interaction
+    </ideas>
+  </tests>
+</story-context>

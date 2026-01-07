@@ -1,0 +1,53 @@
+<story-context id="{bmad_folder}/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>2.1</storyId>
+    <title>Adapter Pattern & Shared Types</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-20T14:08:38.001876</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs\sprint-artifacts\2-1-adapter-pattern-shared-types.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>Developer</asA>
+    <iWant>a shared adapter interface and shared types</iWant>
+    <soThat>all providers can be normalized into a single data model</soThat>
+    <tasks>- [ ] Define or confirm the canonical `ArbitrageOpportunity` type in `shared/types.ts` based on the `Data Architecture` section of `_bmad-output/architecture.md`, including id, sport, event metadata, legs, and roi.
+- [ ] Align any existing `ArbitrageOpportunity` definitions with this canonical shape and remove duplicated or conflicting types.
+- [ ] Add or update the corresponding validation schema in `shared/schemas.ts` so that malformed provider data is rejected before entering the main pipeline.
+- [ ] Introduce a shared adapter contract for provider integration.
+- [ ] Create a base adapter interface (e.g. `ArbitrageAdapter`) in `shared/types.ts` or `src/main/adapters/base.ts` that declares a normalized `fetchOpportunities` operation returning `ArbitrageOpportunity[]` (or a typed result wrapper).
+- [ ] Document expectations for error handling, logging, and rate limiting at the adapter boundary, referencing `_bmad-output/architecture.md` ("Data Architecture", "High-Risk Domain Patterns – Arbitrage Correctness", and provider adapter sections).
+- [ ] Refactor provider adapters to implement the shared contract.
+- [ ] Update `src/main/adapters/odds-api-io.ts` to implement the base adapter interface, map raw provider responses into `ArbitrageOpportunity[]`, and use the centralized `credentials` module (`src/main/credentials.ts`) for API key access.
+- [ ] Update `src/main/adapters/the-odds-api.ts` to implement the same interface and normalization rules, sharing mapping helpers where practical.
+- [ ] Ensure all outbound HTTP calls from adapters respect the rate-limiting and polling patterns described in `_bmad-output/architecture.md` (e.g. no direct `fetch`/`axios` bypassing the configured limiter).
+- [ ] Wire adapters cleanly into the poller/calculator pipeline.
+- [ ] Confirm `src/main/services/poller.ts` and `src/main/services/calculator.ts` consume adapters solely through the shared contract and operate on `ArbitrageOpportunity[]`.
+- [ ] Verify that renderer-facing state (e.g. Zustand stores and TRPC responses) uses `ArbitrageOpportunity` as the primary shape for opportunities.
+- [ ] Add focused tests for normalization and contracts.
+- [ ] Introduce integration/unit tests (e.g. under `tests/2.1-adapter-pattern-shared-types.test.[tj]s`) that feed representative provider responses into each adapter and assert that the resulting `ArbitrageOpportunity[]` matches the architecture’s structure and invariants.
+- [ ] Add tests around the shared adapter contract to ensure new adapters must implement `fetchOpportunities` correctly and cannot return untyped or partial data.
+- [ ] Reuse the security and boundary patterns from Story 1.4 tests (no secrets in logs or IPC) when exercising adapters that obtain credentials.</tasks>
+  </story>
+
+  <acceptanceCriteria>1. `shared/types.ts` defines an `ArbitrageOpportunity` type that matches the `Data Architecture` specification in `_bmad-output/architecture.md` (fields for id, sport, event { name, date, league }, two legs with bookmaker/market/odds/outcome, and roi), and this type is the single source of truth for arbitrage opportunities used by main, shared, and renderer code.
+2. A base adapter contract (e.g. `ArbitrageAdapter`) is defined in shared contracts (either `shared/types.ts` or a dedicated `src/main/adapters/base.ts`) and exposes a normalized `fetchOpportunities` method that returns `ArbitrageOpportunity[]` (or a typed success/error wrapper) without leaking provider-specific response shapes to callers.
+3. Both the production adapter (`src/main/adapters/odds-api-io.ts`) and the test adapter (`src/main/adapters/the-odds-api.ts`) implement the shared adapter contract, obtain credentials via the existing `src/main/credentials.ts` module (per Story 1.2/1.4 and `_bmad-output/architecture.md`), and do not log or expose raw secrets outside the main process.
+4. Normalized opportunities flowing out of adapters satisfy the invariants from `_bmad-output/architecture.md` and `_bmad-output/prd.md` for FR5–FR7 (e.g. opportunities are derived from current odds snapshots, legs reference distinct bookmakers, roi is non-negative, and any additional adapter-specific fields are kept separate from the core `ArbitrageOpportunity` model).</acceptanceCriteria>
+
+  <artifacts>
+    <docs></docs>
+    <code></code>
+    <dependencies></dependencies>
+  </artifacts>
+
+  <constraints></constraints>
+  <interfaces></interfaces>
+  <tests>
+    <standards></standards>
+    <locations></locations>
+    <ideas></ideas>
+  </tests>
+</story-context>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<storyContext>
+  <storyKey>1-1-project-initialization-ui-scaffolding</storyKey>
+  <userStory>
+    <asA>a Developer</asA>
+    <iWant>to initialize the repo with Electron-Vite, Tailwind, and shadcn/ui</iWant>
+    <soThat>the foundational UI matches the design system</soThat>
+  </userStory>
+  <acceptanceCriteria>
+    <criterion>`npm run dev` launches Electron with dark theme (#0F172A).</criterion>
+    <criterion>Text color is off-white (#F8FAFC).</criterion>
+    <criterion>Primary accent color is #F97316.</criterion>
+    <criterion>Folder structure matches `_bmad-output/architecture.md` project structure.</criterion>
+  </acceptanceCriteria>
+  <tasks>
+    <task>Scaffold Electron-Vite React+TS application using the specified starter.</task>
+    <task>Integrate Tailwind CSS and shadcn/ui components following the design system.</task>
+    <task>Implement base layout and theming to match "The Orange Terminal" (dark background, accent color).</task>
+    <task>Align file/folder structure with the architecture document (main, preload, renderer, shared).</task>
+    <task>Add basic CI commands (`npm run dev`, `npm run build:win`) and verify they work.</task>
+  </tasks>
+  <artifacts>
+    <documents>
+      <doc path="_bmad-output/PRD.md" />
+      <doc path="_bmad-output/architecture.md" />
+      <doc path="_bmad-output/epics.md" />
+    </documents>
+  </artifacts>
+</storyContext>

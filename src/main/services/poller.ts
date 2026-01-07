@@ -200,6 +200,9 @@ async function waitForCooldown(providerId: ProviderId): Promise<void> {
 
 let activeProviderIdForPolling: ProviderId | null = null
 
+// Multi-provider polling targets (Story 5.1)
+const enabledProvidersForPolling = new Set<ProviderId>()
+
 const adaptersByProviderId: Partial<Record<ProviderId, ArbitrageAdapter>> = {}
 const latestSnapshotByProviderId: Partial<Record<ProviderId, ArbitrageOpportunity[]>> = {}
 const latestSnapshotTimestampByProviderId: Partial<Record<ProviderId, string>> = {}
@@ -327,6 +330,140 @@ export function getActiveProviderForPolling(): ProviderId | null {
   return activeProviderIdForPolling
 }
 
+// ============================================================
+// Multi-provider polling functions (Story 5.1)
+// ============================================================
+
+/**
+ * Update the set of enabled providers for polling.
+ * Called when user enables/disables providers in settings.
+ */
+export function notifyEnabledProvidersChanged(providers: ProviderId[]): void {
+  enabledProvidersForPolling.clear()
+  for (const providerId of providers) {
+    enabledProvidersForPolling.add(providerId)
+  }
+}
+
+/**
+ * Get all currently enabled providers for polling.
+ */
+export function getEnabledProvidersForPolling(): ProviderId[] {
+  return Array.from(enabledProvidersForPolling)
+}
+
+/**
+ * Poll all enabled providers and return concatenated opportunities.
+ * Each provider is polled respecting its own rate limiter.
+ */
+export async function pollOnceForEnabledProviders(): Promise<ArbitrageOpportunity[]> {
+  const providerIds = Array.from(enabledProvidersForPolling)
+
+  if (providerIds.length === 0) {
+    return []
+  }
+
+  const correlationId = createCorrelationId()
+  const tickStartedAt = Date.now()
+  const allOpportunities: ArbitrageOpportunity[] = []
+  const errors: Array<{ providerId: ProviderId; error: unknown }> = []
+
+  currentCorrelationId = correlationId
+
+  // Poll each enabled provider (sequentially to respect rate limits)
+  for (const providerId of providerIds) {
+    const adapter = adaptersByProviderId[providerId]
+
+    if (!adapter) {
+      continue
+    }
+
+    try {
+      const result = await adapter.fetchOpportunities()
+      const validated = arbitrageOpportunityListSchema.parse(result)
+
+      // Tag each opportunity with its source provider (Story 5.1)
+      const taggedOpportunities = validated.map((opp) => ({
+        ...opp,
+        providerId
+      }))
+
+      latestSnapshotByProviderId[providerId] = taggedOpportunities
+      latestSnapshotTimestampByProviderId[providerId] = new Date().toISOString()
+      allOpportunities.push(...taggedOpportunities)
+    } catch (error) {
+      const status =
+        (error as { status?: number }).status ??
+        (error as { statusCode?: number }).statusCode ??
+        (error as { response?: { status?: number } }).response?.status
+
+      const errorCategory: StructuredLogBase['errorCategory'] =
+        typeof status === 'number' && status >= 400 ? 'ProviderError' : 'SystemError'
+
+      markErrorForStatus(providerId, errorCategory, error)
+      errors.push({ providerId, error })
+    }
+  }
+
+  currentCorrelationId = null
+
+  const durationMs = Date.now() - tickStartedAt
+  const nowIso = new Date().toISOString()
+
+  const providerStatuses: Record<ProviderId, ProviderQuotaStatus> = {
+    'odds-api-io': getProviderQuotaStatus('odds-api-io'),
+    'the-odds-api': getProviderQuotaStatus('the-odds-api')
+  }
+
+  const lastSuccessfulFetchTimestamps: Record<ProviderId, string | null> = {
+    'odds-api-io': latestSnapshotTimestampByProviderId['odds-api-io'] ?? null,
+    'the-odds-api': latestSnapshotTimestampByProviderId['the-odds-api'] ?? null
+  }
+
+  const staleThresholdMs = 5 * 60 * 1000
+  const hasStaleProvider = Object.values(lastSuccessfulFetchTimestamps).some((ts) => {
+    if (!ts) return false
+    const ageMs = Date.now() - new Date(ts).getTime()
+    return ageMs > staleThresholdMs
+  })
+
+  let systemStatus: SystemStatus = 'OK'
+  const hasErrors = errors.length > 0
+
+  if (hasErrors && errors.some((e) => {
+    const status = (e.error as { status?: number }).status
+    return typeof status !== 'number' || status < 400 || status >= 500
+  })) {
+    systemStatus = 'Error'
+  } else if (
+    Object.values(providerStatuses).some((status) => status === 'QuotaLimited' || status === 'Degraded')
+  ) {
+    systemStatus = 'Degraded'
+  } else if (hasStaleProvider) {
+    systemStatus = 'Stale'
+  }
+
+  logHeartbeat({
+    context: 'service:poller',
+    operation: 'pollOnceForEnabledProviders',
+    // Use providerIds (plural) for multi-provider polling, not providerId
+    providerIds: providerIds,
+    correlationId,
+    durationMs,
+    errorCategory: hasErrors ? 'ProviderError' : null,
+    success: errors.length === 0,
+    opportunitiesCount: allOpportunities.length,
+    providerStatuses,
+    lastSuccessfulFetchTimestamps,
+    systemStatus,
+    tickStartedAt: new Date(tickStartedAt).toISOString(),
+    tickCompletedAt: nowIso,
+    errorMessage: errors.length > 0 ? `Errors from ${errors.map((e) => e.providerId).join(', ')}` : undefined
+  } satisfies StructuredLogBase)
+
+  return allOpportunities
+}
+
 export function getRegisteredAdapter(providerId: ProviderId): ArbitrageAdapter | null {
   return adaptersByProviderId[providerId] ?? null
 }
@@ -357,8 +494,12 @@ export async function pollOnceForActiveProvider(): Promise<ArbitrageOpportunity[
     const result = await adapter.fetchOpportunities()
     const validated = arbitrageOpportunityListSchema.parse(result)
 
-    opportunities = validated
-    latestSnapshotByProviderId[providerId] = validated
+    // Tag each opportunity with its source provider (Story 5.1)
+    opportunities = validated.map((opp) => ({
+      ...opp,
+      providerId
+    }))
+    latestSnapshotByProviderId[providerId] = opportunities
     latestSnapshotTimestampByProviderId[providerId] = new Date().toISOString()
     success = true
 

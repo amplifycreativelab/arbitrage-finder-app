@@ -1,0 +1,81 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>4</epicId>
+    <storyId>2</storyId>
+    <title>Keyboard Navigation</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-22</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/4-2-keyboard-navigation.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>User</asA>
+    <iWant>to navigate the feed purely via keyboard</iWant>
+    <soThat>I can operate at high speed</soThat>
+    <tasks>
+      Implement keyboard navigation and focus management for the feed table so Arrow Up/Down move selection between visible rows, clamped within bounds and respecting active filters and processed state.
+      Align feed selection state with the Signal Preview pane and existing dashboard stores by using a single shared selected opportunity state in the Zustand feed store, reused by FeedTable, FeedPane, and SignalPreview.
+      Implement visual and accessibility treatment for the selected row using data-state="selected" and high-contrast styling consistent with the Orange Terminal theme, ensuring focus and selection never diverge.
+      Add focused renderer tests for keyboard navigation and selection behavior (including filtered and staleness scenarios) and assert that Signal Preview updates instantly without additional TRPC or poller calls on selection changes.
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    Arrow Up/Down change the selected row within the visible opportunities table, never moving selection off-screen or outside the available list and staying aligned with filters and processed state.
+    The right pane Signal Preview updates instantly whenever the selected row changes (via keyboard or mouse) and reuses existing ArbitrageOpportunity + provider metadata from the dashboard store without triggering extra TRPC or poller calls.
+    The currently selected row is visually highlighted via data-state="selected" with high-contrast styling aligned to the Orange Terminal theme, clearly indicating keyboard focus and selection to the user.
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      _bmad-output/prd.md (FR14: one-click copy and keyboard-first workflows; dashboard and actions requirements)
+      _bmad-output/ux-design-specification.md (Keyboard-Centric Workflow, Arrow Up/Down navigation semantics, Signal Preview layout and formatting)
+      _bmad-output/architecture.md (keyboard-driven UI principle, dashboard structure around FeedTable and SignalPreview, UX Error and Degraded States guidance)
+      _bmad-output/epics.md (Epic 4 – Interaction & Workflow Efficiency, Story 4.2 Keyboard Navigation acceptance criteria and links)
+      _bmad-output/test-design-system.md (risk R-005 – frozen/stale data; expectations for P1 dashboard tests)
+      _bmad-output/implementation-artifacts/4-1-signal-preview-pane.md (previous story implementation, test coverage, and learnings about selection and preview behavior)
+    </docs>
+    <code>
+      src/renderer/src/features/dashboard/FeedTable.tsx (renders the opportunities table, row selection wiring, and keyboard/focus hooks)
+      src/renderer/src/features/dashboard/FeedPane.tsx (orchestrates dashboard feed, selection, filters, and connection to SignalPreview)
+      src/renderer/src/features/dashboard/SignalPreview.tsx (renders right-hand preview based on selected ArbitrageOpportunity and provider metadata)
+      src/renderer/src/features/dashboard/DashboardLayout.tsx (shell layout for split-pane dashboard with feed and preview)
+      src/renderer/src/features/dashboard/stores (Zustand-based dashboard/feed store; single source of truth for selection and feed state)
+      shared/types.ts (ArbitrageOpportunity model and related shared types used by renderer and main)
+      tests/4.1-signal-preview-pane.test.cjs (renderer tests and fixtures verifying preview updates and non-TRPC behavior for selection changes)
+      tests/3.3-visual-staleness-logic.test.cjs; tests/3.4-filters-controls.test.cjs; tests/3.5-provider-system-status-indicators.test.cjs (dashboard tests covering staleness, filters, and status behavior that navigation must respect)
+    </code>
+    <dependencies>
+      package.json (React, Zustand, shadcn/ui, testing stack, and other frontend dependencies used by dashboard components and tests)
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    Keyboard navigation must reuse the existing dashboard feed store for selection state and MUST NOT introduce ad-hoc or duplicated selection logic in individual components.
+    Selection behavior must remain consistent with filters, staleness indicators, and provider/system status; navigation should operate only on currently visible rows and degrade gracefully when the feed is empty or heavily filtered.
+    The Signal Preview component must remain purely presentational, driven by store-derived selection and ArbitrageOpportunity data, and MUST NOT perform additional TRPC or poller calls when selection changes.
+    Styling for the selected row must follow the existing Orange Terminal theme and shadcn/ui patterns, using data-state="selected" and ensuring accessibility (contrast, visible focus) while coexisting cleanly with staleness and processed indicators.
+  </constraints>
+  <interfaces>
+    Dashboard feed selection and preview interface via the Zustand feed store (selected opportunity id/index, opportunities list, and derived selection used by FeedTable and SignalPreview).
+  </interfaces>
+  <tests>
+    <standards>
+      Follow the system-level test design and Epic 3/Story 4.1 renderer test patterns: tests must validate dashboard behavior under staleness, filters, and status changes, and ensure Signal Preview updates occur without extra TRPC calls on selection changes.
+    </standards>
+    <locations>
+      tests/4.2-keyboard-navigation.test.cjs
+      tests/4.1-signal-preview-pane.test.cjs
+      tests/3.3-visual-staleness-logic.test.cjs
+      tests/3.4-filters-controls.test.cjs
+      tests/3.5-provider-system-status-indicators.test.cjs
+    </locations>
+    <ideas>
+      Simulate keyboard focus on the feed table, send Arrow Up/Down key events, and assert that the selected row id/index in the feed store changes as expected, remains within bounds, and respects active filters and processed markers.
+      Assert that each keyboard-driven selection change updates the Signal Preview pane instantly and does not trigger additional TRPC pollAndGetFeedSnapshot calls, reusing the measurement patterns from Story 4.1 tests.
+      Verify that the selected row carries data-state="selected", that selection and focus never diverge, and that staleness opacity and processed indicators do not obscure the active selection state in the Orange Terminal theme.
+    </ideas>
+  </tests>
+</story-context>
+

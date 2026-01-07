@@ -1,0 +1,120 @@
+<story-context id="_bmad-output/implementation-artifacts/2-2-rate-limiter-implementation.context" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>2</storyId>
+    <title>Rate Limiter Implementation</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-20</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/2-2-rate-limiter-implementation.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>System</asA>
+    <iWant>to throttle outgoing API requests using a centralized per-provider rate limiter in the main process</iWant>
+    <soThat>documented API quotas (e.g. 5,000 requests/hour) are never violated under normal scanning workloads</soThat>
+    <tasks>
+      <![CDATA[
+      - [ ] Design and implement `RateLimiterConfig` and limiter wiring in `src/main/services/poller.ts` (AC: #1, #2).
+        - [ ] Define a provider identifier enum or type shared with adapters (reusing existing shared types where possible) and map each provider to a `bottleneck` instance configured from PRD/architecture quotas (AC: #1).
+        - [ ] Add a small, well-typed abstraction in `poller.ts` (e.g. `scheduleProviderRequest(providerId, fn)`) that wraps `bottleneck` scheduling and becomes the only entry point for performing provider HTTP calls (AC: #2).
+        - [ ] Document configuration assumptions and rationale in code comments with references to `_bmad-output/prd.md` (FR8, NFR1) and `_bmad-output/architecture.md` ("Rate Limiting (R-001)") (AC: #1).
+      - [ ] Integrate the rate limiter with existing adapters and polling flow (AC: #2, #3).
+        - [ ] Update `src/main/adapters/odds-api-io.ts` and `src/main/adapters/the-odds-api.ts` to route all outbound HTTP calls through the limiter abstraction exposed by `poller.ts`, preserving the `ArbitrageAdapter` contract from Story 2.1 (`fetchOpportunities(): Promise<ArbitrageOpportunity[]>`) (AC: #2).
+        - [ ] Review `src/main/services/calculator.ts` and related pipeline code to ensure that rate limiting is applied only at the I/O boundary (HTTP calls) and does not leak into pure calculation logic or shared data model handling (AC: #2).
+        - [ ] Add safeguards (e.g. code search and focused tests) to detect and prevent direct `fetch`/`axios` usage for provider calls outside the limiter path (AC: #2, #3).
+      - [ ] Implement rate-limit aware error and backoff handling (AC: #3, #4).
+        - [ ] Define structured error types or result wrappers for provider calls that can represent 429 and related rate-limit responses distinctly from other errors (AC: #4).
+        - [ ] In `poller.ts`, implement a simple, documented backoff strategy for repeated 429 responses (e.g. exponential backoff with jitter and/or a temporary cool-down window per provider) and wire it into the polling schedule (AC: #4).
+        - [ ] Emit structured logs via `electron-log` for rate-limit events, including provider ID, HTTP status, next retry time, and any degradation flags, to support later calibration and diagnostics (AC: #4, #5).
+      - [ ] Add tests for rate limiting behavior and quotas (AC: #3, #5).
+        - [ ] Create unit/integration tests (e.g. under `tests/2.2-rate-limiter-implementation.test.[tj]s`) that simulate bursty provider request patterns and assert that `bottleneck` enforces the configured `minTime`/`maxConcurrent` constraints while keeping aggregate request counts within quota windows derived from the PRD (AC: #3, #5).
+        - [ ] Add tests that inject synthetic 429 responses from adapters/poller and verify that backoff behavior, log records, and any in-memory provider status flags behave as specified (including recovery once responses normalize) (AC: #4, #5).
+        - [ ] Align test naming, structure, and fixtures with the risk-based test strategy for R-001 in `_bmad-output/test-design-system.md`, and ensure new tests are compatible with existing golden dataset and pipeline tests from Story 2.1 where relevant (AC: #5).
+      - [ ] Wire rate limiter behavior into system status and future UX (AC: #4, #5).
+        - [ ] Ensure that poller state or a dedicated status structure exposes enough information for downstream components to mark providers as `QuotaLimited` / `Degraded` per the "UX Error and Degraded States" section in `_bmad-output/architecture.md`, without coupling the limiter directly to renderer code (AC: #4).
+        - [ ] Document, in Dev Notes and/or code comments, how this story’s implementation will be consumed by future stories (e.g. Story 2.3 calibration harness, Epic 3 status indicators) so that later work can reuse the same limiter configuration and observability hooks (AC: #5).
+      ]]>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <![CDATA[
+    1. A centralized rate limiting configuration exists in `src/main/services/poller.ts` that owns a `RateLimiterConfig` map per provider, creates `bottleneck` instances in the main process, and derives key parameters (`minTime`, `maxConcurrent`, reservations/queue size) directly from the quotas and constraints described in `_bmad-output/prd.md` (FR8, NFR1) and `_bmad-output/architecture.md` ("Rate Limiting (R-001)").
+    2. All outbound HTTP calls from provider adapters (`src/main/adapters/odds-api-io.ts`, `src/main/adapters/the-odds-api.ts`, and any future adapters) flow through the appropriate `bottleneck` limiter owned by `poller.ts`; there are no direct `fetch`/`axios` calls that bypass the limiter, and this invariant is enforced by tests.
+    3. Under normal usage patterns consistent with the PRD (continuous scanning with typical filter combinations), the effective per-provider request rate stays within documented quotas (e.g. ≤ 5,000 requests/hour) and automated tests/synthetic load checks confirm that 429 responses are not emitted by the providers in the happy path.
+    4. When a provider responds with 429 or other rate-limit signals, the poller applies a clear, documented backoff strategy (e.g. incremental delay with jitter and/or temporary suspension of that provider), logs structured events via `electron-log`, and updates in-memory state so that downstream components can mark the provider as `QuotaLimited` / `Degraded` in line with `_bmad-output/architecture.md` ("UX Error and Degraded States").
+    5. Rate limiting behavior is covered by targeted tests (unit/integration) that exercise: (a) configuration defaults per provider, (b) enforcement of `minTime` and `maxConcurrent` for bursty request sequences, and (c) correct handling of synthetic 429 responses and recovery, following patterns and risk coverage for R-001 in `_bmad-output/test-design-system.md`.
+    ]]>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <![CDATA[
+      - { path: "_bmad-output/prd.md", kind: "prd", section: "Functional Requirements / FR8, Non-Functional Requirements / NFR1", snippet: "FR8: System manages API request frequency to strictly adhere to the 5,000 req/hour limit. NFR1: System must effectively cache data and throttle requests to prevent API bans (Zero 429 errors under normal use)." }
+      - { path: "_bmad-output/architecture.md", kind: "architecture", section: "High-Risk Domain Patterns — Rate Limiting (R-001, NFR1)", snippet: "poller.ts owns a RateLimiterConfig map per provider using bottleneck instances created in main. All outbound HTTP calls from adapters must go through the relevant limiter; direct fetch/axios calls are not allowed." }
+      - { path: "_bmad-output/epics.md", kind: "epics", section: "Epic 2 — Data Ingestion & Normalization Engine / Story 2.2 — Rate Limiter Implementation", snippet: "Acceptance criteria require centralized configuration for rate limits, bottleneck-enforced spacing (e.g. 720 ms), and backoff behavior for 429 responses." }
+      - { path: "_bmad-output/test-design-system.md", kind: "test-design", section: "Risk Assessment / R-001 PERF and P0/P1 coverage", snippet: "High-priority risk R-001: rate limiter misconfiguration causes API bans or stale data. Mitigation includes centralized Bottleneck config, contract tests around minTime/concurrency, and synthetic load checks in CI." }
+      ]]>
+    </docs>
+    <code>
+      <![CDATA[
+      - { path: "src/main/services/poller.ts", kind: "service", symbol: "poller loop / provider scheduling", lines: "", reason: "Owns polling cadence and is the natural home for RateLimiterConfig and bottleneck instances per provider." }
+      - { path: "src/main/adapters/odds-api-io.ts", kind: "adapter", symbol: "OddsApiIoAdapter", lines: "", reason: "Production provider adapter; all outbound HTTP calls must be funneled through the shared rate limiter." }
+      - { path: "src/main/adapters/the-odds-api.ts", kind: "adapter", symbol: "TheOddsApiAdapter", lines: "", reason: "Test provider adapter for raw odds; HTTP calls for calibration and normal operation must respect the same limiter." }
+      - { path: "src/main/services/calculator.ts", kind: "service", symbol: "calculateArbitrageOpportunities", lines: "", reason: "Pure computation over ArbitrageOpportunity[]; must remain side-effect free and not embed rate limiting logic." }
+      - { path: "src/main/credentials.ts", kind: "service", symbol: "credentials helpers", lines: "", reason: "Provides API keys for adapters; ensure rate limiting is applied after credential retrieval, not in credential logic." }
+      - { path: "src/main/services/storage.ts", kind: "service", symbol: "storage module", lines: "", reason: "Implements secure storage; logs must not include sensitive rate-limit headers or tokens when errors occur." }
+      - { path: "shared/types.ts", kind: "shared", symbol: "ArbitrageOpportunity, provider identifiers", lines: "", reason: "Canonical data model and potential shared provider ID types used when mapping rate limiter configuration per provider." }
+      - { path: "shared/schemas.ts", kind: "shared", symbol: "arbitrageOpportunitySchema", lines: "", reason: "Validation layer ensuring that opportunities returned from rate-limited adapter calls still satisfy core invariants." }
+      - { path: "tests/2.1-adapter-pattern-shared-types.test.cjs", kind: "test", symbol: "adapter and pipeline tests", lines: "", reason: "Existing tests for adapters and pipeline; can be extended or mirrored to cover rate-limited scenarios." }
+      ]]>
+    </code>
+    <dependencies>
+      <![CDATA[
+      - { ecosystem: "node", manifest: "package.json", packages: ["bottleneck", "electron", "electron-log", "zod"] }
+      ]]>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <![CDATA[
+    - All outbound HTTP calls to external odds providers must pass through a centralized per-provider `bottleneck` limiter owned by `src/main/services/poller.ts`; direct `fetch`/`axios` usage from adapters or other modules is not allowed.
+    - Rate limiting configuration must be derived from PRD quotas (e.g. 5,000 req/hour) and documented in code comments with clear rationale, including minTime and concurrency choices.
+    - The implementation must avoid leaking rate limiting concerns into pure computation; `calculator.ts` and other pure functions remain side-effect free and unaware of limiter details.
+    - Structured logs for rate-limit events must be emitted via `electron-log` without including raw API keys or other sensitive headers.
+    - The design should support future calibration (Story 2.3) and UX degradation indicators (Epic 3) without requiring changes to core limiter wiring.
+    ]]>
+  </constraints>
+
+  <interfaces>
+    <![CDATA[
+    - { name: "scheduleProviderRequest", kind: "function", signature: "scheduleProviderRequest(providerId: ProviderId, fn: () => Promise<T>): Promise<T>", path: "src/main/services/poller.ts" }
+    - { name: "ArbitrageAdapter.fetchOpportunities", kind: "interface method", signature: "fetchOpportunities(): Promise<ArbitrageOpportunity[]>", path: "shared/types.ts or src/main/adapters/base.ts" }
+    ]]>
+  </interfaces>
+
+  <tests>
+    <standards>
+      <![CDATA[
+      Follow the risk-based strategy in `_bmad-output/test-design-system.md` for R-001 (PERF) and NFR1, using Node test runner (e.g. Vitest) for unit/integration tests and ensuring that rate-limiter-related scenarios are part of the P0/P1 suites.
+      ]]>
+    </standards>
+    <locations>
+      <![CDATA[
+      - tests/2.1-adapter-pattern-shared-types.test.cjs
+      - tests/2.2-rate-limiter-implementation.test.[tj]s
+      ]]>
+    </locations>
+    <ideas>
+      <![CDATA[
+      - [AC1] Verify that constructing `RateLimiterConfig` with PRD quota values yields minTime and concurrency values consistent with 5,000 req/hour and that these values are documented in code comments.
+      - [AC2] Simulate bursty adapter calls through `scheduleProviderRequest` and assert that the effective call rate never exceeds the configured per-provider limits; assert that adapters cannot bypass the limiter.
+      - [AC3] Run a synthetic polling loop for a bounded window and assert that total requests per provider remain within the 5,000 req/hour envelope, with no 429 responses under normal conditions.
+      - [AC4] Inject synthetic 429 responses from adapters and verify that backoff logic applies, structured logs are emitted, and in-memory status reflects `QuotaLimited` / `Degraded` appropriately.
+      - [AC5] Confirm that the addition of the rate limiter does not regress existing adapter normalization and arbitrage correctness tests (Story 2.1) and that all new logging respects security constraints (no secrets or raw payloads).
+      ]]>
+    </ideas>
+  </tests>
+</story-context>
+

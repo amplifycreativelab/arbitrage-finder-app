@@ -7,6 +7,8 @@ import { copyAndAdvanceCurrentOpportunity } from './copyAndAdvance'
 import { formatSignalPayload } from './signalPayload'
 import { useFeedStore } from './stores/feedStore'
 
+const isServerEnvironment = typeof document === 'undefined'
+
 export interface SignalPreviewProps {
   opportunity?: ArbitrageOpportunity | null
   providerMetadata?: ProviderMetadata | null
@@ -28,17 +30,26 @@ function SignalPreview({
       return opportunity
     }
 
-    if (!Array.isArray(storeOpportunities) || storeOpportunities.length === 0) {
+    let opportunitiesFromStore = storeOpportunities
+    let idFromStore = selectedOpportunityId
+
+    if (isServerEnvironment) {
+      const snapshot = useFeedStore.getState()
+      opportunitiesFromStore = snapshot.opportunities
+      idFromStore = snapshot.selectedOpportunityId
+    }
+
+    if (!Array.isArray(opportunitiesFromStore) || opportunitiesFromStore.length === 0) {
       return null
     }
 
-    if (!selectedOpportunityId) {
+    if (!idFromStore) {
       return null
     }
 
     return (
-      storeOpportunities.find((candidate) => candidate.id === selectedOpportunityId) ??
-      storeOpportunities[0] ??
+      opportunitiesFromStore.find((candidate) => candidate.id === idFromStore) ??
+      opportunitiesFromStore[0] ??
       null
     )
   }, [opportunity, storeOpportunities, selectedOpportunityId])

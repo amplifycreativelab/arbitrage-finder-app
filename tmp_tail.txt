@@ -1,0 +1,29 @@
+## Senior Developer Review (AI)
+
+### Outcome
+
+- Outcome: Changes Requested
+- Story Status: in-progress
+- Reviewer: Amelia (Dev Agent, Senior Developer)
+- Date: 2025-11-22
+
+### Acceptance Criteria Validation
+
+- AC1 (Enter triggers Copy & Advance, clipboard payload matches SignalPreview, single TRPC call, works for production and test providers under filters/staleness): Pass — `src/renderer/src/features/dashboard/copyAndAdvance.ts`, `src/renderer/src/features/dashboard/signalPayload.ts`, `src/renderer/src/features/dashboard/SignalPreview.tsx`, tests in `tests/4.3-copy-advance-workflow.test.cjs` ([4.3-COPY-001], [4.3-COPY-002], [4.3-COPY-005]).
+- AC2 (COPY SIGNAL [Enter] button mirrors keyboard behavior, green COPIED state, no duplicate copies): Pass — `SignalPreview.tsx` button wiring and local `copyState`/`isCopying` guards, verified via `[4.3-COPY-004]` and `[4.3-COPY-001]`.
+- AC3 (Processed state tracking, persistence, and UI annotation): Partial — data model and behavior are implemented (`processedOpportunityIds` in `feedStore.ts`, integration in `copyAndAdvance.ts`, persistence across `setSnapshot` and `refreshSnapshot` verified by `[4.3-COPY-001..005]`), but `FeedRow` does not yet render a processed visual treatment (no processed badge/opacity flag), so the UX portion of AC3 is not satisfied.
+- AC4 (Advance to next unprocessed row, clamp at end, SignalPreview sync): Pass — selection and processed behavior validated by `[4.3-COPY-001]`, `[4.3-COPY-002]`, `[4.3-COPY-005]`, with ordering derived from `applyDashboardFilters` + `sortOpportunities` and shared `useFeedStore` state driving both FeedTable and SignalPreview.
+- AC5 (Keyboard-first UX constraints: Arrow Up/Down navigation, Enter reserved for Copy & Advance, Esc Reset Focus loop preserved): Pass — Arrow and selection semantics covered by `FeedTable.tsx`, `feedStore.ts`, and tests `tests/4.2-keyboard-navigation.test.cjs`; Enter wiring for Copy & Advance verified in 4.3 tests; no regression to Esc/reset behavior from Story 4.2 semantics.
+
+### Key Findings
+
+- The Copy & Advance action is correctly centralized in `copyAndAdvanceCurrentOpportunity`, reusing `formatSignalPayload` and the TRPC `copySignalToClipboard` procedure, and computing next selection based on the same filtered/sorted view used by FeedPane/FeedTable (satisfying AC1/AC4 and avoiding extra poller/TRPC calls).
+- Renderer TRPC client (`src/renderer/src/lib/trpc.ts`) previously crashed under tests/non-Electron environments due to an empty link array; replaced with a test-friendly stub client when `electronTRPC` is unavailable so tests can safely stub `copySignalToClipboard` and `pollAndGetFeedSnapshot` without runtime link errors.
+- SignalPreview previously rendered its empty state even when feed store selection was initialized in server-rendered tests; adjusted to consult `useFeedStore.getState()` on the server path so DashboardLayout + SignalPreview correctly expose the `copy-signal-button` in SSR test harnesses while still using reactive `useFeedStore` selection on the client.
+- Processed-row state is correctly maintained in the feed store via `processedOpportunityIds`, carried forward across `setSnapshot` and `refreshSnapshot`, and respected by the Copy & Advance selection logic (skipping processed IDs and clamping on the last row), but the feed UI does not yet surface this state visually, so users cannot see which rows have been processed.
+
+### Action Items
+
+- [ ] Implement processed-row styling in `src/renderer/src/features/dashboard/FeedTable.tsx` (e.g., `FeedRow` badge + reduced opacity driven by `processedOpportunityIds`), ensuring it composes cleanly with existing staleness styling and preserves `data-state="selected"` semantics.
+- [ ] Add focused UI tests (P1 or P2) exercising processed-row visual treatment and confirming that processed styling persists across sorting, filter changes, and poller refreshes while opportunities remain in the current snapshot.
+- [ ] After processed UI is implemented and tests are green, update this story's Status to `done` and adjust `sprint-status.yaml` accordingly via the `*story-done` workflow.

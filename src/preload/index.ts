@@ -10,11 +10,21 @@ type CredentialsStorageStatus = {
   fallbackWarningShown: boolean
 }
 
+type ProviderStatusInfo = {
+  providerId: ProviderId
+  enabled: boolean
+  hasKey: boolean
+}
+
 type CredentialsAPI = {
   saveApiKey: (providerId: ProviderId, apiKey: string) => Promise<void>
   isProviderConfigured: (providerId: ProviderId) => Promise<boolean>
   getStorageStatus: () => Promise<CredentialsStorageStatus>
   acknowledgeFallbackWarning: () => Promise<void>
+  // Multi-provider methods (Story 5.1)
+  getEnabledProviders: () => Promise<ProviderId[]>
+  setProviderEnabled: (providerId: ProviderId, enabled: boolean) => Promise<{ providerId: ProviderId; enabled: boolean }>
+  getAllProvidersStatus: () => Promise<ProviderStatusInfo[]>
 }
 
 // Electron-TRPC bridge: attach to both preload globalThis and renderer via contextBridge
@@ -59,6 +69,19 @@ const credentialsApi: CredentialsAPI = {
   },
   async acknowledgeFallbackWarning() {
     await trpcClient.acknowledgeFallbackWarning.mutate()
+  },
+  // Multi-provider methods (Story 5.1)
+  async getEnabledProviders() {
+    const result = await trpcClient.getEnabledProviders.query()
+    return result.enabledProviders
+  },
+  async setProviderEnabled(providerId, enabled) {
+    const result = await trpcClient.setProviderEnabled.mutate({ providerId, enabled })
+    return result
+  },
+  async getAllProvidersStatus() {
+    const result = await trpcClient.getAllProvidersStatus.query()
+    return result.providers
   }
 }
 

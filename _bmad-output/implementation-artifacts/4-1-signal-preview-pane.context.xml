@@ -1,0 +1,197 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>4</epicId>
+    <storyId>1</storyId>
+    <title>Signal Preview Pane</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-22T09:05:08+08:00</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/4-1-signal-preview-pane.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>User</asA>
+    <iWant>a detailed preview of the selected signal</iWant>
+    <soThat>I can quickly copy it into my workflow</soThat>
+    <tasks>
+      Introduce a dedicated SignalPreview component that renders the right-pane preview from a selected ArbitrageOpportunity and ProviderMetadata, replacing the static placeholder in DashboardLayout with a card + monospace text block that matches the UX formatting standard and displays both legs, event context, and ROI clearly.
+      Define a pure formatting helper (for example formatSignalPayload) that maps ArbitrageOpportunity + provider metadata into the multi-line signal text described in _bmad-output/ux-design-specification.md (section 6.2), keeping formatting concerns in the renderer and avoiding any duplication of business logic from the data engine.
+      Wire the preview to the existing dashboard selection state so that keyboard and mouse changes in FeedTable update a single selected opportunity source of truth, and pass that selection into SignalPreview so the preview updates instantly without additional TRPC / poller calls.
+      Reuse or extend the Epic 3 dashboard stores (for example useFeedStore and filter stores) rather than introducing ad-hoc React state, ensuring that selection, filters, staleness, and status snapshots remain coherent in the dashboard.
+      Ensure the preview behaves correctly under staleness, filters, and system/provider status changes so that users always see a trustworthy representation of the selected row.
+      Confirm that when filters hide the selected row, the preview either clears or updates to the next visible row in a predictable way, consistent with existing empty-state messaging from Story 3.4.
+      Verify that system/provider SystemStatus and ProviderStatus changes (Story 3.5) do not break preview rendering and that the preview remains readable in degraded/stale states (for example, no overlapping banners or clipped content).
+      Add tests for signal formatting and preview behavior, following the patterns in _bmad-output/test-design-system.md and existing Epic 3 renderer tests.
+      Create a dedicated test file (for example tests/4.1-signal-preview-pane.test.cjs) that seeds representative ArbitrageOpportunity fixtures and asserts the rendered multi-line preview text matches the expected formatting, including provider labels, event details, markets, odds, and ROI.
+      Add tests that simulate keyboard and mouse selection changes in the feed and assert that the preview updates instantly without additional TRPC calls, remains in sync with filters and staleness state, and exposes a stable string suitable for reuse by the Copy &amp; Advance story.
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    The right-hand Signal Preview pane renders the full formatted text payload for the currently selected ArbitrageOpportunity, using provider metadata and event details to match the multi-line formatting standard defined in _bmad-output/ux-design-specification.md (section 6.2 Signal Preview), so that what the user sees is exactly what will be sent to Telegram or similar downstream channels.
+    The preview uses a monospace font and card plus pre/code block styling consistent with the Orange Terminal theme (dark background, orange ROI or action emphasis, high-contrast text) and remains legible alongside staleness visuals and status indicators introduced in Stories 3.3 and 3.5.
+    Changing the selected opportunity (via keyboard navigation or mouse selection in the feed) updates the preview instantly without triggering additional network calls, stays in sync with active filters and staleness logic, and exposes a deterministic string representation that can be reused by the Copy &amp; Advance workflow for FR14.
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>_bmad-output/epics.md</path>
+        <title>Epic 4: Interaction &amp; Workflow Efficiency</title>
+        <section>Story 4.1 -- Signal Preview Pane</section>
+        <snippet>Displays full formatted payload for the selected ArbitrageOpportunity, uses monospace font, and matches the intended downstream (e.g. Telegram) formatting.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Functional Requirements - FR14 and Quick Actions</section>
+        <snippet>Users can copy complete bet details to the clipboard with a single click, and the app provides a one-click Copy Details action to support rapid workflows.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/ux-design-specification.md</path>
+        <title>UX Design Specification</title>
+        <section>4.1 Layout Strategy and 6.2 Signal Preview</section>
+        <snippet>The right pane is a static staging area showing exactly what will be sent to Telegram, implemented as a Card with a monospace pre/code block that renders the multi-line signal payload.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/architecture.md</path>
+        <title>Architecture: Arbitrage Finder App</title>
+        <section>Data Architecture and ArbitrageOpportunity</section>
+        <snippet>Defines the ArbitrageOpportunity model with id, sport, event, legs, roi, and foundAt fields, and describes how the poller and calculator produce opportunities arrays for the renderer.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/test-design-system.md</path>
+        <title>Test Design: System-Level Testability Review</title>
+        <section>Risk R-005 and dashboard test coverage</section>
+        <snippet>Identifies the risk of frozen or stale data on the dashboard and describes P1 scenarios around freshness indicators, filters, and end-to-end dashboard behavior.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/implementation-artifacts/3-5-provider-system-status-indicators.md</path>
+        <title>Story 3.5: Provider &amp; System Status Indicators</title>
+        <section>Dev Notes and Senior Developer Review</section>
+        <snippet>Explains how SystemStatus and ProviderStatus are derived in the poller, surfaced via a dashboard status snapshot, and rendered via StatusBar and provider failure banners, with outstanding action items around direct status snapshot tests.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/renderer/src/features/dashboard/DashboardLayout.tsx</path>
+        <kind>component</kind>
+        <symbol>DashboardLayout</symbol>
+        <lines>1-60</lines>
+        <reason>Defines the split-pane dashboard layout with a left feed pane and a right Signal Preview area, currently containing a static placeholder that Story 4.1 will replace with a real preview component.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/features/dashboard/FeedPane.tsx</path>
+        <kind>component</kind>
+        <symbol>FeedPane</symbol>
+        <lines>1-260</lines>
+        <reason>Owns the opportunities feed, filters, and empty-state behavior; selection and filtering logic here must drive the SignalPreview so the right pane always reflects the currently selected row.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/features/dashboard/FeedTable.tsx</path>
+        <kind>component</kind>
+        <symbol>FeedTable</symbol>
+        <lines>1-260</lines>
+        <reason>Renders the virtualized opportunities table, staleness labels, and row selection; keyboard navigation and selection updates here will be used to update the signal preview.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/features/dashboard/stores</path>
+        <kind>store</kind>
+        <symbol>feed stores</symbol>
+        <lines>n/a</lines>
+        <reason>Provide the Zustand-based dashboard state (opportunities, filters, status) that a SignalPreview component should consume as a single source of truth for selection and derived view state.</reason>
+      </artifact>
+      <artifact>
+        <path>shared/types.ts</path>
+        <kind>types</kind>
+        <symbol>ArbitrageOpportunity and PROVIDERS</symbol>
+        <lines>1-60</lines>
+        <reason>Declares the ArbitrageOpportunity shape and provider metadata (including displayName), which the preview will use to format human-readable provider labels and signal payload content.</reason>
+      </artifact>
+      <artifact>
+        <path>tests/3.3-visual-staleness-logic.test.cjs</path>
+        <kind>test</kind>
+        <symbol>3.3-visual-staleness-logic</symbol>
+        <lines>1-140</lines>
+        <reason>Provides existing renderer test patterns for staleness labels and timer-driven updates that can be reused when testing preview behavior under changing staleness states.</reason>
+      </artifact>
+      <artifact>
+        <path>tests/3.4-filters-controls.test.cjs</path>
+        <kind>test</kind>
+        <symbol>3.4-filters-controls</symbol>
+        <lines>1-220</lines>
+        <reason>Covers filter behavior, persistence, and filtered empty-state UX in the dashboard and serves as a reference for wiring SignalPreview into the same stores and test harness.</reason>
+      </artifact>
+      <artifact>
+        <path>tests/3.5-provider-system-status-indicators.test.cjs</path>
+        <kind>test</kind>
+        <symbol>3.5-provider-system-status-indicators</symbol>
+        <lines>1-140</lines>
+        <reason>Exercises the StatusBar, provider badges, provider failure banner, and healthy versus degraded empty-state rendering, providing a baseline for adding preview-related assertions in high-risk dashboard states.</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <ecosystem>
+        <name>node</name>
+        <manifest>package.json</manifest>
+        <packages>
+          <package>
+            <name>react</name>
+            <version>^19.1.1</version>
+          </package>
+          <package>
+            <name>zustand</name>
+            <version>^5.0.8</version>
+          </package>
+          <package>
+            <name>shadcn-ui</name>
+            <version>^0.9.5</version>
+          </package>
+          <package>
+            <name>electron-vite</name>
+            <version>^4.0.1</version>
+          </package>
+        </packages>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    Reuse the existing ArbitrageOpportunity model and provider metadata from shared/types.ts instead of introducing preview-specific data shapes, and keep the preview logic purely presentational (no recalculation of arbitrage or rate limiting in the renderer).
+    Respect the Orange Terminal theme and Epic 3 dashboard layout: maintain the split-pane structure, staleness visuals, filter behavior, and status indicators while adding preview functionality without introducing overlapping UI or ad hoc state.
+    Follow the Security and API Credential Handling guidance by ensuring that the preview never introduces any credential or secret data and continues to operate purely on already-sanitized ArbitrageOpportunity objects provided by the main process.
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>SignalPreview component</name>
+      <kind>React component</kind>
+      <signature>function SignalPreview(props: { opportunity: ArbitrageOpportunity | null; providerMetadata: ProviderMetadata | null }): JSX.Element</signature>
+      <path>src/renderer/src/features/dashboard/SignalPreview.tsx</path>
+    </interface>
+    <interface>
+      <name>formatSignalPayload helper</name>
+      <kind>function</kind>
+      <signature>function formatSignalPayload(opportunity: ArbitrageOpportunity, provider: ProviderMetadata): string</signature>
+      <path>src/renderer/src/features/dashboard/SignalPreview.tsx</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Follow the system-level test design and Epic 3 patterns by treating the dashboard as a high-risk surface: use server-side React rendering with jsdom, seed deterministic ArbitrageOpportunity fixtures, and assert that UI behavior stays correct under staleness, filters, and status changes without introducing extra network calls.
+    </standards>
+    <locations>
+      tests/4.1-signal-preview-pane.test.cjs
+      tests/3.3-visual-staleness-logic.test.cjs
+      tests/3.4-filters-controls.test.cjs
+      tests/3.5-provider-system-status-indicators.test.cjs
+    </locations>
+    <ideas>
+      Render the dashboard with a selected ArbitrageOpportunity and assert that the SignalPreview pane shows the expected multi-line payload text, including provider names, event details, and odds, matching the UX specification.
+      Simulate keyboard navigation and mouse click selection changes in the FeedTable and verify that the preview updates instantly, without additional TRPC calls or poller activity, and stays synchronized with filters and staleness labels.
+      Exercise scenarios where providers are Degraded or Down but opportunities are still present and confirm that the preview remains readable and functional while status chips and banners are visible.
+    </ideas>
+  </tests>
+</story-context>
+

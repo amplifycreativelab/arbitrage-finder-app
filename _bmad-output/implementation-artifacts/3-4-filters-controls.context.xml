@@ -1,0 +1,78 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>4</storyId>
+    <title>Filters &amp; Controls</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-11-21</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/3-4-filters-controls.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>User</asA>
+    <iWant>to filter opportunities by region, sport, ROI threshold, and market type</iWant>
+    <soThat>I only see relevant, high-value arbitrage opportunities in the feed</soThat>
+    <tasks>
+      Design and implement a filter state model for Region, Sport, Market Type, and minimum ROI on top of the existing feed snapshot; build a filter bar UI in the dashboard feed pane; wire filters so they efficiently produce a filtered `ArbitrageOpportunity[]` without extra network calls; persist preferences between sessions; and add tests covering filter behavior, combinations, and integration with sorting, virtualization, and staleness visuals.
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    The dashboard exposes Region, Sport, Market Type, and minimum ROI controls in or above the left-pane feed; changing any filter updates the visible `ArbitrageOpportunity[]` purely client-side; Region/Sport filters constrain opportunities by bookmaker region and sport, with a clear "No opportunities match the current filters" empty state; Market Type filters allow Moneyline, Draw No Bet, and Totals to be included or excluded without changing the core opportunity model; ROI filtering hides opportunities below the configured threshold while composing correctly with existing sorting, virtualization, and staleness visuals; and filter preferences persist across app restarts via a non-sensitive, persisted store.
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      _bmad-output/PRD.md (FR3 region filters; FR4 sport toggles; FR10 ROI threshold; FR11 Market Type filters for the dashboard data grid); 
+      _bmad-output/architecture.md (Data Architecture for the `ArbitrageOpportunity` model and separation between data engine and visualization; Implementation Patterns - Lifecycle/Consistency for where to place filter logic; UX Error and Degraded States for empty states and non-blocking UX); 
+      _bmad-output/ux-design-specification.md (Hybrid Dashboard layout and Orange Terminal theme; guidance on filter placement and visual treatment in the left pane); 
+      _bmad-output/epics.md (Epic 3 - Dashboard; Story 3.4 - Filters &amp; Controls mapping to FR3, FR4, FR10, FR11); 
+      _bmad-output/implementation-artifacts/3-1-main-layout-split-pane.md (dashboard shell, split-pane layout, and feed pane contract); 
+      _bmad-output/implementation-artifacts/3-2-feed-left-pane-data-grid.md (FeedTable structure, virtualization, and sorting expectations); 
+      _bmad-output/implementation-artifacts/3-3-visual-staleness-logic.md (staleness labels, opacity behavior, and constraints on additional visuals around the Time column); 
+      _bmad-output/implementation-artifacts/3-4-filters-controls.md (story definition, acceptance criteria, tasks, Dev Notes, and implementation guidance for filters and persistence).
+    </docs>
+    <code>
+      src/renderer/src/features/dashboard/FeedPane.tsx (entry point for the left-pane feed UI; current loading/error handling and use of `useFeedStore` and `useStalenessTicker`; ideal integration point for a filter bar that feeds into the feed store or a dedicated filter store); 
+      src/renderer/src/features/dashboard/FeedTable.tsx (feed grid component that renders Time, Event, and ROI columns, applies staleness labels and opacity, and uses virtualization; will consume already-filtered `ArbitrageOpportunity[]` from state); 
+      src/renderer/src/features/dashboard/stores/feedStore.ts (Zustand store that holds the current feed snapshot, sort state, and TRPC-backed `refreshSnapshot`; starting point for adding filter state or composing with a dedicated filter store); 
+      src/renderer/src/features/dashboard/staleness.ts (utility for computing staleness labels and stale/fresh flags from `foundAt` timestamps; must continue to operate correctly on filtered subsets); 
+      src/renderer/src/features/dashboard/useStalenessTicker.ts (dashboard-scoped ticker hook that triggers periodic staleness recomputation; should remain independent of filter logic); 
+      src/renderer/src/lib/trpc.ts (client-side TRPC bridge used by the feed store to retrieve snapshots; filters must not change TRPC contracts or cause additional polling); 
+      src/main/services/poller.ts (main-process polling and snapshot production, including `fetchedAt` timestamps; filter logic should treat this as the single source of truth for opportunities and not push filtering into main); 
+      shared/types.ts (canonical `ArbitrageOpportunity` shape, including `sport`, `event`, `legs[].bookmaker`, `legs[].market`, and `roi` and `foundAt` fields used as the basis for filter predicates).
+    </code>
+    <dependencies>
+      package.json (React 19 and ReactDOM for the dashboard UI; zustand 5.x for feed and filter state; date-fns for date/time handling in staleness labels; tailwindcss and tailwind-merge for Orange Terminal styling of filter controls and grid; electron-trpc and @trpc/client for typed IPC-backed feed snapshots; electron-log and electron-store for infrastructure and persisted settings patterns that can inform how filter preferences are stored).
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    Filters must operate entirely in the renderer on the normalized `ArbitrageOpportunity[]` snapshot produced by the data engine; they must not introduce new API calls, mutate the main-process poller, or duplicate rate-limiting logic from Epic 2. Filter state should be held in a small, focused Zustand store (reusing the pattern established in `feedStore`) and wired so that `FeedTable` receives an already-filtered array, keeping the grid focused on presentation, sorting, virtualization, and staleness visuals. The Orange Terminal theme and accessibility requirements must be respected: filter controls should be keyboard-accessible, use clear labels, and avoid encoding state purely through color; empty states must distinguish between "no data" and "data present but filtered out" conditions. Existing behaviors from Stories 3.1, 3.2, and 3.3 (layout, sorting, virtualization, staleness labels/opacity) must remain intact when filters are active.
+  </constraints>
+
+  <interfaces>
+    Feed snapshot retrieval via `trpcClient.pollAndGetFeedSnapshot` in `src/renderer/src/lib/trpc.ts`, which returns an `ArbitrageOpportunity[]` plus `fetchedAt`; 
+    state access via `useFeedStore` in `src/renderer/src/features/dashboard/stores/feedStore.ts`, which exposes `opportunities`, `fetchedAt`, and `refreshSnapshot`; 
+    the `ArbitrageOpportunity` data contract in `shared/types.ts`, which provides `sport`, `event.date`, `event.league`, `legs[].bookmaker`, `legs[].market`, `roi`, and `foundAt` fields used to drive Region, Sport, Market Type, and ROI filters; 
+    the `FeedTable` props (`opportunities`, `initialSortBy`, `initialSortDirection`, `stalenessNow`) which expect a pre-filtered collection and control local sorting and virtualization; 
+    any persisted preferences mechanism (for example a zustand/persist wrapper or a small settings store) that can store non-sensitive filter configuration between sessions without touching secure credential storage.
+  </interfaces>
+
+  <tests>
+    <standards>
+      Follow the existing Epic 3 dashboard testing approach: use Node’s built-in test runner with ReactDOMServer to render the feed components, assert behavior via `data-testid` attributes, and keep tests deterministic by seeding explicit `ArbitrageOpportunity` fixtures and, where relevant, explicit timestamps. Reuse patterns from `tests/3.2-feed-left-pane-data-grid.test.cjs` for grid structure and virtualization and from `tests/3.3-visual-staleness-logic.test.cjs` for staleness labels and opacity, extending them to cover filtered views and empty states.
+    </standards>
+    <locations>
+      tests/3.2-feed-left-pane-data-grid.test.cjs (baseline grid behavior, ROI styling, and virtualization expectations); 
+      tests/3.3-visual-staleness-logic.test.cjs (staleness utilities and FeedTable staleness labels/opacity behavior); 
+      tests/3.4-filters-controls.test.cjs (new Epic 3 test file for filter behavior, combinations, persistence, and interactions with existing feed and staleness behavior); 
+      out-tests/src/renderer/src/features/dashboard/FeedTable.js (compiled component used by tests for HTML-based assertions).
+    </locations>
+    <ideas>
+      Seed a fixture set of `ArbitrageOpportunity` records that vary by `legs[].bookmaker` region, `sport`, `legs[].market`, and `roi`, and assert that each filter dimension hides and shows the expected rows in isolation. Add tests that combine Region, Sport, Market Type, and ROI filters and verify that only opportunities matching all active predicates are rendered, with a distinct "no opportunities match current filters" empty state when the underlying feed has data. Verify that filters do not change staleness behavior by asserting that stale rows remain correctly labeled and visually de-emphasized when filtered. Add tests that simulate persisted filter state (for example by initializing the store with pre-set filters), render the feed, and assert that the UI and resulting rows reflect the restored configuration without additional TRPC calls beyond the standard snapshot fetch.
+    </ideas>
+  </tests>
+</story-context>
+

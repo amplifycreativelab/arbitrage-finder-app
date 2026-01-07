@@ -1,0 +1,149 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>4</epicId>
+    <storyId>3</storyId>
+    <title>Copy &amp; Advance Workflow</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-22</generatedAt>
+    <generator>BMAD Story Context Workflow (simulated)</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/4-3-copy-advance-workflow.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>As a User</asA>
+    <iWant>I want a one-key copy-and-advance flow</iWant>
+    <soThat>so that I can rapidly process opportunities</soThat>
+    <tasks>
+      See story tasks in _bmad-output/implementation-artifacts/4-3-copy-advance-workflow.md.
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    See acceptance criteria in _bmad-output/implementation-artifacts/4-3-copy-advance-workflow.md.
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>_bmad-output/prd.md</path>
+        <title>Arbitrage Finder App - Product Requirements Document</title>
+        <section>Actions / FR14</section>
+        <snippet>FR14 defines the requirement that users can copy complete bet details to the clipboard with a single click, which this story implements via Copy &amp; Advance.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/ux-design-specification.md</path>
+        <title>UX Design Specification</title>
+        <section>5.1 Keyboard-Centric Workflow / 6.3 Action Button</section>
+        <snippet>The UX spec defines the keyboard-centric workflow (Arrow Up/Down navigation, Enter for Copy &amp; Advance, Esc to reset focus) and the “COPY SIGNAL [Enter]” button behaviour and styling.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/architecture.md</path>
+        <title>Architecture: Arbitrage Finder App</title>
+        <section>Project Structure / UX Error and Degraded States</section>
+        <snippet>The architecture doc describes the dashboard layout, feed and preview components, and guidance for handling stale or degraded states without ad-hoc flags, which Copy &amp; Advance must respect.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/epics.md</path>
+        <title>Arbitrage Finder App -- Epic Breakdown</title>
+        <section>Epic 4 – Interaction &amp; Workflow Efficiency / Story 4.3</section>
+        <snippet>Epic 4 and Story 4.3 describe the interaction goals for Copy &amp; Advance, linking FR14 to a keyboard-first workflow for rapidly processing opportunities.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/test-design-system.md</path>
+        <title>Test Design: System-Level Testability Review</title>
+        <section>Risk R-005 and dashboard test expectations</section>
+        <snippet>The test design system outlines risks around frozen/stale data and expectations for P1 dashboard tests, which inform the test strategy for Copy &amp; Advance.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/implementation-artifacts/4-1-signal-preview-pane.md</path>
+        <title>Story 4.1: Signal Preview Pane</title>
+        <section>Dev Notes / Learnings and Tests</section>
+        <snippet>Story 4.1 defines the Signal Preview component and the `formatSignalPayload` helper, which Copy &amp; Advance reuses as the canonical signal text source.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/implementation-artifacts/4-2-keyboard-navigation.md</path>
+        <title>Story 4.2: Keyboard Navigation</title>
+        <section>Dev Notes / Learnings and Tests</section>
+        <snippet>Story 4.2 establishes keyboard navigation, listbox semantics, and shared selection state in the feed store, which Copy &amp; Advance builds on for Enter-based actions.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <artifact>
+        <path>src/renderer/src/features/dashboard/SignalPreview.tsx</path>
+        <kind>component</kind>
+        <symbol>SignalPreview / formatSignalPayload</symbol>
+        <lines>1-180</lines>
+        <reason>Renders the right-hand Signal Preview and defines `formatSignalPayload`, the canonical multi-line signal text used by Copy &amp; Advance for clipboard content.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/features/dashboard/FeedTable.tsx</path>
+        <kind>component</kind>
+        <symbol>FeedTable</symbol>
+        <lines>1-220</lines>
+        <reason>Displays the opportunities feed, manages keyboard focus and selection, and is the natural integration point for binding Enter to the Copy &amp; Advance action.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/features/dashboard/FeedPane.tsx</path>
+        <kind>component</kind>
+        <symbol>FeedPane</symbol>
+        <lines>1-260</lines>
+        <reason>Coordinates filters, feed snapshot loading, and selection synchronization; Copy &amp; Advance must respect its filtered/empty states.</reason>
+      </artifact>
+      <artifact>
+        <path>src/renderer/src/features/dashboard/stores/feedStore.ts</path>
+        <kind>store</kind>
+        <symbol>useFeedStore</symbol>
+        <lines>1-200</lines>
+        <reason>Holds selection state and feed snapshots; will be extended with a Copy &amp; Advance action and processed-row tracking.</reason>
+      </artifact>
+      <artifact>
+        <path>tests/4.1-signal-preview-pane.test.cjs</path>
+        <kind>test</kind>
+        <symbol>Signal Preview tests</symbol>
+        <lines>1-200</lines>
+        <reason>Validates Signal Preview formatting and TRPC neutrality; patterns and fixtures will be reused to test Copy &amp; Advance clipboard behaviour.</reason>
+      </artifact>
+      <artifact>
+        <path>tests/4.2-keyboard-navigation.test.cjs</path>
+        <kind>test</kind>
+        <symbol>Keyboard navigation tests</symbol>
+        <lines>1-260</lines>
+        <reason>Exercises Arrow Up/Down navigation, selection clamping, and listbox semantics; Copy &amp; Advance tests will extend this harness for Enter-key behaviour.</reason>
+      </artifact>
+    </code>
+
+    <dependencies>
+      <entry>
+        <path>package.json</path>
+        <snippet>React, zustand, electron-trpc, and testing libraries (Jest/Vitest-style) provide the UI, state management, IPC, and test harnesses used by the dashboard and Copy &amp; Advance.</snippet>
+      </entry>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    Copy &amp; Advance must reuse existing dashboard architecture and contracts: SignalPreview is the single source of truth for the signal text; selection and navigation must continue to flow through `useFeedStore`; and no additional TRPC or poller calls are allowed on selection or copy actions beyond the existing polling cadence.
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>useFeedStore selection API</name>
+      <kind>store</kind>
+      <signature>selectedOpportunityId / selectedOpportunityIndex / setSelectedOpportunityId / syncSelectionWithVisibleIds / moveSelectionByOffset</signature>
+      <path>src/renderer/src/features/dashboard/stores/feedStore.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Dashboard tests should follow the existing Epic 3/4 patterns: use seeded ArbitrageOpportunity fixtures, assert TRPC neutrality for UI-only interactions, and verify ARIA roles and data attributes for accessibility and UX correctness.
+    </standards>
+    <locations>
+      tests/*.test.cjs
+    </locations>
+    <ideas>
+      - Verify that pressing Enter with a selected row copies the expected SignalPreview payload to a mocked clipboard and advances selection to the next unprocessed row without additional TRPC calls.
+      - Verify that clicking the “COPY SIGNAL [Enter]” button reuses the same Copy &amp; Advance action and produces consistent processed-row styling and selection behaviour.
+    </ideas>
+  </tests>
+</story-context>

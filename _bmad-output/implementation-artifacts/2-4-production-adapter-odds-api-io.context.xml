@@ -1,0 +1,194 @@
+<story-context id="story-2-4-context" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>4</storyId>
+    <title>Production Adapter (Odds-API.io)</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-21</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/2-4-production-adapter-odds-api-io.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>User</asA>
+    <iWant>to fetch pre-calculated arbs from the production provider</iWant>
+    <soThat>I can see live surebet opportunities</soThat>
+    <tasks>
+As drafted in the story specification:
+
+- Design and implement the production adapter for Odds-API.io so that it uses the centralized credentials module and rate-limiter/poller infrastructure without introducing direct `fetch`/`axios` calls or ad-hoc throttling.
+- Define or confirm provider configuration for Odds-API.io (base URL, pre-calculated arbs endpoint, authentication headers/query parameters) in a single place, referenced by the adapter implementation.
+- Implement mapping helpers that transform representative Odds-API.io pre-calculated arbitrage responses into `ArbitrageOpportunity[]`, ensuring stable IDs, correct event metadata, and normalized legs.
+- Integrate the production adapter into `poller.ts` and provider selection so that switching to Production in settings routes polling through Odds-API.io and switching back to Test reuses the existing test adapter without restart.
+- Ensure that renderer-facing data structures (TRPC responses, Zustand stores, and the feed table) continue to consume only `ArbitrageOpportunity[]` and remain agnostic to which provider is active.
+- Apply region and sport filtering consistently for production opportunities, reusing existing filtering logic so that only matching opportunities reach the data grid.
+- Add focused tests for production adapter mapping and integration, reusing calibration and rate-limit test patterns from Stories 2.2 and 2.3 to confirm invariants and quotas remain enforced.
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+The story defines the following acceptance criteria:
+
+1. The production adapter for Odds-API.io (for example `OddsApiIoAdapter` in `src/main/adapters/odds-api-io.ts`) calls the provider's pre-calculated arbitrage endpoint (e.g. `/v3/arbitrage-bets`) using the existing credentials boundary (`src/main/credentials.ts`) and centralized rate-limiting/poller infrastructure established in Stories 2.1 and 2.2, with no direct `fetch`/`axios` usage that bypasses the limiter.
+2. Responses from the production endpoint are strictly mapped into the canonical `ArbitrageOpportunity` model defined in `shared/types.ts` (and validated via `shared/schemas.ts`), ensuring stable `id` generation, correct event metadata (sport, league, teams, start time), two normalized legs with bookmaker/market/odds/outcome, and non-negative `roi` values that align with the Data Architecture section of `_bmad-output/architecture.md`.
+3. When the active provider is set to "Production" in settings, the polling pipeline (`src/main/services/poller.ts`) uses the production adapter as its source of opportunities, and the renderer-side state/Feed table shows only production-backed `ArbitrageOpportunity` rows; switching back to the Test provider routes traffic through the existing test adapter without requiring app restart.
+4. Region and sport filters configured in the UI (FR3, FR4) are applied consistently to the production feed: only opportunities whose bookmaker region and sport match the selected filters are surfaced in the data grid, and this behavior matches the PRD requirements for supported regions/sports and typical usage patterns.
+5. Focused tests (for example `tests/2.4-production-adapter-odds-api-io.test.cjs`) exercise production adapter mapping and integration by feeding representative Odds-API.io responses through the adapter and poller, asserting correct normalization into `ArbitrageOpportunity`, correct honoring of region/sport filters, and continued adherence to rate-limit and correctness invariants from Stories 2.1, 2.2, and 2.3.
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>_bmad-output/prd.md</path>
+        <title>Arbitrage Finder App - Product Requirements Document</title>
+        <section>Functional Requirements FR5–FR8; Data Normalization Strategy; Calculation Fallback Logic</section>
+        <snippet>The system must retrieve pre-calculated arbitrage bets when connected to the Production API, normalize all API responses into a unified `ArbitrageOpportunity` data model, and manage API request frequency to adhere to the 5,000 req/hour limit while balancing freshness and quota safety.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/architecture.md</path>
+        <title>Architecture: Arbitrage Finder App</title>
+        <section>Data Architecture; High-Risk Domain Patterns — Rate Limiting (R-001); High-Risk Domain Patterns — Arbitrage Correctness (R-002)</section>
+        <snippet>The data architecture defines the canonical `ArbitrageOpportunity` shape and the adapter-based provider pattern, while Rate Limiting (R-001) centralizes Bottleneck configuration in `poller.ts` and Arbitrage Correctness (R-002) governs how opportunities are derived, validated, and surfaced from provider feeds.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/epics.md</path>
+        <title>Arbitrage Finder App — Epic Breakdown</title>
+        <section>Epic 2 — Story 2.4: Production Adapter (Odds-API.io)</section>
+        <snippet>Story 2.4 defines the production adapter to call the provider’s pre-calculated arbs endpoint, strictly map responses into `ArbitrageOpportunity`, and ensure region/sport filters from the UI are applied according to the PRD.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/implementation-artifacts/2-1-adapter-pattern-shared-types.md</path>
+        <title>Story 2.1: Adapter Pattern &amp; Shared Types</title>
+        <section>Dev Notes and Data Model</section>
+        <snippet>This story establishes the canonical `ArbitrageOpportunity` model, shared adapter contract, and validation schema that all adapters, including the production Odds-API.io adapter, must implement and respect.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/implementation-artifacts/2-2-rate-limiter-implementation.md</path>
+        <title>Story 2.2: Rate Limiter Implementation</title>
+        <section>Dev Notes and Acceptance Criteria</section>
+        <snippet>Story 2.2 centralizes `RateLimiterConfig` in `poller.ts`, routes all provider HTTP calls through Bottleneck-based scheduling, and documents backoff behavior and quota invariants that the production adapter must reuse.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/implementation-artifacts/2-3-rate-limit-calibration-stress-harness.md</path>
+        <title>Story 2.3: Rate Limit Calibration &amp; Stress Harness</title>
+        <section>Dev Notes and Dev Agent Record</section>
+        <snippet>This story introduces the calibration/stress harness that reuses the poller and adapters, emits structured metrics, and enforces quota invariants; it provides patterns and tests the production adapter can leverage when validating limiter configuration.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/backlog.md</path>
+        <title>Backlog</title>
+        <section>Epic 2 follow-ups related to rate limiting and adapters</section>
+        <snippet>Backlog items for Epic 2 capture follow-up work on adapter behavior, rate-limit calibration, and test coverage, which should be revisited as the production adapter is implemented and integrated.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <item>
+        <path>shared/types.ts</path>
+        <kind>shared-model</kind>
+        <symbol>ArbitrageOpportunity; PROVIDERS; ProviderId</symbol>
+        <lines></lines>
+        <reason>Defines the canonical arbitrage opportunity model and provider metadata; the production adapter must return this shape and use the correct provider identifier.</reason>
+      </item>
+      <item>
+        <path>src/main/adapters/base.ts</path>
+        <kind>service</kind>
+        <symbol>BaseArbitrageAdapter</symbol>
+        <lines></lines>
+        <reason>Provides the shared adapter base class, credential access, and central rate-limiter integration that the production adapter should extend.</reason>
+      </item>
+      <item>
+        <path>src/main/adapters/odds-api-io.ts</path>
+        <kind>service</kind>
+        <symbol>OddsApiIoAdapter; normalizeOddsApiIoOpportunity</symbol>
+        <lines></lines>
+        <reason>Contains the production adapter implementation and normalization logic that must be extended to call the real Odds-API.io pre-calculated arbs endpoint.</reason>
+      </item>
+      <item>
+        <path>src/main/adapters/the-odds-api.ts</path>
+        <kind>service</kind>
+        <symbol>TheOddsApiAdapter</symbol>
+        <lines></lines>
+        <reason>Implements the test adapter and provides patterns for mapping raw odds into `ArbitrageOpportunity` that can inform production adapter behavior.</reason>
+      </item>
+      <item>
+        <path>src/main/services/poller.ts</path>
+        <kind>service</kind>
+        <symbol>RateLimiterConfig; scheduleProviderRequest; polling loop</symbol>
+        <lines></lines>
+        <reason>Owns per-provider rate limiting, polling orchestration, and adapter selection; the production adapter must integrate through this module.</reason>
+      </item>
+      <item>
+        <path>src/main/services/calibration.ts</path>
+        <kind>service</kind>
+        <symbol>runCalibration and metrics collection</symbol>
+        <lines></lines>
+        <reason>Provides the calibration/stress harness used to validate limiter configuration and provider behavior under load; can be extended to cover the production adapter where safe.</reason>
+      </item>
+      <item>
+        <path>tests/2.1-adapter-pattern-shared-types.test.cjs</path>
+        <kind>test</kind>
+        <symbol>Adapter normalization and shared contract tests</symbol>
+        <lines></lines>
+        <reason>Validates the canonical `ArbitrageOpportunity` model and adapter behavior; new tests for Story 2.4 should align with these patterns.</reason>
+      </item>
+      <item>
+        <path>tests/2.2-rate-limiter-implementation.test.cjs</path>
+        <kind>test</kind>
+        <symbol>Rate limiter behavior tests</symbol>
+        <lines></lines>
+        <reason>Exercises `RateLimiterConfig`, Bottleneck behavior, and 429/error handling; Story 2.4 tests should ensure the production adapter preserves these invariants.</reason>
+      </item>
+      <item>
+        <path>tests/2.3-rate-limit-calibration-stress-harness.test.cjs</path>
+        <kind>test</kind>
+        <symbol>Calibration and quota tests</symbol>
+        <lines></lines>
+        <reason>Validates calibration harness behavior and provides patterns for quota-focused tests that can be extended to cover production scenarios.</reason>
+      </item>
+    </code>
+
+    <dependencies>
+node (package.json):
+- electron@^38.1.2
+- electron-vite@^4.0.1
+- bottleneck@^2.19.5
+- electron-log@^5.4.3
+- zod@^4.1.0
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- All production provider HTTP calls must flow through the centralized rate-limiter and polling infrastructure in `src/main/services/poller.ts`, using `RateLimiterConfig` and Bottleneck instances; the adapter must not introduce direct `fetch`/`axios` calls outside this path.
+- The production adapter must obtain credentials exclusively via the centralized credentials module (`src/main/credentials.ts`), never exposing raw API keys to the renderer or logs, and must respect the security boundaries established in Epic 1 stories.
+- Normalization into `ArbitrageOpportunity` must preserve core invariants (two legs, non-negative ROI, consistent event metadata) and avoid leaking raw provider schema into downstream consumers; any provider-specific fields should be handled internally or via clearly documented extensions.
+- Region and sport filtering must behave identically for production and test providers so that dashboard behavior does not depend on which provider is active; filters should operate on normalized `ArbitrageOpportunity` fields.
+- Calibration and quota behavior validated in Stories 2.2 and 2.3 must remain intact when the production adapter is wired in; configuration changes required by the production provider should be validated via calibration harness runs where feasible.
+  </constraints>
+
+  <interfaces>
+- `OddsApiIoAdapter` in `src/main/adapters/odds-api-io.ts`: production provider adapter implementing the shared `ArbitrageAdapter` contract and responsible for calling the pre-calculated arbitrage endpoint.
+- `BaseArbitrageAdapter` in `src/main/adapters/base.ts`: base class that wires adapters into the centralized credentials and rate-limiter/poller infrastructure.
+- `poller.ts` in `src/main/services/poller.ts`: quota-aware polling interface that owns `RateLimiterConfig`, Bottleneck instances, adapter selection, and provider quota status exposure.
+- Provider metadata and selection helpers in `shared/types.ts` and downstream settings/UI components: determine which adapter is active based on user configuration and must remain aligned with provider IDs.
+  </interfaces>
+
+  <tests>
+    <standards>
+From `_bmad-output/test-design-system.md` (Risk R-001 and arbitrage correctness), Epic 2 tests should validate rate limiting, adapter behavior, and correctness under representative provider responses, using deterministic Node-based test harnesses and clear pass/fail criteria. Story 2.4 tests must align with existing patterns for Stories 2.1–2.3 and avoid flaky reliance on live external APIs by using fixtures or mocked HTTP clients where possible.
+    </standards>
+    <locations>
+- Node test runner via `node --test tests/**/*.test.cjs` (see `package.json` scripts).
+- Existing Epic 2 suites: `tests/2.1-adapter-pattern-shared-types.test.cjs`, `tests/2.2-rate-limiter-implementation.test.cjs`, `tests/2.3-rate-limit-calibration-stress-harness.test.cjs`.
+- New Story 2.4-specific tests expected under `tests/2.4-production-adapter-odds-api-io.test.cjs` co-located with other Epic 2 tests.
+    </locations>
+    <ideas>
+- AC #1: Add tests that verify the production adapter uses the centralized rate limiter and credentials module, for example by asserting that it extends `BaseArbitrageAdapter` and marks `__usesCentralRateLimiter` as true.
+- AC #2: Introduce mapping tests that feed representative Odds-API.io pre-calculated arbitrage fixtures into `normalizeOddsApiIoOpportunity` (or successor helpers) and assert that resulting `ArbitrageOpportunity` objects match the Data Architecture schema and invariants.
+- AC #3: Add integration-style tests that exercise the poller’s provider selection and ensure that when the active provider is set to production, opportunities originate from the production adapter and the feed behaves correctly.
+- AC #4: Implement tests that apply region and sport filters to mixed opportunity sets and assert that only opportunities matching the configured filters remain visible, using production-shaped `ArbitrageOpportunity` objects.
+- AC #5: Extend calibration and rate-limiter tests to include scenarios relevant to the production adapter (where safe), asserting that quotas and 429-handling behavior remain correct when production configuration is in place.
+    </ideas>
+  </tests>
+</story-context>
+

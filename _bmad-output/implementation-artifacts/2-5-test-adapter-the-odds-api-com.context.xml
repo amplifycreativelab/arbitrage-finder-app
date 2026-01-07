@@ -1,0 +1,164 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>5</storyId>
+    <title>Test Adapter (The-Odds-API.com)</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-21T00:00:00.000Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/2-5-test-adapter-the-odds-api-com.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>User</asA>
+    <iWant>to calculate arbitrage opportunities locally from raw odds</iWant>
+    <soThat>I can test the engine without relying on pre-calculated feeds</soThat>
+    <tasks>
+      <![CDATA[
+      - Design and implement The-Odds-API.com test adapter HTTP integration (AC: #1, #2)
+      - Apply arbitrage detection and normalization for test provider markets (AC: #2, #3)
+      - Integrate the test adapter into the polling and dashboard pipeline (AC: #3, #4)
+      - Add focused tests for test adapter behavior and invariants (AC: #2, #3, #4, #5)
+      ]]>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <![CDATA[
+    1. The test adapter for The-Odds-API.com calls the provider's raw odds endpoint using the existing credentials boundary and centralized rate-limiting/poller infrastructure, with no direct HTTP usage that bypasses the limiter.
+    2. Raw odds responses are transformed into an internal market representation and arbitrage detection uses calculateTwoLegArbitrageRoi (equivalent to checking 1/oddsA + 1/oddsB &lt; 1) to drop non-arbitrage markets and ensure resulting opportunities have roi &gt;= 0 in line with _bmad-output/architecture.md (Arbitrage Correctness R-002).
+    3. Normalized opportunities from the test adapter are returned as ArbitrageOpportunity[] via the shared adapter interface, with event metadata and legs matching the canonical Data Architecture; results are validated with the existing Zod schemas in shared/schemas.ts before being merged into the unified opportunity stream.
+    4. When the active provider is set to the Test provider in Settings, the polling pipeline uses the test adapter as its source of opportunities and the dashboard feed displays locally calculated arbitrage opportunities that respect region and sport filters via shared/filters.ts, matching FR5–FR7 and FR9–FR13 behavior described in _bmad-output/prd.md.
+    5. Focused tests cover test-adapter HTTP wiring and mapping, verifying that representative raw odds payloads produce the expected ArbitrageOpportunity records and ROI, that non-arbitrage markets are excluded, and that rate-limiting and provider-switching behavior remain consistent with Stories 2.1–2.4.
+    ]]>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <![CDATA[
+      - _bmad-output/prd.md (FR5–FR7: arbitrage engine and local raw-odds calculation)
+      - _bmad-output/architecture.md (Data Architecture, Arbitrage Correctness R-002, Rate Limiting R-001)
+      - _bmad-output/epics.md (Epic 2, Story 2.5 — Test Adapter (The-Odds-API.com))
+      - _bmad-output/implementation-artifacts/2-1-adapter-pattern-shared-types.md
+      - _bmad-output/implementation-artifacts/2-2-rate-limiter-implementation.md
+      - _bmad-output/implementation-artifacts/2-3-rate-limit-calibration-stress-harness.md
+      - _bmad-output/implementation-artifacts/2-4-production-adapter-odds-api-io.md
+      ]]>
+    </docs>
+    <code>
+      <![CDATA[
+      - path: shared/types.ts
+        kind: shared-model
+        symbol: ArbitrageOpportunity
+        reason: Canonical arbitrage opportunity data model used by all adapters.
+      - path: shared/schemas.ts
+        kind: schema
+        symbol: arbitrageOpportunityListSchema
+        reason: Validation for normalized ArbitrageOpportunity[] from adapters.
+      - path: shared/filters.ts
+        kind: utility
+        symbol: filterOpportunitiesByRegionAndSport
+        reason: Applies region/sport filters to provider-agnostic opportunities.
+      - path: src/main/services/calculator.ts
+        kind: service
+        symbol: calculateTwoLegArbitrageRoi
+        reason: Core two-leg arbitrage ROI calculation used for test adapter markets.
+      - path: src/main/adapters/base.ts
+        kind: adapter-base
+        symbol: BaseArbitrageAdapter
+        reason: Shared adapter base class that enforces centralized credentials and rate limiting.
+      - path: src/main/adapters/the-odds-api.ts
+        kind: adapter
+        symbol: TheOddsApiAdapter, normalizeTheOddsApiMarket
+        reason: Test provider adapter and normalization logic for The-Odds-API raw odds.
+      - path: src/main/adapters/odds-api-io.ts
+        kind: adapter
+        symbol: OddsApiIoAdapter, normalizeOddsApiIoOpportunity
+        reason: Production adapter pattern to mirror for test-provider implementation.
+      - path: src/main/services/poller.ts
+        kind: service
+        symbol: scheduleProviderRequest, mergeProviderOpportunities
+        reason: Central rate-limited polling pipeline and opportunity merging.
+      - path: src/main/services/router.ts
+        kind: service
+        symbol: appRouter
+        reason: Provider selection and adapter registration wiring for main process.
+      - path: src/preload/index.ts
+        kind: preload
+        symbol: trpc client exposure
+        reason: Preload bridge for settings/provider configuration and status.
+      - path: src/renderer/src/features/settings/ProviderSettings.tsx
+        kind: component
+        symbol: ProviderSettings
+        reason: Renderer UI for selecting Test vs Production provider and configuring keys.
+      - path: tests/2.1-adapter-pattern-shared-types.test.cjs
+        kind: test
+        symbol: adapter normalization tests
+        reason: Existing adapter normalization and contract tests to mirror/extend.
+      - path: tests/2.2-rate-limiter-implementation.test.cjs
+        kind: test
+        symbol: rate limiter tests
+        reason: Validates centralized limiter behavior used by the test adapter.
+      - path: tests/2.3-rate-limit-calibration-stress-harness.test.cjs
+        kind: test
+        symbol: calibration harness tests
+        reason: Stress patterns and quota checks relevant to test provider traffic.
+      - path: tests/2.4-production-adapter-odds-api-io.test.cjs
+        kind: test
+        symbol: production adapter mapping/integration tests
+        reason: Pattern for HTTP wiring + mapping + filters to reuse for 2.5.
+      ]]>
+    </code>
+    <dependencies>
+      <![CDATA[
+      - package.json: electron, react, zustand, electron-trpc, bottleneck, zod, electron-store, electron-log, date-fns
+      ]]>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <![CDATA[
+    - Adapters must not bypass the centralized rate limiter; all HTTP calls go through scheduleProviderRequest and BaseArbitrageAdapter.
+    - The renderer must never see raw API keys; credentials are confined to src/main/credentials.ts and IPC boundaries defined in _bmad-output/architecture.md.
+    - ArbitrageOpportunity is the only supported opportunity shape across main/shared/renderer, and all provider-specific fields remain internal to adapters.
+    - Arbitrage correctness invariants from _bmad-output/architecture.md R-002 apply: roi >= 0, distinct bookmakers per opportunity, and implied probabilities consistent with surebet behavior.
+    - Test provider behavior must not weaken or diverge from production adapter patterns; both must share calculation and filtering rules where applicable.
+    ]]>
+  </constraints>
+  <interfaces>
+    <![CDATA[
+    - TheOddsApiAdapter.fetchOpportunities(): Promise<ArbitrageOpportunity[]>
+    - BaseArbitrageAdapter.fetchOpportunities(): Promise<ArbitrageOpportunity[]>
+    - scheduleProviderRequest(providerId, fn): Promise<T>
+    - calculateTwoLegArbitrageRoi(oddsA: number, oddsB: number): number
+    - filterOpportunitiesByRegionAndSport(opportunities, filters): ArbitrageOpportunity[]
+    ]]>
+  </interfaces>
+  <tests>
+    <standards>
+      <![CDATA[
+      - Use Node-based test suites under tests/*.test.cjs to validate adapter behavior, rate limiting, and correctness invariants.
+      - Validate ArbitrageOpportunity instances using shared Zod schemas and enforce R-002 invariants (non-negative ROI, distinct bookmakers, consistent event metadata).
+      - Reuse calibration and quota-checking patterns from Story 2.3 when exercising sustained polling or stress behavior for the test provider.
+      ]]>
+    </standards>
+    <locations>
+      <![CDATA[
+      - tests/2.1-adapter-pattern-shared-types.test.cjs
+      - tests/2.2-rate-limiter-implementation.test.cjs
+      - tests/2.3-rate-limit-calibration-stress-harness.test.cjs
+      - tests/2.4-production-adapter-odds-api-io.test.cjs
+      - tests/2.5-test-adapter-the-odds-api-com.test.cjs (to be added)
+      ]]>
+    </locations>
+    <ideas>
+      <![CDATA[
+      - Given representative The-Odds-API raw odds fixtures, when TheOddsApiAdapter.fetchOpportunities runs, then only markets where 1/oddsA + 1/oddsB < 1 produce ArbitrageOpportunity instances with roi >= 0 and distinct bookmakers (AC #2, #3).
+      - Given mixed raw odds payloads (some arbs, some non-arbs), when opportunities are normalized and validated, then non-arb markets are filtered out and Zod validation passes for the resulting list (AC #2, #3).
+      - Given Test provider is selected in settings and calibration harness runs in a bounded mode, when polling executes for a configured duration, then adapter calls are rate-limited via scheduleProviderRequest and no unexpected 429-related failures occur (AC #1, #5).
+      - Given region/sport filters are applied via shared/filters.ts, when TheOddsApiAdapter returns opportunities spanning multiple regions/sports, then the dashboard and tests confirm only matching opportunities are surfaced (AC #4).
+      ]]>
+    </ideas>
+  </tests>
+</story-context>
+

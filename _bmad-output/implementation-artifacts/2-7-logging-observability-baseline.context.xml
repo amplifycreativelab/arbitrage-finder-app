@@ -1,0 +1,98 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>7</storyId>
+    <title>Logging &amp; Observability Baseline</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-21T00:00:00.000Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/2-7-logging-observability-baseline.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>Developer</asA>
+    <iWant>structured logging and basic observability for the data engine</iWant>
+    <soThat>rate limiting, polling, and adapters can be monitored and debugged</soThat>
+    <tasks>
+- [ ] Introduce a main-process logging helper wrapping `electron-log` (AC: #1, #4).  
+  - [ ] Implement `src/main/services/logger.ts` (or equivalent) with typed helpers such as `logInfo`, `logError`, and `logHeartbeat` that accept a structured payload including `context`, `operation`, `providerId`, `correlationId`, `durationMs`, and optional `errorCategory` (AC: #1).  
+  - [ ] Ensure the helper is the only module that imports `electron-log` directly in the main process (AC: #1, #4).
+- [ ] Instrument adapters with structured logging for external calls (AC: #1, #2).  
+  - [ ] Update `src/main/adapters/odds-api-io.ts` to log a single structured entry per provider call including request context, outcome (success/failure), HTTP status, durationMs, and number of opportunities mapped into `ArbitrageOpportunity[]` (AC: #2).  
+  - [ ] Update `src/main/adapters/the-odds-api.ts` to follow the same logging contract and reuse correlationIds propagated from the poller (AC: #2).
+- [ ] Instrument the poller with tick and heartbeat logging (AC: #2, #3).  
+  - [ ] Update `src/main/services/poller.ts` to log each polling tick with per-provider call counts, success/failure summary, durationMs, and derived `SystemStatus` / `ProviderStatus` where available (AC: #2, #3).  
+  - [ ] Emit a heartbeat log entry at a fixed interval that records last successful fetch time per provider and overall system health in the format described in `_bmad-output/architecture.md#Error Handling, Logging, and Observability` (AC: #3).
+- [ ] Implement log hygiene and tests for secret redaction (AC: #4).  
+  - [ ] Extend the logging helper with a simple redaction mechanism (for example marking fields as `secret` and masking them before writing the log line), ensuring API keys and other credentials never reach disk (AC: #4).  
+  - [ ] Add a log-scrubbing or snapshot-based test (for example `tests/2.7-logging-observability-baseline.test.cjs`) that exercises adapter and poller logging paths under representative scenarios and fails if any captured log output contains obvious secret patterns (API keys, tokens) (AC: #4).  
+  - [ ] Document log file location(s) and any basic troubleshooting steps in `_bmad-output/backlog.md` or an appropriate operations note, referencing the structured fields and heartbeat format (AC: #1, #3, #4).
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+1. Main process logging is centralized behind a small helper (for example `src/main/services/logger.ts`) that wraps `electron-log` and emits structured entries with at least: `timestamp`, `level`, `context`, `operation`, `providerId`, `correlationId`, `durationMs`, and `errorCategory` (aligned with `_bmad-output/architecture.md#Error Handling, Logging, and Observability`); adapters, poller, and calculator all use this helper rather than calling `electron-log` directly.
+2. Every external adapter call (`src/main/adapters/odds-api-io.ts`, `src/main/adapters/the-odds-api.ts`) and every poller tick (`src/main/services/poller.ts`) produces a single log entry per call/tick capturing success/failure, HTTP status (for adapters), durationMs, number of opportunities returned (where applicable), and relevant identifiers (providerId, correlationId).
+3. The poller emits a lightweight heartbeat at a fixed interval (for example once per polling cycle) that records last successful fetch time, per-provider status summary, and overall system status in a structured log entry, suitable for driving the `SystemStatus` / `ProviderStatus` model described in `_bmad-output/architecture.md#Error Handling, Logging, and Observability`.
+4. Logging utilities implement redaction for any value tagged or passed as `secret` (API keys, tokens, credentials) and a test or log-scrubbing check (for example `tests/2.7-logging-observability-baseline.test.cjs`) asserts that API keys and other secrets never appear in captured logs under normal operation, satisfying risk R-003 in `_bmad-output/test-design-system.md`.
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+- PRD logging and data privacy requirements: `_bmad-output/prd.md#Non-Functional Requirements` and `_bmad-output/prd.md#Architecture & Epics Alignment` (NFR1, NFR4).  
+- Epic and story definition for logging and observability: `_bmad-output/epics.md#Story 2.7 -- Logging & Observability Baseline`.  
+- Architecture logging and observability patterns: `_bmad-output/architecture.md#Error Handling, Logging, and Observability` and `_bmad-output/architecture.md#UX Error and Degraded States`.  
+- System-level test design and R-003 risk definition: `_bmad-output/test-design-system.md#Risk Assessment` (R-003) and `_bmad-output/test-design-system.md#Mitigation Plans`.  
+- Backlog and operational notes that may reference future log viewing or troubleshooting flows: `_bmad-output/backlog.md`.
+    </docs>
+    <code>
+- Centralized rate limiting and poller behavior: `src/main/services/poller.ts` (Bottleneck configuration, provider quota status handling, latest snapshot storage).  
+- Production provider adapter: `src/main/adapters/odds-api-io.ts` (HTTP fetch against `/v3/arbitrage-bets`, mapping into `ArbitrageOpportunity`).  
+- Test provider adapter: `src/main/adapters/the-odds-api.ts` (HTTP fetch against `/v4/sports/.../odds`, normalization and ROI calculation via `calculateTwoLegArbitrageRoi`).  
+- Arbitrage calculation and golden dataset entry point: `src/main/services/calculator.ts` (including `calculateTwoLegArbitrageRoi` and `calculateArbitrageFromSnapshots`).  
+- Shared types and provider identifiers: `shared/types.ts` (ProviderId, ArbitrageOpportunity, provider metadata).  
+- Shared validation schema for opportunities: `shared/schemas.ts` (`arbitrageOpportunityListSchema`).  
+- Renderer dashboard and settings surfaces that will ultimately consume heartbeat and status information: `src/renderer/src/features/dashboard/*` and `src/renderer/src/features/settings/ProviderSettings.tsx`.  
+- Node test harness for Epic 2 data engine stories, including golden dataset tests for Story 2.6: `tests/2.4-production-adapter-odds-api-io.test.cjs`, `tests/2.5-test-adapter-the-odds-api-com.test.cjs`, `tests/2.6-golden-dataset-arbitrage-correctness-tests.test.cjs`, and helpers under `tests/helpers/`.
+    </code>
+    <dependencies>
+- Node/Electron stack and desktop app framework: `package.json` (Electron, electron-vite, React, TypeScript).  
+- Rate limiting and scheduling: `bottleneck` (used in `src/main/services/poller.ts`).  
+- Logging foundation: `electron-log` (to be wrapped by `src/main/services/logger.ts`).  
+- State management, IPC, and validation libraries used by downstream consumers: `zustand`, `electron-trpc`, `zod`.  
+- Testing tools and runners for log-scrubbing and data engine tests: Node test runner (`node --test` via `npm test`) and any existing test utilities in `tests/helpers/*`.
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Logging must never persist raw API keys, tokens, or other secrets; any field that may contain such data must be redacted or omitted before log emission, aligning with NFR4 (Data Privacy) in `_bmad-output/prd.md` and R-003 in `_bmad-output/test-design-system.md`.  
+- Adapter and poller logging should remain lightweight and metadata-focused, avoiding full odds payloads or arbitrage results to keep log volumes small and prevent leakage of business-sensitive data.  
+- New logging code should not change existing rate limiting or arbitrage correctness behavior; the existing tests (including Story 2.6 golden dataset and calibration tests) must continue to pass.  
+- Structured log fields (`timestamp`, `level`, `context`, `operation`, `providerId`, `correlationId`, `durationMs`, `errorCategory`) must follow the schema in `_bmad-output/architecture.md#Error Handling, Logging, and Observability` so that future tools can reliably parse them.
+  </constraints>
+
+  <interfaces>
+- Poller heartbeat and status surfaces implied by `_bmad-output/architecture.md#Error Handling, Logging, and Observability` and `_bmad-output/architecture.md#UX Error and Degraded States`, including `SystemStatus` and `ProviderStatus` models that will eventually be exposed via IPC to the renderer.  
+- Existing arbitrage adapter contracts defined by `ArbitrageAdapter` in `shared/types.ts`, which must remain the primary interface between poller and provider-specific implementations.  
+- Any future `logger` service interface introduced in `src/main/services/logger.ts`, providing helper functions for logging events, errors, and heartbeats with the structured schema required by this story.
+  </interfaces>
+
+  <tests>
+    <standards>
+- Follow the system-level test strategy in `_bmad-output/test-design-system.md`, treating logging and observability as part of operational quality (R-003).  
+- Prefer Node tests (`node --test`) that exercise adapter and poller codepaths in isolation, capturing log output in memory and asserting on structured fields and absence of secrets.  
+- Maintain P0/P1 status for tests that verify rate limiting correctness, arbitrage correctness, and log hygiene around secrets.
+    </standards>
+    <locations>
+- Core data engine and logging tests should live under `tests/*.test.cjs`, reusing existing patterns from the Epic 2 suite (e.g., `tests/2.4-*`, `tests/2.5-*`, `tests/2.6-*`).  
+- Any new log-scrubbing tests for this story should be introduced as `tests/2.7-logging-observability-baseline.test.cjs` alongside existing Epic 2 tests.  
+- Golden dataset fixtures and helpers already used by Story 2.6 live under `tests/fixtures/arbitrage/` and `tests/helpers/`, and can be reused if needed when creating scenarios that drive logging behavior.
+    </locations>
+    <ideas>
+- Verify that adapter and poller codepaths emit exactly one structured log entry per external call/tick with the expected fields and without secrets, using a test logger or captured output.  
+- Simulate rate limiting and error conditions (e.g., 429 responses, network failures) and assert that log entries include the correct `errorCategory`, `providerId`, and `durationMs` while still redacting any sensitive values.  
+- Exercise a small end-to-end flow (using test doubles for fetch) that triggers both providers and confirms that heartbeat and status information is logged in a format that can later back SystemStatus/ProviderStatus displays.
+    </ideas>
+  </tests>
+</story-context>
+

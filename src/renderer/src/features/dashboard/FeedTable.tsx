@@ -9,6 +9,8 @@ import type { FeedSortDirection, FeedSortKey } from './stores/feedStore'
 import { useFeedStore } from './stores/feedStore'
 import { getStalenessInfo } from './staleness'
 
+const isServerEnvironment = typeof document === 'undefined'
+
 export interface FeedTableProps {
   opportunities?: ArbitrageOpportunity[]
   initialSortBy?: FeedSortKey
@@ -61,6 +63,10 @@ export function FeedTable({
   const selectedOpportunityIndex = useFeedStore(
     (state) => state.selectedOpportunityIndex
   )
+  const processedFromStore = useFeedStore((state) => state.processedOpportunityIds)
+  const processedOpportunityIds = isServerEnvironment
+    ? useFeedStore.getState().processedOpportunityIds
+    : processedFromStore
   const setSelectedOpportunityId = useFeedStore((state) => state.setSelectedOpportunityId)
   const moveSelectionByOffset = useFeedStore((state) => state.moveSelectionByOffset)
   const setSortGlobal = useFeedStore((state) => state.setSort)
@@ -271,12 +277,16 @@ export function FeedTable({
               {visibleOpportunities.map((opportunity, index) => {
                 const rowIndex = startIndex + index
 
+                const isSelected = opportunity.id === effectiveSelectedId
+                const isProcessed = processedOpportunityIds.has(opportunity.id)
+
                 return (
                   <FeedRow
                     key={opportunity.id}
                     opportunity={opportunity}
                     stalenessNow={effectiveNow}
-                    isSelected={opportunity.id === effectiveSelectedId}
+                    isSelected={isSelected}
+                    isProcessed={isProcessed}
                     onSelect={() => handleRowSelect(opportunity.id, rowIndex)}
                   />
                 )
@@ -287,15 +297,21 @@ export function FeedTable({
 
         {totalCount > 0 && !virtualizationEnabled && (
           <div>
-            {visibleOpportunities.map((opportunity, index) => (
-              <FeedRow
-                key={opportunity.id}
-                opportunity={opportunity}
-                stalenessNow={effectiveNow}
-                isSelected={opportunity.id === effectiveSelectedId}
-                onSelect={() => handleRowSelect(opportunity.id, index)}
-              />
-            ))}
+            {visibleOpportunities.map((opportunity, index) => {
+              const isSelected = opportunity.id === effectiveSelectedId
+              const isProcessed = processedOpportunityIds.has(opportunity.id)
+
+              return (
+                <FeedRow
+                  key={opportunity.id}
+                  opportunity={opportunity}
+                  stalenessNow={effectiveNow}
+                  isSelected={isSelected}
+                  isProcessed={isProcessed}
+                  onSelect={() => handleRowSelect(opportunity.id, index)}
+                />
+              )
+            })}
           </div>
         )}
       </div>
@@ -308,12 +324,28 @@ interface FeedRowProps {
   stalenessNow?: number
 }
 
+/**
+ * Get short display label for provider in badge.
+ */
+function getProviderBadgeLabel(providerId: string | undefined): string | null {
+  if (!providerId) return null
+  switch (providerId) {
+    case 'odds-api-io':
+      return 'OA.io'
+    case 'the-odds-api':
+      return 'TOA'
+    default:
+      return providerId.slice(0, 4)
+  }
+}
+
 function FeedRow({
   opportunity,
   stalenessNow,
   isSelected,
+  isProcessed,
   onSelect
-}: FeedRowProps & { isSelected: boolean; onSelect: () => void }): React.JSX.Element {
+}: FeedRowProps & { isSelected: boolean; isProcessed: boolean; onSelect: () => void }): React.JSX.Element {
   const timeLabel = formatTime(opportunity)
   const eventLabel = opportunity.event.name
   const roiLabel = formatRoi(opportunity.roi)
@@ -322,17 +354,22 @@ function FeedRow({
   const combinedTimeLabel =
     stalenessLabel.length > 0 ? `${timeLabel} · ${stalenessLabel}` : timeLabel
 
+  // Provider source badge (Story 5.1)
+  const providerBadge = getProviderBadgeLabel(opportunity.providerId)
+
   return (
     <div
       id={`feed-row-${opportunity.id}`}
       className={cn(
         'flex cursor-pointer items-center justify-between border-b border-white/5 py-1.5 text-[11px]',
-        isStale ? 'opacity-50' : '',
+        isStale || isProcessed ? 'opacity-50' : '',
         isSelected ? 'bg-ot-accent/10' : 'hover:bg-white/5'
       )}
       data-testid="feed-row"
       data-staleness={isStale ? 'stale' : 'fresh'}
       data-state={isSelected ? 'selected' : 'idle'}
+      data-processed={isProcessed ? 'true' : 'false'}
+      data-provider={opportunity.providerId ?? 'unknown'}
       onClick={onSelect}
       role="option"
       aria-selected={isSelected ? 'true' : 'false'}
@@ -343,6 +380,25 @@ function FeedRow({
       >
         {combinedTimeLabel}
       </div>
+      {isProcessed && (
+        <div
+          className="mx-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500/80 text-[9px] font-semibold text-black"
+          data-testid="feed-row-processed-badge"
+          aria-label="Processed"
+        >
+          ✓
+        </div>
+      )}
+      {/* Provider source badge (Story 5.1) */}
+      {providerBadge && (
+        <div
+          className="mx-1 rounded-full border border-ot-accent/30 bg-ot-accent/10 px-1.5 py-0.5 text-[8px] font-medium text-ot-accent/80"
+          data-testid="feed-row-provider-badge"
+          aria-label={`Source: ${opportunity.providerId}`}
+        >
+          {providerBadge}
+        </div>
+      )}
       <div
         className="mx-2 min-w-0 flex-1 truncate text-ot-foreground"
         data-testid="feed-cell-event"
@@ -361,3 +417,4 @@ function FeedRow({
 }
 
 export default FeedTable
+

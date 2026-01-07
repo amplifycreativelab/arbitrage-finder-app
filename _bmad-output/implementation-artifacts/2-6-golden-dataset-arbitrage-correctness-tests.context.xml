@@ -1,0 +1,163 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>6</storyId>
+    <title>Golden Dataset &amp; Arbitrage Correctness Tests</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-21</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/2-6-golden-dataset-arbitrage-correctness-tests.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>Quant/Tester</asA>
+    <iWant>a golden dataset and correctness tests for arbitrage calculation</iWant>
+    <soThat>we can detect regressions and avoid false positives/negatives</soThat>
+    <tasks>
+- [ ] Design golden dataset structure and fixtures (AC: #1).
+  - [ ] Define a minimal JSON schema for golden odds snapshots that can represent both pre-calculated arbs (Odds-API.io) and raw-odds scenarios (The-Odds-API.com), including provider id, event metadata, markets, and expected arbitrage opportunities (AC: #1, #3).
+  - [ ] Create at least three golden fixture files under `tests/fixtures/arbitrage/` (Odds-API.io arbs, The-Odds-API.com arbs, no-surebets) and document each scenario in comments or a short README near the fixtures (AC: #1).
+  - [ ] Add a small loader or helper in the test suite for reading these fixtures and converting them into the typed structures expected by the calculator entry point (AC: #1, #2).
+- [ ] Expose a pure calculator entry point for golden datasets (AC: #2).
+  - [ ] Extend `src/main/services/calculator.ts` with a pure function that accepts golden snapshot inputs (or a derived internal structure) and returns `ArbitrageOpportunity[]` using `calculateTwoLegArbitrageRoi` and the existing normalization rules, with no direct dependency on the poller or adapters (AC: #2, #3).
+  - [ ] Ensure the new entry point is exported through the compiled `out-tests` bundle and can be imported from Node test files without requiring Electron runtime setup (AC: #2).
+  - [ ] Confirm that existing adapter and poller code paths continue to use `calculateTwoLegArbitrageRoi` consistently, so that golden dataset expectations align with real pipeline behavior (AC: #2, #3).
+- [ ] Implement golden dataset correctness tests and invariants (AC: #3, #4).
+  - [ ] Add `tests/2.6-golden-dataset-arbitrage-correctness-tests.test.cjs` that loads each golden fixture, runs it through the pure calculator entry point, and asserts expected opportunities (ids, ROI, event metadata) and absence of extra results (AC: #1, #3).
+  - [ ] Encode the R-002 invariants (`roi &gt;= 0`, distinct bookmakers per opportunity, implied probability within tolerance) as assertions over the golden dataset outputs and cross-check them with existing tests from Stories 2.1–2.5 (AC: #3, #4).
+  - [ ] Introduce lightweight property-based or randomized tests (following `_bmad-output/test-design-system.md`) that generate synthetic odds around edge cases (near 1/oddsA + 1/oddsB == 1) and verify that the calculator never produces negative ROI or spurious arbs (AC: #4).
+- [ ] Integrate harness with existing adapter and test design workflows (AC: #5).
+  - [ ] Refactor adapter tests in `tests/2.4-production-adapter-odds-api-io.test.cjs` and `tests/2.5-test-adapter-the-odds-api-com.test.cjs` to reuse golden fixtures where it improves clarity and avoids duplicated odds setups, while keeping adapter-specific HTTP wiring tests intact (AC: #3, #5).
+  - [ ] Update `_bmad-output/test-design-system.md` to point to the concrete golden dataset files and 2.6 test cases as the canonical implementation of R-002 mitigation (AC: #5).
+  - [ ] Optionally update `_bmad-output/epics.md` (Story 2.6 section) with a brief note indicating that the golden dataset and property-based harness are implemented and referencing the main test file(s) and fixtures (AC: #5).
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+1. Curated golden odds snapshots exist for at least three scenarios and are stored as small, reviewable JSON fixtures under the test suite (for example `tests/fixtures/arbitrage/golden-odds-odds-api-io.json`, `tests/fixtures/arbitrage/golden-odds-the-odds-api.json`, and `tests/fixtures/arbitrage/golden-odds-no-surebets.json`).
+2. `src/main/services/calculator.ts` exposes a pure, test-focused entry point that accepts typed inputs derived from the golden fixtures and returns `ArbitrageOpportunity[]` without performing any I/O, network calls, or poller interaction.
+3. Golden dataset tests (for example `tests/2.6-golden-dataset-arbitrage-correctness-tests.test.cjs`) run each fixture through the pure calculator entry point and assert the expected and only the expected opportunities.
+4. Invariants from `_bmad-output/architecture.md` (Arbitrage Correctness R-002) and `_bmad-output/test-design-system.md` are encoded as explicit assertions or property-based checks over the golden dataset and additional randomized inputs.
+5. The golden dataset and correctness harness integrate cleanly with existing Epic 2 tests and documentation and do not cause regressions in rate limiting, adapter contracts, or filter behavior.
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>_bmad-output/prd.md</path>
+        <kind>prd</kind>
+        <title>Arbitrage Finder App - Product Requirements Document</title>
+        <section>Domain-Specific Requirements / Arbitrage Detection Engine</section>
+        <snippet>The system must normalize all API responses into a unified ArbitrageOpportunity model and, in Test Mode, perform local arbitrage calculation logic on raw odds using the 1/oddsA + 1/oddsB &lt; 1 condition.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/architecture.md</path>
+        <kind>architecture</kind>
+        <title>Architecture: Arbitrage Finder App</title>
+        <section>High-Risk Domain Patterns &mdash; Arbitrage Correctness (R-002, DATA)</section>
+        <snippet>Maintain a small set of golden odds snapshots per provider and ensure calculator.ts exposes a pure function that produces ArbitrageOpportunity[] from these fixtures while enforcing invariants such as roi &gt;= 0, distinct bookmakers, and implied probabilities summing to ≈ 1.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/epics.md</path>
+        <kind>epics</kind>
+        <title>Epic 2 &mdash; Data Ingestion &amp; Normalization Engine</title>
+        <section>Story 2.6 &mdash; Golden Dataset &amp; Arbitrage Correctness Tests</section>
+        <snippet>Story 2.6 defines the golden odds snapshots, calculator-level correctness tests, and invariants to mitigate R-002 and provide high-confidence regression coverage for arbitrage logic.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/test-design-system.md</path>
+        <kind>test-design</kind>
+        <title>Test Design: System-Level Testability Review</title>
+        <section>Risk Assessment &mdash; R-002 Arbitrage Calculation Correctness</section>
+        <snippet>The mitigation plan calls for curated golden datasets per provider and property-based tests around the arbitrage formula, treating these as P0 scenarios that must pass on every commit.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/implementation-artifacts/2-5-test-adapter-the-odds-api-com.md</path>
+        <kind>sprint-artifact</kind>
+        <title>Story 2.5: Test Adapter (The-Odds-API.com)</title>
+        <section>Dev Notes / Learnings for R-002</section>
+        <snippet>Story 2.5 centralizes arbitrage detection in calculateTwoLegArbitrageRoi and prepares the adapter and pipeline surfaces that the golden dataset harness in Story 2.6 will consume.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/main/services/calculator.ts</path>
+        <kind>service</kind>
+        <symbol>calculateTwoLegArbitrageRoi</symbol>
+        <lines>1-80</lines>
+        <reason>Core arbitrage ROI calculation used by both providers; golden dataset harness must call into this function or a pure wrapper to ensure consistent behavior.</reason>
+      </artifact>
+      <artifact>
+        <path>src/main/adapters/odds-api-io.ts</path>
+        <kind>adapter</kind>
+        <symbol>OddsApiIoAdapter</symbol>
+        <lines>1-160</lines>
+        <reason>Production adapter mapping pre-calculated arbitrage responses into ArbitrageOpportunity; golden fixtures for Odds-API.io should reflect realistic mapping patterns used here.</reason>
+      </artifact>
+      <artifact>
+        <path>src/main/adapters/the-odds-api.ts</path>
+        <kind>adapter</kind>
+        <symbol>TheOddsApiAdapter</symbol>
+        <lines>1-220</lines>
+        <reason>Test adapter responsible for transforming raw odds into ArbitrageOpportunity via calculateTwoLegArbitrageRoi; golden fixtures for The-Odds-API.com validate this path.</reason>
+      </artifact>
+      <artifact>
+        <path>tests/2.4-production-adapter-odds-api-io.test.cjs</path>
+        <kind>test</kind>
+        <symbol>[P1][2.4-ADAPTER-001...]</symbol>
+        <lines>1-260</lines>
+        <reason>Existing adapter and pipeline tests for Odds-API.io that should be refactored to optionally reuse golden fixtures where it improves clarity.</reason>
+      </artifact>
+      <artifact>
+        <path>tests/2.5-test-adapter-the-odds-api-com.test.cjs</path>
+        <kind>test</kind>
+        <symbol>[P0][2.5-ADAPTER-HTTP-001] / [P1][2.5-FILTERS-PIPELINE-001]</symbol>
+        <lines>1-220</lines>
+        <reason>Adapter and pipeline tests for The-Odds-API.com that validate HTTP wiring, mapping, and filter behavior; they will remain alongside the new golden dataset tests.</reason>
+      </artifact>
+      <artifact>
+        <path>tests/2.1-adapter-pattern-shared-types.test.cjs</path>
+        <kind>test</kind>
+        <symbol>[P1][2.1-ADAPTER-CONTRACT-001]</symbol>
+        <lines>1-220</lines>
+        <reason>Shared adapter contract and normalization tests that define core invariants for ArbitrageOpportunity; golden dataset tests reinforce these invariants at the calculator level.</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <dependency>
+        <kind>node</kind>
+        <path>package.json</path>
+        <snippet>Depends on zod, electron-log, and node:test which are used by the calculator, logging, and test harness.</snippet>
+      </dependency>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    Golden datasets must remain small, readable JSON fixtures stored under tests/fixtures/arbitrage and treated as long-lived reference scenarios; any change requires explicit review and clear rationale.
+    All arbitrage correctness tests must run purely in Node (no Electron main/renderer startup) using the compiled out-tests bundle for calculator.ts.
+    Arbitrage invariants from _bmad-output/architecture.md (roi &gt;= 0, distinct bookmakers, implied probability within tolerance) are non-negotiable and must be encoded as explicit assertions.
+  </constraints>
+  <interfaces>
+    <interface>
+      <name>calculateTwoLegArbitrageRoi</name>
+      <kind>function</kind>
+      <signature>calculateTwoLegArbitrageRoi(oddsA: number, oddsB: number): number</signature>
+      <path>src/main/services/calculator.ts</path>
+    </interface>
+  </interfaces>
+  <tests>
+    <standards>
+Golden dataset tests are P0 and must run on every commit; they rely on node:test, Zod validation, and follow the risk-based approach in _bmad-output/test-design-system.md for R-002 (DATA).
+    </standards>
+    <locations>
+tests/2.6-golden-dataset-arbitrage-correctness-tests.test.cjs
+tests/2.4-production-adapter-odds-api-io.test.cjs
+tests/2.5-test-adapter-the-odds-api-com.test.cjs
+    </locations>
+    <ideas>
+      - Verify that each golden fixture produces exactly the expected ArbitrageOpportunity set and no extras.
+      - Check invariants across random odds near the arbitrage boundary (1/oddsA + 1/oddsB ≈ 1) to ensure no negative ROI or spurious surebets are emitted.
+    </ideas>
+  </tests>
+</story-context>
+

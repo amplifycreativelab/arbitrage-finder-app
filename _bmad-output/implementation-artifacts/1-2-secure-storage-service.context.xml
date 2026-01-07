@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<storyContext>
+  <storyKey>1-2-secure-storage-service</storyKey>
+  <userStory>
+    <asA>a User</asA>
+    <iWant>API keys securely stored</iWant>
+    <soThat>secrets are never stored in plain text</soThat>
+  </userStory>
+  <acceptanceCriteria>
+    <criterion>Main process uses `safeStorage` (or equivalent secure API) for encrypting API keys at rest.</criterion>
+    <criterion>`electron-trpc` exposes typed procedures `saveApiKey` and `getApiKey` scoped per provider.</criterion>
+    <criterion>When `safeStorage` is not available (e.g., unsupported platform), the app falls back to a documented, less-secure but functional storage path, with a visible warning to the user.</criterion>
+    <criterion>No API keys are written to plain-text config files or logs.</criterion>
+    <criterion>Keys are retrievable across app restarts for all configured providers.</criterion>
+  </acceptanceCriteria>
+  <tasks>
+    <task>Implement secure storage module in `src/main/services/storage.ts` using `safeStorage` and electron-store.</task>
+    <task>Design a minimal key/value schema for provider-scoped secrets (e.g., provider id ? encrypted key) and document it.</task>
+    <task>Add `saveApiKey` / `getApiKey` procedures to the main TRPC router, delegating persistence to the storage service.</task>
+    <task>Wire preload/renderer IPC so settings UI can save and read keys via typed TRPC calls (no direct file system access from renderer).</task>
+    <task>Implement and document the fallback behavior when `safeStorage` is unavailable, including a user-facing warning.</task>
+    <task>Add basic unit/integration tests around the storage service to verify encryption and retrieval behavior.</task>
+  </tasks>
+  <artifacts>
+    <documents>
+      <doc path="_bmad-output/PRD.md" />
+      <doc path="_bmad-output/architecture.md" />
+      <doc path="_bmad-output/epics.md" />
+    </documents>
+  </artifacts>
+</storyContext>

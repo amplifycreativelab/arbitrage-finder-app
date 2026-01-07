@@ -373,3 +373,75 @@ test('[P1][4.3-COPY-005] FeedTable and SignalPreview share selection and process
   }
 });
 
+test('[P1][4.3-COPY-006] processed rows show badge and visual de-emphasis in FeedTable after Copy & Advance', async () => {
+  const provider = PROVIDERS.find((entry) => entry.id === 'the-odds-api');
+
+  assert.ok(provider, 'Expected test provider metadata to exist');
+
+  const first = createOpportunity('arb-1');
+  const second = createOpportunity('arb-2');
+
+  useFeedStore.setState((state) => ({
+    ...state,
+    providerId: provider.id,
+    providerMetadata: provider,
+    opportunities: [first, second],
+    fetchedAt: '2025-11-22T18:00:00Z',
+    status: null,
+    isLoading: false,
+    error: null,
+    selectedOpportunityId: first.id,
+    selectedOpportunityIndex: 0,
+    processedOpportunityIds: new Set()
+  }));
+
+  let copyCallCount = 0;
+
+  const originalMutate = trpc.trpcClient.copySignalToClipboard.mutate;
+
+  trpc.trpcClient.copySignalToClipboard.mutate = async () => {
+    copyCallCount += 1;
+    return { ok: true };
+  };
+
+  try {
+    const result = await copyAndAdvanceCurrentOpportunity();
+
+    assert.ok(result.success, 'Expected Copy & Advance to succeed');
+
+    const html = renderToHtml(
+      React.createElement(FeedTable, {
+        opportunities: [first, second],
+        initialSortBy: 'time',
+        initialSortDirection: 'asc'
+      })
+    );
+
+    const processedRowMatch = html.match(
+      /<div[^>]*data-testid="feed-row"[^>]*data-processed="true"[^>]*>/
+    );
+
+    assert.ok(
+      processedRowMatch,
+      'Expected at least one feed row to be marked data-processed="true" after Copy & Advance'
+    );
+
+    assert.ok(
+      processedRowMatch[0].includes('opacity-50'),
+      'Expected processed row to use opacity-50 for visual de-emphasis'
+    );
+
+    assert.ok(
+      html.includes('data-testid="feed-row-processed-badge"'),
+      'Expected processed row to render a processed badge indicator in the feed'
+    );
+
+    assert.strictEqual(
+      copyCallCount,
+      1,
+      'Expected a single clipboard call for processed-row Copy & Advance flow'
+    );
+  } finally {
+    trpc.trpcClient.copySignalToClipboard.mutate = originalMutate;
+  }
+});

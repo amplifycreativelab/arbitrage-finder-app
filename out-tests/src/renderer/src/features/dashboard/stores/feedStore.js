@@ -4,8 +4,10 @@ exports.useFeedStore = void 0;
 const zustand_1 = require("zustand");
 const types_1 = require("../../../../../../shared/types");
 const trpc_1 = require("../../../lib/trpc");
+const dashboardErrorStore_1 = require("./dashboardErrorStore");
 exports.useFeedStore = (0, zustand_1.create)((set, get) => ({
     providerId: null,
+    enabledProviderIds: [],
     providerMetadata: null,
     selectedOpportunityId: null,
     selectedOpportunityIndex: null,
@@ -45,6 +47,7 @@ exports.useFeedStore = (0, zustand_1.create)((set, get) => ({
             }
             return {
                 providerId: snapshot.providerId,
+                enabledProviderIds: snapshot.enabledProviderIds ?? [],
                 providerMetadata,
                 opportunities: nextOpportunities,
                 fetchedAt: snapshot.fetchedAt,
@@ -60,6 +63,8 @@ exports.useFeedStore = (0, zustand_1.create)((set, get) => ({
         });
         try {
             const result = await trpc_1.trpcClient.pollAndGetFeedSnapshot.mutate();
+            // Clear any previous system error on success
+            dashboardErrorStore_1.useDashboardErrorStore.getState().setSystemError(null);
             set((state) => {
                 const nextOpportunities = result.opportunities ?? [];
                 const nextProcessed = new Set();
@@ -70,6 +75,7 @@ exports.useFeedStore = (0, zustand_1.create)((set, get) => ({
                 }
                 return {
                     providerId: result.providerId ?? null,
+                    enabledProviderIds: result.enabledProviderIds ?? [],
                     providerMetadata: result.providerId != null
                         ? types_1.PROVIDERS.find((provider) => provider.id === result.providerId) ?? null
                         : null,
@@ -83,9 +89,18 @@ exports.useFeedStore = (0, zustand_1.create)((set, get) => ({
             });
         }
         catch (error) {
+            const errorMessage = error?.message ?? 'Unable to load opportunities';
+            // Store the simple error message in feed store for backward compatibility
             set({
                 isLoading: false,
-                error: error?.message ?? 'Unable to load opportunities'
+                error: errorMessage
+            });
+            // Also notify the dashboard error store for system error bar display
+            dashboardErrorStore_1.useDashboardErrorStore.getState().setSystemError({
+                category: 'SystemError',
+                code: 'UNEXPECTED_ERROR',
+                message: errorMessage,
+                correlationId: `poll-${Date.now().toString(36)}`
             });
         }
     },

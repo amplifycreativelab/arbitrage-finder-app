@@ -1,0 +1,180 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>4</storyId>
+    <title>Security Hardening &amp; API Boundaries</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-20</generatedAt>
+    <generator>BMAD Story Context Workflow (simulated)</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/1-4-security-hardening-api-boundaries.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>Developer</asA>
+    <iWant>strict boundaries around API credentials and secrets across renderer, preload, and main</iWant>
+    <soThat>keys are never exposed in the UI layer, shared renderer state, or logs, and remain confined to audited main-process code paths</soThat>
+    <tasks>
+      <![CDATA[
+- Introduce a dedicated credentials aggregation module in the main process (e.g. `src/main/credentials.ts`) that provides a narrow, typed surface for credential operations (save, adapter lookup, storage status, fallback acknowledgment) and delegates persistence to `src/main/services/storage.ts`.
+- Update the preload bridge (`preload/index.ts`) to expose only a minimal `credentials` surface to the renderer (e.g. `saveApiKey`, `isProviderConfigured`, `getStorageStatus`, `acknowledgeFallbackWarning`) backed by shared contracts in `shared/types.ts` / `shared/schemas.ts`, and explicitly avoid any getter that returns raw keys.
+- Audit renderer settings and configuration code (`renderer/src/features/settings/ProviderSettings.tsx`, related hooks, TRPC client usage) to ensure API keys are held only in transient component state, with no persistence to Zustand stores, localStorage, URLs, or logs; clear in-memory values after successful saves.
+- Wire provider adapters and poller code (e.g. `src/main/services/poller.ts`, `src/main/adapters/odds-api-io.ts`, `src/main/adapters/the-odds-api.ts`) to obtain credentials exclusively via the new main-process credentials module, removing any direct `electron-store` access or duplicated storage logic.
+- Implement an automated security hygiene check (test or script under `tests/`) that flows a sentinel API key through `saveApiKey` and typical adapter usage and then scans logs and IPC payloads for the sentinel or obvious key patterns, failing on any leak.
+- Extend tests to assert that the preload credentials surface never returns raw keys (only status/booleans) and that renderer logging/debug utilities do not emit credential values, following the patterns in `_bmad-output/test-design-system.md` and existing Epic 1 storage tests.
+      ]]>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <![CDATA[
+1. Renderer never persists API keys or secret tokens outside the Settings / Provider Configuration form: no keys in Zustand or other global state containers, no keys in `localStorage` or session storage, and no keys in URLs, query strings, or dev-only debug overlays; keys exist only in local component state long enough to submit via typed IPC.
+2. Preload exposes a minimal, typed `credentials` surface (e.g. `saveApiKey`, `isProviderConfigured`, `getStorageStatus`, `acknowledgeFallbackWarning`) backed by shared contracts in `shared/types.ts` / `shared/schemas.ts`, and it does not expose any getter that returns raw API keys to the renderer (only boolean / configuration status is allowed across the boundary).
+3. A dedicated `src/main/credentials.ts` module in the main process is the single code path that reads and writes provider credentials, delegating persistence and fallback handling to `src/main/services/storage.ts`; all adapters and other main-process callers obtain API keys via this module instead of reading from `electron-store` directly.
+4. An automated check (test or script) uses a sentinel test key to exercise the credentials flow end-to-end and then asserts that application logs, IPC payloads (including TRPC responses and errors), and test fixtures never contain obvious key substrings (e.g. the sentinel value or common API key patterns), in line with `_bmad-output/architecture.md` "Security and API Credential Handling".
+    ]]>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <![CDATA[
+- _bmad-output/prd.md (FR2 "Users can input and securely save API keys"; NFR4 "Data Privacy").
+- _bmad-output/architecture.md ("Security and API Credential Handling", "API Key Flow and Boundaries", "Error Handling, Logging, and Observability").
+- _bmad-output/epics.md (Epic 1, Story 1.4 -- Security Hardening & API Boundaries).
+- _bmad-output/implementation-artifacts/1-2-secure-storage-service.md (storage service implementation details, fallback behavior).
+- _bmad-output/implementation-artifacts/1-3-settings-interface-provider-selection.md (renderer Settings / Provider Configuration behavior and tests).
+- _bmad-output/test-design-system.md (test strategy and patterns, including security-related checks).
+      ]]>
+    </docs>
+    <code>
+      <![CDATA[
+- src/main/services/storage.ts
+  - Kind: service module
+  - Role: secure credential persistence using Electron `safeStorage` and `electron-store` with `enc:` / `b64:` prefixes.
+  - Relevance: underlying storage primitive that the new credentials aggregation module must encapsulate.
+
+- src/main/services/router.ts
+  - Kind: TRPC router
+  - Role: defines typed TRPC procedures including `saveApiKey`, `getApiKey`, `getActiveProvider`, `setActiveProvider`, `getStorageStatus`, and `acknowledgeFallbackWarning`.
+  - Relevance: primary IPC surface for credentials and provider configuration; must remain free of raw key logging.
+
+- src/main/services/poller.ts
+  - Kind: service module
+  - Role: manages active provider for polling and rate-limited data fetching.
+  - Relevance: must obtain provider configuration (and, indirectly, credentials) via hardened boundaries so provider switches and security guarantees remain aligned.
+
+- src/preload/index.ts
+  - Kind: preload bridge
+  - Role: exposes typed IPC clients (including credentials-related procedures) to the renderer.
+  - Relevance: key boundary where we must ensure no raw keys or unconstrained storage APIs are exposed to the front-end.
+
+- src/renderer/src/features/settings/ProviderSettings.tsx
+  - Kind: React component
+  - Role: Settings / Provider Configuration UI, including provider selection, masked key input, and fallback warning banner.
+  - Relevance: must keep keys in local state only, clear them after save, and rely solely on status flags from IPC for "key configured" indicators.
+
+- src/renderer/src/lib/trpc.ts
+  - Kind: client helper
+  - Role: renderer-side TRPC client instance used for credentials and provider configuration calls.
+  - Relevance: central point to audit for how credentials-related procedures are invoked from the renderer.
+
+- tests/1.2-unit-storage.test.cjs
+  - Kind: unit tests
+  - Role: verify storage behavior including encryption, fallback detection, and round-trip properties.
+  - Relevance: provides patterns for additional 1.4 security hygiene tests (e.g. sentinel key leak detection).
+
+- tests/1.3-int-provider-settings.test.cjs
+  - Kind: integration tests
+  - Role: verify provider selection, storage status, and poller integration behavior.
+  - Relevance: basis for extending tests to assert credentials boundary guarantees (no raw keys, correct status-only surfaces).
+      ]]>
+    </code>
+    <dependencies>
+      <![CDATA[
+- Node/Electron ecosystem:
+  - electron-store: persistence for credentials (`credentials` store with `providerSecrets` and `activeProviderId`).
+  - electron-log: structured logging for main and renderer; must be configured to avoid credential payloads.
+  - electron-trpc: typed IPC bridge that carries credential configuration calls between renderer and main.
+
+- Security-related APIs:
+  - Electron `safeStorage`: OS-backed encryption for provider API keys at rest, with detection for fallback mode.
+
+- Front-end stack:
+  - React + TypeScript: renderer UI and state management (local component state, not global stores, for credential fields).
+  - shadcn UI components: `Select` and `Input` used for provider toggle and masked key input.
+      ]]>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <![CDATA[
+- API keys and secrets must never appear in renderer logs, global state (Zustand or equivalent), localStorage/sessionStorage, query strings, or debug overlays.
+- The preload bridge may expose only status and write-only operations for credentials; no function may return raw key material to the renderer layer.
+- All persistence of credentials must go through a single main-process module (`src/main/credentials.ts`) that wraps `src/main/services/storage.ts`; adapters and poller code may not access `electron-store` directly for secrets.
+- IPC messages (TRPC inputs/outputs, error payloads) must avoid including raw keys or obvious substrings; errors should reference provider IDs and correlation IDs, not secrets.
+- Any new logging or tracing code in main, preload, or renderer must be designed under the assumption that secrets could be accidentally included and therefore must explicitly omit credential-bearing fields.
+    ]]>
+  </constraints>
+
+  <interfaces>
+    <![CDATA[
+- Main-process credentials module (to be implemented):
+  - saveApiKey(providerId: ProviderId, apiKey: string): Promise<void>
+  - getApiKeyForAdapter(providerId: ProviderId): Promise<string | null>
+  - getStorageStatus(): Promise<{ isUsingFallbackStorage: boolean; fallbackWarningShown: boolean }>
+  - acknowledgeFallbackWarning(): Promise<void>
+
+- TRPC procedures (router-level, some already present, some to be refined):
+  - saveApiKey({ providerId, apiKey }): writes encrypted credentials via the storage/credentials module.
+  - getApiKey({ providerId }): used internally (e.g. by adapters) rather than exposing raw keys to the renderer.
+  - getActiveProvider(): returns the current provider ID for configuration and polling.
+  - setActiveProvider({ providerId }): updates the active provider and persists it via the credentials store.
+  - getStorageStatus(): returns `isUsingFallbackStorage` and `fallbackWarningShown` flags for Settings UI.
+  - acknowledgeFallbackWarning(): sets the fallback warning flag after user acknowledgment.
+
+- Preload bridge (renderer-facing shape, via `contextBridge` or equivalent):
+  - credentials.saveApiKey(providerId, apiKey)
+  - credentials.isProviderConfigured(providerId) -> boolean
+  - credentials.getStorageStatus()
+  - credentials.acknowledgeFallbackWarning()
+    ]]>
+  </interfaces>
+
+  <tests>
+    <standards>
+      <![CDATA[
+Follow the patterns in _bmad-output/test-design-system.md and existing Epic 1 test suites:
+- Use node:test-based unit and integration suites with clear IDs (e.g. [P1][1.4-SEC-001]).
+- Keep security-related tests fast and deterministic so they can run in every CI build.
+- Prefer white-box tests around storage, IPC, and logging utilities to guarantee secrets never leak in unexpected code paths.
+      ]]>
+    </standards>
+    <locations>
+      <![CDATA[
+- tests/1.2-unit-storage.test.cjs (reference for storage and encryption/fallback behavior).
+- tests/1.3-int-provider-settings.test.cjs (reference for provider selection, storage status, and poller integration).
+- tests/1.4-sec-credentials-boundaries.test.cjs (new suite to be added for credentials boundary and leak detection).
+      ]]>
+    </locations>
+    <ideas>
+      <![CDATA[
+- [P1][1.4-SEC-001] Preload credentials surface never returns raw keys:
+  - Mock or call the preload-exposed credentials API from a renderer-style harness and assert that all returned values are booleans/status objects, not strings containing key-like patterns.
+
+- [P1][1.4-SEC-002] Sentinel key leak detection:
+  - Store a known sentinel key (e.g. "TEST-KEY-1-4-DO-NOT-LOG") via `saveApiKey`.
+  - Exercise adapters and poller code paths that would use the key.
+  - Scan logs and IPC payload snapshots in the test harness for the sentinel; fail if any matches are found.
+
+- [P2][1.4-SEC-003] Renderer state hygiene:
+  - Mount `ProviderSettings` in a component test harness.
+  - Simulate user entry of an API key and successful save.
+  - Assert that component state and any observable global state no longer contain the key after save and that only status flags remain.
+
+- [P2][1.4-SEC-004] Error path behavior:
+  - Force failures in storage or IPC when saving keys.
+  - Assert that error messages surfaced to the user contain provider IDs and correlation IDs but not any part of the supplied key.
+      ]]>
+    </ideas>
+  </tests>
+</story-context>
+

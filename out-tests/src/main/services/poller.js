@@ -11,6 +11,9 @@ exports.registerAdapter = registerAdapter;
 exports.registerAdapters = registerAdapters;
 exports.notifyActiveProviderChanged = notifyActiveProviderChanged;
 exports.getActiveProviderForPolling = getActiveProviderForPolling;
+exports.notifyEnabledProvidersChanged = notifyEnabledProvidersChanged;
+exports.getEnabledProvidersForPolling = getEnabledProvidersForPolling;
+exports.pollOnceForEnabledProviders = pollOnceForEnabledProviders;
 exports.getRegisteredAdapter = getRegisteredAdapter;
 exports.pollOnceForActiveProvider = pollOnceForActiveProvider;
 exports.getLatestSnapshotForProvider = getLatestSnapshotForProvider;
@@ -154,6 +157,8 @@ async function waitForCooldown(providerId) {
     await new Promise((resolve) => setTimeout(resolve, waitMs));
 }
 let activeProviderIdForPolling = null;
+// Multi-provider polling targets (Story 5.1)
+const enabledProvidersForPolling = new Set();
 const adaptersByProviderId = {};
 const latestSnapshotByProviderId = {};
 const latestSnapshotTimestampByProviderId = {};
@@ -247,6 +252,117 @@ function notifyActiveProviderChanged(providerId) {
 function getActiveProviderForPolling() {
     return activeProviderIdForPolling;
 }
+// ============================================================
+// Multi-provider polling functions (Story 5.1)
+// ============================================================
+/**
+ * Update the set of enabled providers for polling.
+ * Called when user enables/disables providers in settings.
+ */
+function notifyEnabledProvidersChanged(providers) {
+    enabledProvidersForPolling.clear();
+    for (const providerId of providers) {
+        enabledProvidersForPolling.add(providerId);
+    }
+}
+/**
+ * Get all currently enabled providers for polling.
+ */
+function getEnabledProvidersForPolling() {
+    return Array.from(enabledProvidersForPolling);
+}
+/**
+ * Poll all enabled providers and return concatenated opportunities.
+ * Each provider is polled respecting its own rate limiter.
+ */
+async function pollOnceForEnabledProviders() {
+    const providerIds = Array.from(enabledProvidersForPolling);
+    if (providerIds.length === 0) {
+        return [];
+    }
+    const correlationId = (0, logger_1.createCorrelationId)();
+    const tickStartedAt = Date.now();
+    const allOpportunities = [];
+    const errors = [];
+    currentCorrelationId = correlationId;
+    // Poll each enabled provider (sequentially to respect rate limits)
+    for (const providerId of providerIds) {
+        const adapter = adaptersByProviderId[providerId];
+        if (!adapter) {
+            continue;
+        }
+        try {
+            const result = await adapter.fetchOpportunities();
+            const validated = schemas_1.arbitrageOpportunityListSchema.parse(result);
+            // Tag each opportunity with its source provider (Story 5.1)
+            const taggedOpportunities = validated.map((opp) => ({
+                ...opp,
+                providerId
+            }));
+            latestSnapshotByProviderId[providerId] = taggedOpportunities;
+            latestSnapshotTimestampByProviderId[providerId] = new Date().toISOString();
+            allOpportunities.push(...taggedOpportunities);
+        }
+        catch (error) {
+            const status = error.status ??
+                error.statusCode ??
+                error.response?.status;
+            const errorCategory = typeof status === 'number' && status >= 400 ? 'ProviderError' : 'SystemError';
+            markErrorForStatus(providerId, errorCategory, error);
+            errors.push({ providerId, error });
+        }
+    }
+    currentCorrelationId = null;
+    const durationMs = Date.now() - tickStartedAt;
+    const nowIso = new Date().toISOString();
+    const providerStatuses = {
+        'odds-api-io': getProviderQuotaStatus('odds-api-io'),
+        'the-odds-api': getProviderQuotaStatus('the-odds-api')
+    };
+    const lastSuccessfulFetchTimestamps = {
+        'odds-api-io': latestSnapshotTimestampByProviderId['odds-api-io'] ?? null,
+        'the-odds-api': latestSnapshotTimestampByProviderId['the-odds-api'] ?? null
+    };
+    const staleThresholdMs = 5 * 60 * 1000;
+    const hasStaleProvider = Object.values(lastSuccessfulFetchTimestamps).some((ts) => {
+        if (!ts)
+            return false;
+        const ageMs = Date.now() - new Date(ts).getTime();
+        return ageMs > staleThresholdMs;
+    });
+    let systemStatus = 'OK';
+    const hasErrors = errors.length > 0;
+    if (hasErrors && errors.some((e) => {
+        const status = e.error.status;
+        return typeof status !== 'number' || status < 400 || status >= 500;
+    })) {
+        systemStatus = 'Error';
+    }
+    else if (Object.values(providerStatuses).some((status) => status === 'QuotaLimited' || status === 'Degraded')) {
+        systemStatus = 'Degraded';
+    }
+    else if (hasStaleProvider) {
+        systemStatus = 'Stale';
+    }
+    (0, logger_1.logHeartbeat)({
+        context: 'service:poller',
+        operation: 'pollOnceForEnabledProviders',
+        // Use providerIds (plural) for multi-provider polling, not providerId
+        providerIds: providerIds,
+        correlationId,
+        durationMs,
+        errorCategory: hasErrors ? 'ProviderError' : null,
+        success: errors.length === 0,
+        opportunitiesCount: allOpportunities.length,
+        providerStatuses,
+        lastSuccessfulFetchTimestamps,
+        systemStatus,
+        tickStartedAt: new Date(tickStartedAt).toISOString(),
+        tickCompletedAt: nowIso,
+        errorMessage: errors.length > 0 ? `Errors from ${errors.map((e) => e.providerId).join(', ')}` : undefined
+    });
+    return allOpportunities;
+}
 function getRegisteredAdapter(providerId) {
     return adaptersByProviderId[providerId] ?? null;
 }
@@ -269,8 +385,12 @@ async function pollOnceForActiveProvider() {
     try {
         const result = await adapter.fetchOpportunities();
         const validated = schemas_1.arbitrageOpportunityListSchema.parse(result);
-        opportunities = validated;
-        latestSnapshotByProviderId[providerId] = validated;
+        // Tag each opportunity with its source provider (Story 5.1)
+        opportunities = validated.map((opp) => ({
+            ...opp,
+            providerId
+        }));
+        latestSnapshotByProviderId[providerId] = opportunities;
         latestSnapshotTimestampByProviderId[providerId] = new Date().toISOString();
         success = true;
         return validated;

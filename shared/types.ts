@@ -42,6 +42,8 @@ export interface ArbitrageOpportunity {
   ]
   roi: number
   foundAt: string
+  /** Provider that sourced this opportunity (Story 5.1 multi-provider support) */
+  providerId?: ProviderId
 }
 
 export interface ArbitrageAdapter {

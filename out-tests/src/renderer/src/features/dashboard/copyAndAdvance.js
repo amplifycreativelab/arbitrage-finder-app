@@ -57,14 +57,8 @@ async function copyAndAdvanceCurrentOpportunity() {
         bookmakers: filterState.bookmakers,
         minRoi: filterState.minRoi
     });
-    if (!Array.isArray(filtered) || filtered.length === 0) {
-        return {
-            success: true,
-            copiedOpportunityId: currentId,
-            nextSelectedOpportunityId: currentId
-        };
-    }
-    const sorted = (0, sortOpportunities_1.sortOpportunities)(filtered, sortBy, sortDirection);
+    const baseForNavigation = Array.isArray(filtered) && filtered.length > 0 ? filtered : opportunities;
+    const sorted = (0, sortOpportunities_1.sortOpportunities)(baseForNavigation, sortBy, sortDirection);
     const visibleIds = sorted.map((entry) => entry.id);
     const previousProcessed = processedOpportunityIds ?? new Set();
     const nextProcessed = new Set(previousProcessed);

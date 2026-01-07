@@ -1,0 +1,140 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>2</storyId>
+    <title>Feed (Left Pane Data Grid)</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-21</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/3-2-feed-left-pane-data-grid.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>User</asA>
+    <iWant>a sortable, scrollable grid of opportunities</iWant>
+    <soThat>I can scan many surebets efficiently.</soThat>
+    <tasks>
+As drafted in _bmad-output/implementation-artifacts/3-2-feed-left-pane-data-grid.md:
+
+- Implement the feed data grid component for the left pane, rendering one row per ArbitrageOpportunity with Time, Event, and ROI in the existing DashboardLayout feed pane.
+- Integrate the grid with the split-pane dashboard shell introduced in Story 3.1, reusing data-testid="feed-pane" and the Orange Terminal theme.
+- Wire the feed to the normalized opportunities data source (ArbitrageOpportunity[] via adapters, poller, and filters) and implement sorting for Time and ROI using a single source of truth for sort state.
+- Add virtualization or windowing (for example react-window or react-virtual) when the visible row count exceeds approximately 50 entries, keeping scroll performance acceptable.
+- Add component or integration tests that render the dashboard at wide layouts, assert Time/Event/ROI columns and ROI accent color, verify sort behavior, and confirm that virtualization is active for large result sets.
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+From the story Acceptance Criteria:
+
+1. The dashboard left pane renders a FeedTable (or equivalent) component under renderer/src/features/dashboard/ inside the existing DashboardLayout, showing one row per ArbitrageOpportunity with at least Time, Event, and ROI columns, without breaking the split-pane structure or Orange Terminal theme established in Story 3.1.
+2. ROI values in the grid are highlighted using the primary accent color #F97316 in line with _bmad-output/ux-design-specification.md, while other text respects the dark background (#0F172A) and off-white body text, and the grid exposes stable identifiers or test IDs so tests can assert column presence and formatting.
+3. The feed supports sorting by at least Time and ROI via accessible column headers or controls, with the current sort applied consistently to the in-memory ArbitrageOpportunity[] collection so that repeated renders and state updates preserve the expected order.
+4. The feed is vertically scrollable and uses a virtualization strategy (for example react-window or an equivalent pattern) whenever there are more than approximately 50 visible rows, keeping scroll performance acceptable without dropping keyboard selection or future copy/preview behavior.
+5. Component or integration tests (for example under tests/3.2-feed-left-pane-data-grid.test.cjs or renderer/src/features/dashboard/__tests__/3-2-feed-left-pane-data-grid.test.tsx) render the dashboard at 900px or wider and assert presence of Time/Event/ROI columns, ROI accent color, sort behavior for Time and ROI, and that virtualization or windowing is active for large result sets, improving on Story 3.1 layout tests.
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+Key documentation artifacts for this story:
+
+- _bmad-output/PRD.md
+  - Source of FR9 (Sortable Data Grid) and FR12 (Highlight ROI) requirements for dashboard visualization.
+- _bmad-output/architecture.md
+  - Data Architecture section describing the ArbitrageOpportunity model and adapter-based providers.
+  - Implementation Patterns – Lifecycle/Consistency and UX Error and Degraded States sections guiding how the feed reflects freshness, status, and consistency.
+- _bmad-output/ux-design-specification.md
+  - Hybrid Dashboard layout and The Orange Terminal theme (background #0F172A, accent #F97316, off-white text).
+  - Split-pane layout description: feed on the left, signal preview on the right, keyboard-centric workflow.
+- _bmad-output/epics.md
+  - Epic 3: The Signal Dashboard (Visual Layer).
+  - Story 3.2 – Feed (Left Pane Data Grid) acceptance criteria and links to FR9 and FR12.
+- _bmad-output/implementation-artifacts/3-1-main-layout-split-pane.md
+  - Story 3.1 layout shell, split-pane contract, min-width 900px, and Senior Developer Review notes about strengthening layout tests.
+- _bmad-output/implementation-artifacts/3-2-feed-left-pane-data-grid.md
+  - This story’s detailed acceptance criteria, tasks, Dev Notes, Learnings from Previous Story, and references.
+- _bmad-output/implementation-artifacts/sprint-status.yaml
+  - Sprint tracking file defining development_status for epic-3 and story 3-2-feed-left-pane-data-grid (status drafted before context generation).
+    </docs>
+    <code>
+Key code artifacts and interfaces:
+
+- src/main/services/poller.ts
+  - Central polling pipeline that invokes provider adapters, merges ArbitrageOpportunity[] streams, and will ultimately supply the dashboard feed with normalized opportunities.
+- src/main/adapters/odds-api-io.ts and src/main/adapters/the-odds-api.ts
+  - Provider adapters that fetch production and test opportunities and map responses into ArbitrageOpportunity instances.
+- src/main/services/calculator.ts
+  - Arbitrage calculation utilities used for test-provider raw odds and ROI invariants.
+- shared/types.ts
+  - ArbitrageOpportunity interface defining id, sport, event, legs, roi, and foundAt fields consumed by the feed grid.
+- shared/schemas.ts
+  - Zod arbitrageOpportunitySchema and arbitrageOpportunityListSchema enforcing ROI ≥ 0 and distinct bookmakers per opportunity.
+- src/main/services/router.ts
+  - electron-trpc AppRouter wiring provider configuration procedures (saveApiKey, isProviderConfigured, getActiveProvider, setActiveProvider, getStorageStatus, acknowledgeFallbackWarning), forming the IPC contracts that indirectly control which provider the feed reflects.
+- src/renderer/src/App.tsx
+  - Root renderer entry that mounts DashboardLayout and applies the Orange Terminal theme around the dashboard shell.
+- src/renderer/src/features/dashboard/DashboardLayout.tsx
+  - Split-pane layout with fixed-width feed pane (data-testid="feed-pane") and fluid signal preview pane (data-testid="signal-preview-pane") that Story 3.2 will populate with the live opportunities grid.
+- src/renderer/src/features/settings/ProviderSettings.tsx
+  - Provider configuration UI embedded under the dashboard that controls which adapter the feed ultimately consumes.
+- tests/3.1-main-layout-split-pane.test.cjs
+  - Existing layout-focused tests for the dashboard shell; Story 3.2 tests will extend coverage to feed behavior, sorting, and virtualization.
+    </code>
+    <dependencies>
+Detected dependency artifacts:
+
+- package.json
+  - Electron-Vite 4.x, Electron 38.x, React 19.x, and TypeScript-based React renderer for the dashboard.
+  - Core libraries: zustand for state management, electron-trpc for typed IPC, zod for validation, bottleneck for rate limiting, electron-log and electron-store for logging and storage, tailwind-merge and shadcn-ui for UI composition.
+- _bmad-output/architecture.md
+  - Documents how these dependencies are intended to be used: adapters in main, typed contracts via shared types and schemas, and thin renderer components focused on visualization.
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+Key constraints relevant to Story 3.2:
+
+- The feed must operate on normalized ArbitrageOpportunity[] data supplied by the adapter and poller pipeline; renderer components should not call providers directly or bypass shared filters.
+- The dashboard must preserve the split-pane layout and min-width behavior established in Story 3.1, avoiding ad-hoc layout structures that conflict with _bmad-output/ux-design-specification.md and _bmad-output/architecture.md.
+- ROI visualization must follow the Orange Terminal theme (accent color #F97316, background #0F172A, off-white text) and should not introduce new color semantics that conflict with existing UX patterns.
+- Staleness indicators, provider/system status, and copy-and-advance workflows will be layered in by subsequent stories; the feed should be implemented so that future Epic 3 and Epic 4 behavior can compose cleanly without refactoring the grid.
+- Tests for this story should follow the risk-based test design described in _bmad-output/test-design-system.md, emphasizing correctness of sorting, visual signaling of ROI, and performance characteristics when the list is large.
+  </constraints>
+
+  <interfaces>
+Key interfaces and contracts:
+
+- ArbitrageOpportunity and ArbitrageAdapter (shared/types.ts)
+  - Define the shape of opportunities and adapter responsibilities; the feed relies on these contracts to remain provider-agnostic.
+- AppRouter procedures (src/main/services/router.ts)
+  - saveApiKey, isProviderConfigured, getActiveProvider, setActiveProvider, getStorageStatus, acknowledgeFallbackWarning; these influence which provider’s opportunities the feed displays and ensure configuration is managed via IPC rather than direct file access from the renderer.
+- Poller interfaces (src/main/services/poller.ts)
+  - Functions that register adapters, schedule polling, and surface merged opportunities; the feed should subscribe to their outputs via a store or TRPC rather than reimplementing polling.
+  </interfaces>
+
+  <tests>
+    <standards>
+Testing standards and patterns:
+
+- Node test runner with CJS test files under tests/**/*.test.cjs, using risk-based categories (P0, P1, etc.) as defined in _bmad-output/test-design-system.md.
+- Emphasis on invariants from shared/schemas.ts (ROI non-negative, distinct bookmakers per opportunity) and on reproducible fixtures (tests/fixtures/arbitrage golden datasets) for data-engine behavior.
+- For Epic 3, tests should render real React components (not just string searches) to validate runtime layout, theming, and behavior at representative viewport sizes (900px and above).
+    </standards>
+    <locations>
+Key test locations:
+
+- tests/3.1-main-layout-split-pane.test.cjs for existing dashboard layout coverage.
+- tests/2.4-production-adapter-odds-api-io.test.cjs and tests/2.5-test-adapter-the-odds-api-com.test.cjs for adapter and pipeline behavior that ultimately feeds the dashboard.
+- tests planned for 3.2 under tests/3.2-feed-left-pane-data-grid.test.cjs or renderer/src/features/dashboard/__tests__/3-2-feed-left-pane-data-grid.test.tsx for feed behavior, sorting, and virtualization.
+    </locations>
+    <ideas>
+Initial test ideas mapped to ACs:
+
+- AC1/AC2: Render DashboardLayout with a stubbed feed grid and assert that Time, Event, and ROI columns are present, ROI cells use the accent color, and the split-pane layout is preserved.
+- AC3: Seed the feed with a list of ArbitrageOpportunity fixtures and assert that clicking Time and ROI column headers toggles sort order correctly and remains stable across re-renders.
+- AC4: Seed the feed with more than 50 rows and assert that only a subset of rows are mounted at a time (virtualization active) while scroll and selection behavior remain coherent.
+- AC5: Combine the above tests under both small and wide viewports (≥ 900px) to ensure the layout and grid behavior remain stable with realistic window sizes.
+    </ideas>
+  </tests>
+</story-context>
+

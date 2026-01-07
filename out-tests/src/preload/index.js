@@ -42,6 +42,19 @@ const credentialsApi = {
     },
     async acknowledgeFallbackWarning() {
         await trpcClient.acknowledgeFallbackWarning.mutate();
+    },
+    // Multi-provider methods (Story 5.1)
+    async getEnabledProviders() {
+        const result = await trpcClient.getEnabledProviders.query();
+        return result.enabledProviders;
+    },
+    async setProviderEnabled(providerId, enabled) {
+        const result = await trpcClient.setProviderEnabled.mutate({ providerId, enabled });
+        return result;
+    },
+    async getAllProvidersStatus() {
+        const result = await trpcClient.getAllProvidersStatus.query();
+        return result.providers;
     }
 };
 // Custom APIs for renderer

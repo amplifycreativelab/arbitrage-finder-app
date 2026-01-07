@@ -41,6 +41,7 @@ const utils_1 = require("../../lib/utils");
 const copyAndAdvance_1 = require("./copyAndAdvance");
 const signalPayload_1 = require("./signalPayload");
 const feedStore_1 = require("./stores/feedStore");
+const isServerEnvironment = typeof document === 'undefined';
 function SignalPreview({ opportunity, providerMetadata }) {
     const storeOpportunities = (0, feedStore_1.useFeedStore)((state) => state.opportunities);
     const selectedOpportunityId = (0, feedStore_1.useFeedStore)((state) => state.selectedOpportunityId);
@@ -51,14 +52,21 @@ function SignalPreview({ opportunity, providerMetadata }) {
         if (opportunity) {
             return opportunity;
         }
-        if (!Array.isArray(storeOpportunities) || storeOpportunities.length === 0) {
+        let opportunitiesFromStore = storeOpportunities;
+        let idFromStore = selectedOpportunityId;
+        if (isServerEnvironment) {
+            const snapshot = feedStore_1.useFeedStore.getState();
+            opportunitiesFromStore = snapshot.opportunities;
+            idFromStore = snapshot.selectedOpportunityId;
+        }
+        if (!Array.isArray(opportunitiesFromStore) || opportunitiesFromStore.length === 0) {
             return null;
         }
-        if (!selectedOpportunityId) {
+        if (!idFromStore) {
             return null;
         }
-        return (storeOpportunities.find((candidate) => candidate.id === selectedOpportunityId) ??
-            storeOpportunities[0] ??
+        return (opportunitiesFromStore.find((candidate) => candidate.id === idFromStore) ??
+            opportunitiesFromStore[0] ??
             null);
     }, [opportunity, storeOpportunities, selectedOpportunityId]);
     const effectiveProviderMetadata = providerMetadata ?? storeProviderMetadata ?? null;

@@ -1,0 +1,174 @@
+<story-context id="story-2-3-context" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>3</storyId>
+    <title>Rate Limit Calibration &amp; Stress Harness</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-21</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/2-3-rate-limit-calibration-stress-harness.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>Developer</asA>
+    <iWant>a calibration/stress mode for the poller and adapters</iWant>
+    <soThat>we can tune Bottleneck settings and verify quotas are respected under load</soThat>
+    <tasks>
+As drafted in the story specification:
+
+- Design the calibration harness flow and configuration so that calibration mode reuses the existing poller, adapters, and `RateLimiterConfig` instead of introducing a separate limiter path.
+- Implement a bounded-duration calibration loop that drives the poller against test/safe providers and records per-provider request/response events.
+- Capture structured metrics per provider (request counts, 2xx/4xx/5xx/429 counts, latency distribution, backoff events) and log them in a format suitable for both human and automated analysis.
+- Enforce quota invariants by checking that no provider exceeds the documented 5,000 req/hour quota under calibration scenarios derived from `_bmad-output/prd.md` and R-001.
+- Document and, where feasible, enforce the contract that provider adapters surface HTTP 429 responses as thrown errors with status metadata so poller backoff and `ProviderQuotaStatus` handling are consistently exercised.
+- Provide a CI-friendly entrypoint (script or test) that runs calibration in a bounded, deterministic way and fails when quotas or 429-handling expectations are violated.
+- Extend rate limiter tests or the calibration harness itself to run sustained synthetic polling per provider and assert zero unexpected 429 responses under the configured quotas, aligning with the Test backlog item for Story 2.2 and `_bmad-output/test-design-system.md`.
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+The story defines the following acceptance criteria:
+
+1. A dedicated calibration command (for example `npm run calibrate:providers`) runs a bounded-duration polling loop that reuses the existing poller and provider adapters against non-production/test providers, without requiring code changes or manual reconfiguration, in line with the calibration patterns described in `_bmad-output/architecture.md` ("Rate Limiting (R-001, NFR1)", calibration mode).
+2. For each provider, calibration runs emit structured metrics via `electron-log` (or equivalent): total request count, 2xx/4xx/5xx/429 counts, average and percentile latency, and backoff/cooldown events, so that limiter behavior can be understood and tuned from logs as described in `_bmad-output/prd.md` (FR8, NFR1) and `_bmad-output/architecture.md` (rate limiting and observability).
+3. Under calibration runs configured with the current `RateLimiterConfig`, no provider exceeds its documented quota from `_bmad-output/prd.md` (FR8/NFR1, 5,000 req/hour); violations are detected by assertions or test failures, and calibration output clearly reports any configuration that risks quota breaches.
+4. The calibration harness can be invoked from CI (for example via a `npm test:calibrate` or similar scripted entrypoint) and returns a clear pass/fail result based on quotas and metrics, so it can be wired into automated checks without flakiness or manual log inspection.
+5. Behavior around HTTP 429 and related rate-limit responses during calibration runs matches the error contract and backoff semantics from Story 2.2: adapters surface 429 as errors with status metadata, the poller applies backoff and `ProviderQuotaStatus` updates, and the Epic 2 backlog items dated 2025-11-21 for Story 2.2 (TechDebt/Test in `_bmad-output/backlog.md`) are addressed as part of this story.
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>_bmad-output/prd.md</path>
+        <title>Arbitrage Finder App - Product Requirements Document</title>
+        <section>Functional Requirements FR8; Non-Functional Requirements NFR1</section>
+        <snippet>* **FR8:** System manages API request frequency to strictly adhere to the 5,000 req/hour limit. * **NFR1 (Rate Limiting):** System must effectively cache data and throttle requests to prevent API bans (Zero 429 errors under normal use). - **NFR1 (Rate Limiting):** “High-Risk Domain Patterns – Rate Limiting (R-001)” and `poller.ts` + `bottleneck`.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/architecture.md</path>
+        <title>Architecture</title>
+        <section>Rate Limiting (R-001, NFR1)</section>
+        <snippet>- **Centralized limiter configuration** - `poller.ts` owns a `RateLimiterConfig` map per provider, using `bottleneck` instances created in main. - Configuration parameters (`minTime`, `maxConcurrent`, `reservations`) are derived from provider quotas in the PRD and documented in code comments. - All outbound HTTP calls from adapters **must go through** the relevant limiter; direct `fetch`/`axios` calls are not allowed. - **Calibration and stress patterns** - Provide a `calibration` mode that runs synthetic polling for a bounded window and logs per-provider latency and 429/5xx rates. - Use this mode in test automation to tune limiter parameters before production use.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/epics.md</path>
+        <title>Arbitrage Finder App -- Epic Breakdown</title>
+        <section>Story 2.3 -- Rate Limit Calibration &amp; Stress Harness</section>
+        <snippet>**As a Developer** I want a calibration/stress mode for the poller and adapters So that we can tune Bottleneck settings and verify quotas are respected under load. - A dedicated calibration command (e.g. `npm run calibrate:providers`) runs a bounded-duration polling loop against test providers. - Per-provider metrics are logged: request count, 2xx/4xx/5xx/429 counts, average/percentile latency. - No provider exceeds documented quotas during calibration runs. - The test harness can be invoked from CI to exercise rate-limiting behavior.</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/backlog.md</path>
+        <title>Engineering Backlog</title>
+        <section>Story 2.2 follow-ups (TechDebt, Test)</section>
+        <snippet>| 2025-11-21 | 2.2   | 2    | TechDebt    | Medium   | TBD   | Open   | Document and, where feasible, enforce the contract that provider adapters surface HTTP 429 responses as thrown errors (status/statusCode/response.status) so poller backoff and `ProviderQuotaStatus` handling are consistently applied (AC #4; src/main/adapters/base.ts, src/main/services/poller.ts). | | 2025-11-21 | 2.2   | 2    | Test        | Low      | TBD   | Open   | Extend rate limiter tests or the Epic 2 calibration harness to run sustained synthetic polling for each provider and assert zero 429 responses under the documented 5,000 req/hour quotas (AC #3/#5; tests/2.2-rate-limiter-implementation.test.cjs, _bmad-output/test-design-system.md).</snippet>
+      </doc>
+      <doc>
+        <path>_bmad-output/test-design-system.md</path>
+        <title>Test Design System</title>
+        <section>Risk R-001: Rate Limiting and API Quotas</section>
+        <snippet>| R-001   | PERF     | Rate limiter misconfiguration causes API bans or stale data (NFR1, FR8).   | 2           | 3   | 6     | Centralize Bottleneck config, add contract tests around minTime / concurrency, add synthetic load checks in CI. | Tech Lead    | Pre-GA     |  | NFR1 – Rate limiting (no 429s) | API | R-001 | 4 | QA | Stress tests around Bottleneck config, per-provider quotas, and backoff behaviour. |</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <item>
+        <path>src/main/services/poller.ts</path>
+        <kind>service</kind>
+        <symbol>RateLimiterConfig, scheduleProviderRequest, ProviderQuotaStatus</symbol>
+        <lines></lines>
+        <reason>Owns centralized Bottleneck configuration, quota-aware polling, and provider quota status used by calibration and stress runs.</reason>
+      </item>
+      <item>
+        <path>src/main/adapters/base.ts</path>
+        <kind>service</kind>
+        <symbol>BaseArbitrageAdapter</symbol>
+        <lines></lines>
+        <reason>Defines the shared adapter contract and error surface for provider HTTP calls; the 429 error contract referenced in Story 2.2 and the backlog must hold during calibration.</reason>
+      </item>
+      <item>
+        <path>src/main/adapters/odds-api-io.ts</path>
+        <kind>adapter</kind>
+        <symbol>OddsApiIoAdapter</symbol>
+        <lines></lines>
+        <reason>Production provider adapter exercised by calibration runs to verify limiter behaviour and quota adherence.</reason>
+      </item>
+      <item>
+        <path>src/main/adapters/the-odds-api.ts</path>
+        <kind>adapter</kind>
+        <symbol>TheOddsApiAdapter</symbol>
+        <lines></lines>
+        <reason>Test provider adapter suitable for non-production calibration loops and synthetic load scenarios.</reason>
+      </item>
+      <item>
+        <path>shared/types.ts</path>
+        <kind>shared</kind>
+        <symbol>ArbitrageOpportunity</symbol>
+        <lines></lines>
+        <reason>Canonical arbitrage data model that calibration-driven polling must preserve when exercising adapters and poller.</reason>
+      </item>
+      <item>
+        <path>shared/schemas.ts</path>
+        <kind>shared</kind>
+        <symbol>arbitrageOpportunitySchema</symbol>
+        <lines></lines>
+        <reason>Validation schema used to enforce structural invariants on opportunities returned during calibration runs.</reason>
+      </item>
+      <item>
+        <path>tests/2.2-rate-limiter-implementation.test.cjs</path>
+        <kind>test</kind>
+        <symbol>[P0] rate limiter tests for Story 2.2</symbol>
+        <lines></lines>
+        <reason>Existing rate limiter test suite whose scenarios and patterns should be extended or reused when implementing sustained calibration tests.</reason>
+      </item>
+      <item>
+        <path>tests/2.1-adapter-pattern-shared-types.test.cjs</path>
+        <kind>test</kind>
+        <symbol>Adapter normalization and contract tests</symbol>
+        <lines></lines>
+        <reason>Ensures adapters respect the shared ArbitrageOpportunity contract; calibration must not violate these invariants.</reason>
+      </item>
+    </code>
+
+    <dependencies>
+node (package.json):
+- bottleneck@^2.19.5
+- electron-log@^5.4.3
+- electron@^38.1.2
+- electron-vite@^4.0.1
+- zod@^4.1.0
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Rate limiting remains centralized in `src/main/services/poller.ts` using `bottleneck` instances and `RateLimiterConfig`; calibration must not introduce new ad-hoc limiter logic or direct HTTP utilities outside this path.
+- All outbound HTTP calls from provider adapters continue to flow through the configured limiter; direct `fetch`/`axios` calls are not allowed, and calibration scenarios should exercise this invariant rather than bypass it.
+- Adapters surface HTTP 429 responses as errors with status metadata (status/statusCode/response.status) so that poller backoff and `ProviderQuotaStatus` handling are consistently applied, as captured in Story 2.2 Dev Notes and the backlog.
+- Calibration runs operate only against test/safe providers or controlled environments, with configuration that prevents accidental high-volume traffic against production-only endpoints.
+- Calibration and stress tests must respect the separation between I/O-bound polling and pure computation: `calculator.ts` and the `ArbitrageOpportunity` model remain pure and are exercised only after the limiter has admitted a provider request.
+  </constraints>
+
+  <interfaces>
+- `src/main/services/poller.ts`: quota-aware polling interface owning provider schedules, limiter instances, and `ProviderQuotaStatus` exposure for downstream consumers.
+- `BaseArbitrageAdapter` in `src/main/adapters/base.ts`: shared adapter contract that defines how provider HTTP calls are performed and how errors (including 429) are surfaced to the poller.
+- Story-level CLI/test entrypoints (to be implemented) that invoke calibration runs, for example `npm run calibrate:providers` or a `npm test:calibrate` script that wraps Node’s `--test` runner.
+  </interfaces>
+
+  <tests>
+    <standards>
+From `_bmad-output/test-design-system.md`, Risk R-001 (Rate Limiting and API Quotas) relies on centralized Bottleneck configuration, API-level tests that simulate peak usage patterns, and CI jobs that fail on any 429 responses or quota violations. Calibration tests are classified as higher-risk performance checks and should follow the P0/P1 guidance for R-001 with clear, deterministic pass/fail criteria.
+    </standards>
+    <locations>
+- Node test runner via `node --test tests/**/*.test.cjs` (see `package.json` scripts).
+- Existing Epic 2 tests under `tests/2.1-adapter-pattern-shared-types.test.cjs` and `tests/2.2-rate-limiter-implementation.test.cjs`.
+- New calibration-specific tests expected under `tests/2.3-rate-limit-calibration-stress-harness.test.cjs` (or `.test.ts`), co-located with other Epic 2 suites.
+    </locations>
+    <ideas>
+- AC #1: Add tests that invoke a calibration entrypoint with bounded duration and verify that it reuses the existing poller/adapters/RateLimiterConfig rather than constructing separate limiter instances.
+- AC #2: Add tests that simulate calibration runs for each provider and assert that structured metrics (request counts, 2xx/4xx/5xx/429 counts, latency buckets, backoff events) are emitted via `electron-log` and/or captured hooks.
+- AC #3: Implement quota-focused tests that approximate the 5,000 req/hour constraint using scaled-down time windows and verify that effective request rates stay within bounds; failing cases should cause clear test failures.
+- AC #4: Add CI-oriented tests or scripts that can be run under `npm test:calibrate` in a deterministic timeframe and that exit non-zero when quotas are violated or metrics are missing.
+- AC #5: Extend existing 2.2 rate limiter tests with synthetic 429 scenarios driven through the calibration harness, asserting that adapters surface 429 correctly, poller backoff and `ProviderQuotaStatus` updates occur, and queued jobs are handled according to the documented backoff semantics.
+    </ideas>
+  </tests>
+</story-context>
+

@@ -1,0 +1,146 @@
+<storyContext>
+  <story>
+    <id>3.1</id>
+    <key>3-1-main-layout-split-pane</key>
+    <title>Main Layout &amp; Split Pane</title>
+    <status>drafted</status>
+    <asA>User</asA>
+    <iWant>see signals on the left and details on the right</iWant>
+    <soThat>I can scan and inspect opportunities quickly</soThat>
+    <acceptanceCriteria>
+      <criteria id="AC1">Render a split-pane dashboard layout with a fixed-width left pane (~400px, e.g. 360–440px) and a right pane that expands to fill remaining width; layout remains stable on resize at widths ≥ 900px.</criteria>
+      <criteria id="AC2">Apply the "Orange Terminal" theme to the dashboard: background #0F172A, off-white text, orange accent for key value/action elements, consistent with _bmad-output/ux-design-specification.md and Epic 1.</criteria>
+      <criteria id="AC3">Enforce a minimum effective width of 900px for the dashboard so the two-pane structure never collapses into overlapping content on narrow windows.</criteria>
+      <criteria id="AC4">Expose clearly labeled "Feed" (left) and "Signal Preview" (right) containers with stable identifiers (e.g. data-testid="feed-pane" and data-testid="signal-preview-pane") for future stories to plug into.</criteria>
+      <criteria id="AC5">Provide tests that verify presence of both panes, background color/min-width behaviour, and preservation of the split layout at or above 900px width.</criteria>
+    </acceptanceCriteria>
+    <tasks>
+      <task id="T1" ac="AC1 AC2">Implement DashboardLayout component under renderer/src/features/dashboard/ with fixed left pane and fluid right pane using shadcn/ui and Tailwind utility classes, matching the Orange Terminal theme.</task>
+      <task id="T2" ac="AC1 AC3">Wire DashboardLayout into the renderer entry/routing, and enforce a 900px minimum width via BrowserWindow configuration and/or CSS min-width on the root dashboard container.</task>
+      <task id="T3" ac="AC1 AC4">Create labeled Feed and Signal Preview containers in the layout with stable test IDs and minimal props for later FeedTable and SignalPreview components.</task>
+      <task id="T4" ac="AC2 AC3 AC5">Add layout-focused tests that render the dashboard layout, assert presence and sizing of panes, and verify background and min-width behaviour at representative viewport sizes.</task>
+    </tasks>
+  </story>
+
+  <documents>
+    <prd>
+      <file>_bmad-output/prd.md</file>
+      <section>Dashboard &amp; Visualization (FR9–FR13) and UX principles</section>
+      <snippet>Defines the sortable data grid, ROI highlighting, filtering, and staleness indicator requirements that the Epic 3 dashboard layout will ultimately host.</snippet>
+    </prd>
+    <architecture>
+      <file>_bmad-output/architecture.md</file>
+      <section>Project Structure / UX Error and Degraded States</section>
+      <snippet>Describes the separation between main, preload, renderer, and shared layers, and calls out the dashboard feature area, system/provider status model, and expected lifecycle/consistency patterns.</snippet>
+    </architecture>
+    <uxDesign>
+      <file>_bmad-output/ux-design-specification.md</file>
+      <section>Hybrid Dashboard / The Orange Terminal</section>
+      <snippet>Specifies the split-pane layout with left feed and right signal preview, the #0F172A background, orange accent usage, and keyboard-first interaction patterns that guide the dashboard layout.</snippet>
+    </uxDesign>
+    <epic>
+      <file>_bmad-output/epics.md</file>
+      <section>Epic 3 – The Signal Dashboard (Story 3.1)</section>
+      <snippet>Defines Story 3.1 as establishing the main layout and split pane, with a fixed-left pane, fluid right pane, and minimum width of 900px.</snippet>
+    </epic>
+    <logging>
+      <file>_bmad-output/implementation-artifacts/2-7-logging-observability-baseline.md</file>
+      <section>Dev Notes / Observability</section>
+      <snippet>Outlines the logging and heartbeat groundwork that future dashboard status and staleness indicators will consume, informing where to surface system and provider health in the layout.</snippet>
+    </logging>
+  </documents>
+
+  <artifacts>
+    <code>
+      <item>
+        <path>src/renderer/src/App.tsx</path>
+        <kind>renderer-root</kind>
+        <symbol>App</symbol>
+        <lines>1-120</lines>
+        <reason>Entry point for the renderer; DashboardLayout will either be rendered from here or via its routing shell.</reason>
+      </item>
+      <item>
+        <path>src/renderer/src/main.tsx</path>
+        <kind>renderer-bootstrap</kind>
+        <symbol>main</symbol>
+        <lines>1-60</lines>
+        <reason>Bootstraps the React tree and is responsible for mounting the root component that will host the dashboard layout.</reason>
+      </item>
+      <item>
+        <path>src/renderer/src/features/settings/ProviderSettings.tsx</path>
+        <kind>settings-ui</kind>
+        <symbol>ProviderSettings</symbol>
+        <lines>1-220</lines>
+        <reason>Establishes shadcn/ui usage, theming, and layout patterns that the dashboard should mirror for visual consistency.</reason>
+      </item>
+      <item>
+        <path>src/main/index.ts</path>
+        <kind>electron-main</kind>
+        <symbol>createWindow</symbol>
+        <lines>1-120</lines>
+        <reason>Controls BrowserWindow configuration; likely place to enforce a minimum width of 900px for the dashboard window.</reason>
+      </item>
+      <item>
+        <path>src/main/services/logger.ts</path>
+        <kind>service</kind>
+        <symbol>logHeartbeat</symbol>
+        <lines>1-140</lines>
+        <reason>Provides structured logging and heartbeat events that later dashboard stories will surface; layout should leave room for status indicators informed by these logs.</reason>
+      </item>
+      <item>
+        <path>tests/1.1-int-structure.test.cjs</path>
+        <kind>test</kind>
+        <symbol>project-structure-tests</symbol>
+        <lines>1-160</lines>
+        <reason>Verifies initial project structure and renderer entry; patterns here can guide where to add new layout and dashboard tests.</reason>
+      </item>
+    </code>
+    <interfaces>
+      <interface>
+        <name>Renderer App Root</name>
+        <kind>React component</kind>
+        <signature>function App(): JSX.Element</signature>
+        <path>src/renderer/src/App.tsx</path>
+      </interface>
+      <interface>
+        <name>BrowserWindow configuration</name>
+        <kind>Electron window</kind>
+        <signature>function createWindow(): void</signature>
+        <path>src/main/index.ts</path>
+      </interface>
+    </interfaces>
+    <dependencies>
+      <nodePackages>
+        <package name="react" version="^19.1.1" />
+        <package name="zustand" version="^5.0.8" />
+        <package name="shadcn-ui" version="^0.9.5" />
+        <package name="electron" version="^38.1.2" />
+        <package name="electron-vite" version="^4.0.1" />
+        <package name="tailwindcss" version="^3.4.15" />
+      </nodePackages>
+    </dependencies>
+  </artifacts>
+
+  <tests>
+    <standards>Use existing Node/React testing setup (node --test + React Testing Library or equivalent), following _bmad-output/test-design-system.md for AC-mapped test naming and prioritising non-flaky, layout-focused assertions over pixel-perfect snapshots.</standards>
+    <locations>
+      <path>tests/</path>
+      <path>src/renderer/src/features/dashboard/__tests__/</path>
+    </locations>
+    <ideas>
+      <idea ac="AC1">Render DashboardLayout at 1280px viewport width and assert that both feed and signal preview panes are present with the left pane occupying a fixed-width range and the right pane filling remaining space.</idea>
+      <idea ac="AC2">Assert that the rendered dashboard root element has background color #0F172A and uses the same typography and base theme tokens as Settings.</idea>
+      <idea ac="AC3">Simulate window/viewport resize down to 900px and verify that the layout remains two-column without overlapping content or horizontal scrollbars in the default configuration.</idea>
+      <idea ac="AC4">Query by data-testid="feed-pane" and data-testid="signal-preview-pane" to verify that these containers are present and ready for Stories 3.2–3.5 to hook into.</idea>
+      <idea ac="AC5">Add a regression test that renders the dashboard and checks classNames or style props rather than screenshots, ensuring theme/min-width behaviour is enforced without brittle snapshots.</idea>
+    </ideas>
+  </tests>
+
+  <constraints>
+    <item>Do not introduce provider selection, polling, or arbitrage engine logic in this story; reuse existing data engine surfaces later in Epic 3 and 4 stories.</item>
+    <item>Maintain the single source of truth for theming and layout primitives established in Epic 1; avoid new styling systems or duplicated theme tokens.</item>
+    <item>Keep the split-pane layout flexible enough to host system and provider status indicators driven by logging/heartbeat data from poller.ts and logger.ts.</item>
+    <item>Ensure any new dashboard components live under renderer/src/features/dashboard/ to preserve the architecture’s project structure conventions.</item>
+  </constraints>
+</storyContext>
+

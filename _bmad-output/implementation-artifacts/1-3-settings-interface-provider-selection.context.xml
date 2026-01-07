@@ -1,0 +1,126 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>3</storyId>
+    <title>Settings Interface &amp; Provider Selection</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-20</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/1-3-settings-interface-provider-selection.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>User</asA>
+    <iWant>to enter API keys and select the active provider</iWant>
+    <soThat>the app runs in Test or Production mode</soThat>
+    <tasks>
+      <![CDATA[
+- Extend the existing Settings / Provider Configuration UI so provider selection uses a shadcn `Select` component instead of a free-text input, with stable options for Production (`Odds-API.io`) and Test (`The-Odds-API.com`).
+- Ensure API key entry uses a shadcn password `Input` per provider and sends keys via typed IPC (`electron-trpc`) to `saveApiKey(providerId, apiKey)`, never storing raw keys in renderer global state or localStorage.
+- Add a small settings layer (hook or local state) that manages the active provider and per-provider key flags using only in-memory state on the renderer side.
+- Introduce or reuse typed IPC endpoints for reading/writing the active provider in the main process (backed by `electron-store`) and wire them into the provider `Select`.
+- Keep the secure storage fallback banner wired to `getStorageStatus` / `acknowledgeFallbackWarning` so users are warned when OS-backed encryption is unavailable.
+- Add component/integration tests for provider toggle behavior, API key validation, and the fallback warning in line with the system test design.
+      ]]>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <![CDATA[
+1. The Settings / Provider Configuration screen exposes a provider toggle implemented with a shadcn `Select`, with options for the Production provider (`Odds-API.io`) and Test provider (`The-Odds-API.com`), and the selected provider is persisted across app restarts via a typed settings store (e.g., backed by `electron-store` in the main process).
+2. For each provider, the settings screen renders a masked shadcn password `Input` for the API key and uses typed IPC (via `electron-trpc`) to call `saveApiKey(providerId, apiKey)` / `getApiKey({ providerId })` in the main process; keys are never stored in renderer global state (no Zustand store, no localStorage, no query-string parameters).
+3. The form validates API key inputs on submit: empty or whitespace-only values are rejected with inline error messaging, while valid non-empty keys result in a clear success state; after a successful save, in-memory key values are cleared from the React component state while the "key configured" status reflects persisted state from `getApiKey`.
+4. Switching the selected provider updates the in-memory form state and re-queries `getApiKey` for that provider so that the "key configured" indicator, validation messages, and save behavior correctly reflect per-provider secrets (separate keys for Production vs Test).
+5. When secure storage falls back to base64 mode (`isUsingFallbackStorage === true` and `fallbackWarningShown !== true`), the Settings UI displays the one-time security warning described in `_bmad-output/architecture.md` ("Security and API Credential Handling") and acknowledges it via `acknowledgeFallbackWarning`, without exposing raw keys in the banner or logs.
+6. Component and/or integration tests cover provider toggle behavior (including persistence), API key validation rules, and the fallback warning display, following patterns from `_bmad-output/test-design-system.md` and Epic 1.1 test design.
+    ]]>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <![CDATA[
+- _bmad-output/prd.md#Configuration-&-Settings — FR1/FR2 for provider selection and secure key storage.
+- _bmad-output/architecture.md#Security-and-API-Credential-Handling — constraints around safeStorage, credentials module, and IPC boundaries.
+- _bmad-output/architecture.md#Project-Structure — expected locations for settings UI, credentials, and IPC code.
+- _bmad-output/epics.md#Story-1.3----Settings-Interface-&-Provider-Selection — epic/story intent and acceptance criteria mapping to FR1/FR2.
+- _bmad-output/test-design-system.md — system-level testing standards and risk-based priorities for configuration and security flows.
+- _bmad-output/implementation-artifacts/1-1-project-initialization-ui-scaffolding.md — prior UI scaffolding and theme constraints.
+- _bmad-output/implementation-artifacts/1-2-secure-storage-service.md — prior secure storage implementation and security review learnings.
+      ]]>
+    </docs>
+    <code>
+      <![CDATA[
+- src/main/services/storage.ts — secure storage implementation for provider-scoped API keys (safeStorage + electron-store).
+- src/main/services/router.ts — TRPC router exposing `saveApiKey`, `getApiKey`, `getStorageStatus`, and `acknowledgeFallbackWarning`.
+- src/preload/index.ts — preload bridge exposing typed TRPC client into the renderer.
+- src/renderer/src/lib/trpc.ts — renderer-side TRPC client used by settings UI.
+- src/renderer/src/features/settings/ProviderSettings.tsx — current settings UI for provider credentials and fallback warning.
+- src/renderer/src/App.tsx — integration point that renders ProviderSettings into the main UI shell.
+- tests/1.2-unit-storage.test.cjs — storage tests validating provider-scoped key persistence and fallback detection.
+- tests/1.1-*.test.cjs — structure, build, and theme tests that constrain visuals for the settings UI.
+      ]]>
+    </code>
+    <dependencies>
+      <![CDATA[
+- Electron & electron-vite — desktop shell and bundler for the main/renderer processes.
+- electron-trpc — typed IPC layer used for credentials and settings endpoints.
+- electron-store — persisted configuration store in the main process for provider settings and non-secret preferences.
+- safeStorage — Windows-backed secure storage for API keys (preferred secret persistence mechanism).
+- React & shadcn/ui — renderer UI framework and component primitives for the Settings screen.
+- Zustand — state management library used elsewhere in the dashboard (not for secrets) and potentially for non-sensitive settings flags.
+      ]]>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <![CDATA[
+- API keys must never be persisted or logged in the renderer: no storage in localStorage, URL parameters, or global state containers such as Zustand stores.
+- All secret handling must remain confined to the main process (`src/main/services/storage.ts` and future `src/main/credentials.ts`) and flow through typed TRPC procedures.
+- The provider `Select` and credentials UI must align visually with the "Orange Terminal" theme and design system defined in the architecture and UX docs.
+- Changing provider configuration must be treated as a configuration event that can trigger downstream refresh of adapters and poller state without requiring a full app restart.
+- The fallback storage banner must remain accurate and prominent whenever `isUsingFallbackStorage === true` and only be dismissible via `acknowledgeFallbackWarning`, with no exposure of raw keys.
+    ]]>
+  </constraints>
+
+  <interfaces>
+    <![CDATA[
+- TRPC procedures:
+  - `saveApiKey({ providerId, apiKey }) => { ok: boolean }`
+  - `getApiKey({ providerId }) => { apiKey: string | null }`
+  - `getStorageStatus() => { isUsingFallbackStorage: boolean; fallbackWarningShown: boolean }`
+  - `acknowledgeFallbackWarning() => { ok: boolean }`
+- Future configuration endpoints (suggested):
+  - `getActiveProvider() => { providerId: string }`
+  - `setActiveProvider({ providerId }) => { ok: boolean }`
+- Renderer-to-preload boundary:
+  - ProviderSettings uses the TRPC client from `src/renderer/src/lib/trpc.ts` exposed via the preload bridge, not direct Node/Electron imports.
+    ]]>
+  </interfaces>
+
+  <tests>
+    <standards>
+      <![CDATA[
+- Follow the system-level test design in `_bmad-output/test-design-system.md`, with particular focus on SEC and TECH risks around configuration and secret handling.
+- Reuse existing integration/unit patterns from the 1.1 and 1.2 test suites (Node-based tests, clear naming, and risk-linked IDs).
+- Ensure tests are deterministic, avoid network calls when validating settings behavior, and use local stubs/mocks for IPC interactions where needed.
+      ]]>
+    </standards>
+    <locations>
+      <![CDATA[
+- tests/1.3-*.test.cjs — new tests added for Story 1.3 (provider settings UI and configuration behavior).
+- tests/1.2-unit-storage.test.cjs — existing storage tests validating secure storage invariants.
+- tests/1.1-*.test.cjs — theme, structure, and build tests that indirectly constrain the Settings UI environment.
+      ]]>
+    </locations>
+    <ideas>
+      <![CDATA[
+- P0: Verify that saving a non-empty API key for each provider results in persisted `enc:` or `b64:` values only in main-process storage and that renderer logs/state remain free of raw keys.
+- P1: Component test for ProviderSettings ensuring the provider `Select` defaults to the intended provider and toggling it re-queries `getApiKey` and updates the "key configured" indicator.
+- P1: Validation test that empty or whitespace-only keys produce an inline error and do not call `saveApiKey`.
+- P1: UI-level test that when `isUsingFallbackStorage === true` and `fallbackWarningShown === false`, the fallback banner appears and disappears only after `acknowledgeFallbackWarning` is invoked.
+- P2: Integration test that changing the active provider leads to a configuration refresh hook (e.g., calling a stubbed adapter or poller refresh function) without requiring an app restart.
+      ]]>
+    </ideas>
+  </tests>
+</story-context>
+

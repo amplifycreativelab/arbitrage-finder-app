@@ -1,0 +1,82 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>5</storyId>
+    <title>Provider &amp; System Status Indicators</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-11-21</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>_bmad-output/implementation-artifacts/3-5-provider-system-status-indicators.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>User</asA>
+    <iWant>to see provider and system health at a glance</iWant>
+    <soThat>I can trust whether the current grid reflects reality before acting on opportunities</soThat>
+    <tasks>
+      Design and wire a shared system and provider status model into the main process and renderer; expose a system status chip and per-provider badges in the dashboard; surface non-blocking banners when providers are down, quota-limited, or misconfigured; and ensure empty-state messaging clearly distinguishes between healthy-but-empty feeds, filtered-out opportunities, and degraded or stale system states, all without adding new network calls or breaking existing feed, staleness, or filter behavior.
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    The dashboard renders a system status chip that always shows one of the `SystemStatus` values (`OK`, `Degraded`, `Error`, `Stale`) derived from poller heartbeats, aggregated provider status, and staleness signals, styled to match the Orange Terminal theme with clear, text-first labels; each configured provider (for example Odds-API.io and The-Odds-API.com) exposes a `ProviderStatus` badge (`OK`, `Degraded`, `Down`, `QuotaLimited`, `ConfigMissing`) based on the same heartbeat/error data as the system status; provider failures trigger non-blocking banners that include provider name, last-success timestamp, current status, and a short recommended action; and when the feed shows no rows, the UI distinguishes between "no current surebets" under healthy statuses and "data unavailable or stale" when system or providers are degraded, reusing the staleness model from Story 3.3 and the filtered empty-state pattern from Story 3.4.
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      _bmad-output/prd.md (FR13 requires a staleness indicator that clearly communicates time since last update to maintain user trust in data freshness; Epic 3 overall maps dashboard visualization, staleness, and health indicators to FR9–FR13); 
+      _bmad-output/architecture.md (Data Architecture describing how `ArbitrageOpportunity` snapshots and timestamps flow from adapters and poller into the renderer; UX Error and Degraded States defining `SystemStatus` and `ProviderStatus` enums, non-blocking banners, and the distinction between empty, stale, and degraded conditions; Lifecycle and Consistency patterns requiring status to be modeled explicitly rather than via ad-hoc booleans); 
+      _bmad-output/ux-design-specification.md (Hybrid dashboard layout and Orange Terminal theme, emphasizing trust via clear freshness indicators and non-intrusive banners; keyboard-first workflows that status components must not disrupt); 
+      _bmad-output/epics.md (Epic 3 – Dashboard context and Story 3.5 – Provider &amp; System Status Indicators acceptance criteria and links to FR13 and risks R-001/R-005); 
+      _bmad-output/implementation-artifacts/3-3-visual-staleness-logic.md (detailed staleness behavior – thresholds, labels, and timer cadence – used to determine when the system should be considered `Stale`); 
+      _bmad-output/implementation-artifacts/3-4-filters-controls.md (filter semantics and filtered empty-state UX that must stay compatible with new system/provider status messaging and banners); 
+      _bmad-output/test-design-system.md (risk-based test strategy, especially R-001 and R-005 around stale/frozen data and the need for watchdog tests and health indicators in the dashboard).
+    </docs>
+    <code>
+      shared/types.ts (canonical definition for `ArbitrageOpportunity` and the appropriate location to introduce or confirm `SystemStatus` and `ProviderStatus` enums shared between main and renderer); 
+      src/main/services/poller.ts (central poller that orchestrates provider fetches, tracks last-success timestamps, and is the correct point to compute per-provider status and aggregate `SystemStatus` without duplicating logic in the renderer); 
+      src/main/adapters/odds-api-io.ts (production adapter that should surface structured errors and heartbeat information so the poller can classify provider status as `OK`, `Degraded`, `Down`, or `QuotaLimited`); 
+      src/main/adapters/the-odds-api.ts (test adapter whose failures, misconfiguration, or quota responses also feed into provider health classification); 
+      src/renderer/src/lib/trpc.ts (typed IPC bridge over electron-trpc where a dashboard-facing procedure should expose system and provider statuses alongside or adjacent to the feed snapshot); 
+      src/renderer/src/features/dashboard/FeedPane.tsx (composition layer for the left pane that should host the system status chip, provider badges, banners for provider failures, and empty-state logic that differentiates healthy-vs-degraded conditions); 
+      src/renderer/src/features/dashboard/FeedTable.tsx (feed grid that already integrates staleness labels and opacity and must continue to function correctly when status chips and banners are present above it); 
+      src/renderer/src/features/dashboard/staleness.ts (staleness utility whose thresholds and labels inform when `SystemStatus` should be considered `Stale` and how to phrase degraded/empty states); 
+      src/renderer/src/features/dashboard/useStalenessTicker.ts (ticker hook that drives periodic staleness recomputation and should remain the single time source used by both row-level and system-level staleness indicators); 
+      src/renderer/src/features/dashboard/stores/feedFiltersStore.ts (filter store that influences when the feed is visually empty due to user-selected filters, which must be distinguished from empty results caused by degraded or stale system/provider status); 
+      tests/3.3-visual-staleness-logic.test.cjs (existing tests for staleness labels and timer-driven updates, to be extended or referenced when asserting `SystemStatus.Stale` behavior); 
+      tests/3.4-filters-controls.test.cjs (tests around filtered empty-state UI that provide a template for validating empty-state messaging under different system/provider statuses); 
+      tests/3.5-provider-system-status-indicators.test.cjs (new Epic 3.5 tests to validate status chip, provider badges, banners, and empty-state distinctions).
+    </code>
+    <dependencies>
+      package.json (Electron, React, zustand, electron-trpc, electron-log, and date-fns form the foundation for status computation, timestamp handling, and UI rendering; these libraries must be used consistently with patterns described in the architecture); 
+      Electron runtime configuration (ensures main and renderer processes share type-safe contracts and logging so provider errors and heartbeats can be surfaced to the dashboard in a structured way).
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    System and provider status must be computed centrally in the main process (poller plus adapters) based on structured errors, heartbeats, configuration checks, and staleness thresholds, then exposed to the renderer via typed IPC; the renderer must not infer health from incidental signals (such as lack of rows) or duplicate business logic from the poller. `SystemStatus` and `ProviderStatus` must be modeled as enums in shared contracts and reused across the app rather than introducing new booleans or status strings. Status chips, provider badges, and banners must remain non-blocking, keyboard-accessible, and visually consistent with the Orange Terminal theme, and they must not interfere with core dashboard flows (feed virtualization, staleness visuals, filters, and copy-and-advance). Empty states must clearly distinguish between: (a) healthy system with legitimately no opportunities, (b) opportunities filtered out by user preferences, and (c) degraded or stale back-end conditions; messaging and styling for each case should reflect the architecture’s UX Error and Degraded States guidance.
+  </constraints>
+
+  <interfaces>
+    A dashboard-facing status procedure exposed via electron-trpc (for example `poller.getStatus` or a combined `dashboard.getSnapshot`) that returns `SystemStatus`, a map of providers to `ProviderStatus`, and last-success timestamps in addition to or alongside `ArbitrageOpportunity[]` snapshots; 
+    the `useFeedStore` hook or a dedicated status store in `src/renderer/src/features/dashboard/stores` that reads status data from TRPC, keeps it in sync with feed snapshots, and exposes derived flags used by the UI; 
+    the `FeedPane` props and internal composition of filter bar, status bar, banners, and FeedTable, which should treat status and filter state as orthogonal inputs; 
+    adapter-level interfaces in `src/main/adapters/odds-api-io.ts` and `src/main/adapters/the-odds-api.ts` that surface typed error/category codes (e.g., quota-limited vs transient failure) so `ProviderStatus` mapping remains explicit and testable.
+  </interfaces>
+
+  <tests>
+    <standards>
+      Follow the Epic 3 dashboard test patterns: use the Node test runner with ReactDOMServer to render dashboard components, assert behavior via stable `data-testid` hooks, and keep tests deterministic by seeding explicit snapshots and status payloads. Lean on the risk-based strategy in `_bmad-output/test-design-system.md`, with special focus on R-001 and R-005 to ensure that stale or frozen data conditions are surfaced reliably through status indicators and banners rather than silently failing.
+    </standards>
+    <locations>
+      tests/3.3-visual-staleness-logic.test.cjs (reference for staleness thresholds, labels, and the 30-second ticker that should be reused when modeling stale system states); 
+      tests/3.4-filters-controls.test.cjs (reference for filter combinations and empty-state UI, to be extended for healthy vs degraded vs filtered-empty scenarios); 
+      tests/3.5-provider-system-status-indicators.test.cjs (primary Epic 3.5 test file verifying system status chip rendering, provider badges, provider failure banners, and empty-state distinctions); 
+      out-tests/src/renderer/src/features/dashboard/FeedPane.js and FeedTable.js (compiled components used in tests for HTML-based assertions).
+    </locations>
+    <ideas>
+      Seed a range of synthetic poller status payloads (all providers OK, single provider Down, quota-limited, multiple providers degraded, system stale due to time since last heartbeat) and assert that the system status chip, provider badges, and banners reflect the inputs exactly. Add tests that render `FeedPane` with non-empty `ArbitrageOpportunity[]` but degraded provider statuses to confirm that banners appear while the grid remains interactive. Add tests for cases where the feed is empty but status is `OK` (neutral "no current surebets" message), where the feed is empty because filters exclude all opportunities (filtered empty-state with active filters message), and where the feed is empty and status is `Degraded` or `Stale` (warning-style message with guidance to check provider status and logs). Include tests that advance a fake clock beyond the staleness threshold and assert that `SystemStatus` transitions to `Stale` and that associated UI changes occur without additional API calls.
+    </ideas>
+  </tests>
+</story-context>
+

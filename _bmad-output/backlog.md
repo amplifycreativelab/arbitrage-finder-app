@@ -1,0 +1,25 @@
+# Engineering Backlog
+
+This backlog collects cross-cutting or future action items that emerge from reviews and planning.
+
+Routing guidance:
+
+- Use this file for non-urgent optimizations, refactors, or follow-ups that span multiple stories/epics.
+- Must-fix items to ship a story belong in that story's `Tasks / Subtasks`.
+- Same-epic improvements may also be captured under the epic Tech Spec `Post-Review Follow-ups` section.
+
+| Date       | Story | Epic | Type        | Severity | Owner | Status | Notes |
+| ---------- | ----- | ---- | ----------- | -------- | ----- | ------ | ----- |
+| 2025-11-20 | 1.1   | 1    | Enhancement | Low      | TBD   | Open   | Implement P0 E2E dev smoke test `1.1-E2E-001` for `npm run dev` per test design (`_bmad-output/test-design-epic-1.1.md:128`) to verify Electron shell boot and Orange Terminal theme (AC #1–#3). |
+| 2025-11-20 | 1.2   | 1    | Bug         | High     | TBD   | Open   | Implement a clear, user-facing warning in the settings UI when `isUsingFallbackStorage()` is true (safeStorage unavailable), using a one-time warning flag and explaining the security trade-off for fallback storage (AC3, Story 1.2). |
+| 2025-11-20 | 1.2   | 1    | Enhancement | Medium   | TBD   | Open   | Document the `credentials` store schema (`providerSecrets` map, `enc:`/`b64:` prefixes) and fallback behavior for provider API keys in `_bmad-output/architecture.md` and/or Story 1.2 Dev Notes so credential persistence remains auditable. |
+| 2025-11-20 | 1.2   | 1    | Enhancement | Medium   | TBD   | Open   | Wire the Settings / Provider Configuration UI to call `trpcClient.saveApiKey` / `trpcClient.getApiKey` over electron-trpc IPC, ensuring no direct renderer file access for API keys and aligning with the architecture’s IPC pattern. |
+| 2025-11-20 | 1.2   | 1    | Test        | Low      | TBD   | Open   | Add tests that exercise the `safeStorage` encryption branch by mocking `safeStorage.isEncryptionAvailable` and verifying `enc:`-prefixed persistence and successful decryption via `getApiKey` (Story 1.2). |
+| 2025-11-21 | 2.2   | 2    | TechDebt    | Medium   | TBD   | Done   | Documented and enforced the 429 error contract for adapters and poller via calibration harness and tests (Story 2.3; src/main/services/calibration.ts, tests/2.3-rate-limit-calibration-stress-harness.test.cjs, src/main/adapters/base.ts, src/main/services/poller.ts). |
+| 2025-11-21 | 2.2   | 2    | Test        | Low      | TBD   | Done   | Added calibration and quota tests for Epic 2 using the Story 2.3 harness to exercise sustained polling and quota checks (tests/2.3-rate-limit-calibration-stress-harness.test.cjs, tests/2.2-rate-limiter-implementation.test.cjs, _bmad-output/test-design-system.md). |
+| 2025-11-21 | 2.5   | 2    | Security    | Low      | TBD   | Open   | Redact or normalize upstream HTTP error bodies before logging so provider responses cannot leak API keys or sensitive query strings in calibration or rate-limit logs (src/main/adapters/odds-api-io.ts, src/main/adapters/the-odds-api.ts, src/main/services/calibration.ts). |
+| 2025-11-21 | 2.7   | 2    | Operations  | Low      | TBD   | Done   | Document main-process log locations (electron-log defaults) and the structured logging/heartbeat schema (context, operation, providerId, correlationId, durationMs, errorCategory, providerStatuses, systemStatus) so ops can correlate logs with dashboard `SystemStatus` / `ProviderStatus` views (src/main/services/logger.ts, src/main/services/poller.ts, _bmad-output/architecture.md#Error Handling, Logging, and Observability). |
+| 2025-11-21 | 3.x   | 3    | Enhancement | Low      | TBD   | Open   | When dashboard stories land, wire poller snapshots and `filterOpportunitiesByRegionAndSport` into the feed so UI-level sport/region filters mirror the validated pipeline behavior for both Odds-API.io and The-Odds-API.com (shared/filters.ts, src/main/services/poller.ts, tests/2.4-production-adapter-odds-api-io.test.cjs, tests/2.5-test-adapter-the-odds-api-com.test.cjs). |
+| 2025-11-21 | 3.3   | 3    | Test        | Medium   | TBD   | Done   | Added a staleness tick test ([3.3-STALENESS-004]) that advances the effective clock and asserts labels/opacity update without invoking TRPC/network calls (tests/3.3-visual-staleness-logic.test.cjs). |
+| 2025-11-22 | 4.1   | 4    | Bug         | Medium   | TBD   | Done   | Ensure `SignalPreview` respects filtered-empty state and does not render a preview when filters hide all rows, keeping the right pane consistent with the `feed-empty-filters` view (Story 4.1; src/renderer/src/features/dashboard/SignalPreview.tsx; src/renderer/src/features/dashboard/FeedPane.tsx). |
+| 2025-11-22 | 4.1   | 4    | Test        | Low      | TBD   | Done   | Extend 4.1 test coverage so `SignalPreview` output (for example, via `data-opportunity-id`) tracks `selectedOpportunityId` and filtered-empty scenarios while still guaranteeing no additional `pollAndGetFeedSnapshot` TRPC calls (tests/4.1-signal-preview-pane.test.cjs). |
