@@ -44,6 +44,13 @@ export interface ArbitrageOpportunity {
   foundAt: string
   /** Provider that sourced this opportunity (Story 5.1 multi-provider support) */
   providerId?: ProviderId
+  /**
+   * All providers that returned this opportunity (Story 5.2 merged feed).
+   * Populated only when the same opportunity was found from multiple providers
+   * during deduplication. The `providerId` field contains the "winning" source
+   * (highest ROI or first-seen), while `mergedFrom` contains all source providers.
+   */
+  mergedFrom?: ProviderId[]
 }
 
 export interface ArbitrageAdapter {

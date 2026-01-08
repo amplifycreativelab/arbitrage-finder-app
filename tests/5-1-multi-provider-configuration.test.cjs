@@ -256,4 +256,59 @@ test('[P1][5.1-HOT-003] multiple toggles are consistent', async () => {
   assert.strictEqual(storage.getEnabledProviders().length, 0)
 })
 
+// ============================================================
+// Poller Tests (Multi-Provider Polling)
+// ============================================================
+
+// Import poller functions from compiled output
+const poller = require('../out-tests/src/main/services/poller.js')
+
+test('[P0][5.1-POLL-001] notifyEnabledProvidersChanged updates polling targets', async () => {
+  // Start with empty
+  poller.notifyEnabledProvidersChanged([])
+  assert.deepStrictEqual(poller.getEnabledProvidersForPolling(), [])
+
+  // Add providers
+  poller.notifyEnabledProvidersChanged(['odds-api-io', 'the-odds-api'])
+  const enabled = poller.getEnabledProvidersForPolling()
+  assert.ok(enabled.includes('odds-api-io'), 'Should include odds-api-io')
+  assert.ok(enabled.includes('the-odds-api'), 'Should include the-odds-api')
+})
+
+test('[P0][5.1-POLL-002] getEnabledProvidersForPolling returns current targets', async () => {
+  poller.notifyEnabledProvidersChanged(['odds-api-io'])
+  const enabled = poller.getEnabledProvidersForPolling()
+  assert.strictEqual(enabled.length, 1)
+  assert.strictEqual(enabled[0], 'odds-api-io')
+})
+
+test('[P1][5.1-POLL-003] notifyEnabledProvidersChanged replaces previous targets', async () => {
+  // Set initial
+  poller.notifyEnabledProvidersChanged(['odds-api-io', 'the-odds-api'])
+  assert.strictEqual(poller.getEnabledProvidersForPolling().length, 2)
+
+  // Replace with single provider
+  poller.notifyEnabledProvidersChanged(['the-odds-api'])
+  const enabled = poller.getEnabledProvidersForPolling()
+  assert.strictEqual(enabled.length, 1)
+  assert.strictEqual(enabled[0], 'the-odds-api')
+})
+
+test('[P1][5.1-POLL-004] pollOnceForEnabledProviders returns empty when no providers enabled', async () => {
+  poller.notifyEnabledProvidersChanged([])
+  const opportunities = await poller.pollOnceForEnabledProviders()
+  assert.ok(Array.isArray(opportunities), 'Should return an array')
+  assert.strictEqual(opportunities.length, 0, 'Should be empty when no providers enabled')
+})
+
+test('[P2][5.1-POLL-005] pollOnceForEnabledProviders handles unregistered adapter gracefully', async () => {
+  // Enable a provider but don't register its adapter (simulates missing adapter)
+  // The poller should skip it without crashing
+  poller.notifyEnabledProvidersChanged(['odds-api-io'])
+  
+  // This should not throw - unregistered adapters are skipped
+  const opportunities = await poller.pollOnceForEnabledProviders()
+  assert.ok(Array.isArray(opportunities), 'Should return an array even with missing adapter')
+})
+
 console.log('Story 5.1 tests defined. Run with: node --test tests/5-1-multi-provider-configuration.test.cjs')

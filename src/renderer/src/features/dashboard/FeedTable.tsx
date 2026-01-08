@@ -339,6 +339,20 @@ function getProviderBadgeLabel(providerId: string | undefined): string | null {
   }
 }
 
+/**
+ * Get human-friendly display name for provider (used in accessibility labels).
+ */
+function getProviderDisplayName(providerId: string): string {
+  switch (providerId) {
+    case 'odds-api-io':
+      return 'Odds-API.io'
+    case 'the-odds-api':
+      return 'The-Odds-API.com'
+    default:
+      return providerId
+  }
+}
+
 function FeedRow({
   opportunity,
   stalenessNow,
@@ -357,6 +371,12 @@ function FeedRow({
   // Provider source badge (Story 5.1)
   const providerBadge = getProviderBadgeLabel(opportunity.providerId)
 
+  // Merged provider badge (Story 5.2)
+  const isMerged = opportunity.mergedFrom && opportunity.mergedFrom.length > 1
+  const mergedBadgeLabel = isMerged
+    ? opportunity.mergedFrom!.map(getProviderBadgeLabel).filter(Boolean).join('+')
+    : null
+
   return (
     <div
       id={`feed-row-${opportunity.id}`}
@@ -370,6 +390,7 @@ function FeedRow({
       data-state={isSelected ? 'selected' : 'idle'}
       data-processed={isProcessed ? 'true' : 'false'}
       data-provider={opportunity.providerId ?? 'unknown'}
+      data-merged={isMerged ? 'true' : 'false'}
       onClick={onSelect}
       role="option"
       aria-selected={isSelected ? 'true' : 'false'}
@@ -389,8 +410,18 @@ function FeedRow({
           ✓
         </div>
       )}
-      {/* Provider source badge (Story 5.1) */}
-      {providerBadge && (
+      {/* Merged provider badge (Story 5.2) - takes priority over single provider */}
+      {isMerged && mergedBadgeLabel && (
+        <div
+          className="mx-1 rounded-full border border-purple-400/40 bg-purple-500/15 px-1.5 py-0.5 text-[8px] font-medium text-purple-300/90"
+          data-testid="feed-row-merged-badge"
+          aria-label={`Merged from: ${opportunity.mergedFrom?.map(id => getProviderDisplayName(id)).join(' + ')}`}
+        >
+          ⚡{mergedBadgeLabel}
+        </div>
+      )}
+      {/* Single provider source badge (Story 5.1) - only show if not merged */}
+      {!isMerged && providerBadge && (
         <div
           className="mx-1 rounded-full border border-ot-accent/30 bg-ot-accent/10 px-1.5 py-0.5 text-[8px] font-medium text-ot-accent/80"
           data-testid="feed-row-provider-badge"

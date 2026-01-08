@@ -10,14 +10,13 @@ const clipboard_1 = require("./clipboard");
 const logs_1 = require("./logs");
 const odds_api_io_1 = require("../adapters/odds-api-io");
 const the_odds_api_1 = require("../adapters/the-odds-api");
+const calculator_1 = require("./calculator");
+const logger_1 = require("./logger");
 const t = server_1.initTRPC.create();
 (0, poller_1.registerAdapters)([new odds_api_io_1.OddsApiIoAdapter(), new the_odds_api_1.TheOddsApiAdapter()]);
 // Initialize with enabled providers (multi-provider mode)
 const initialEnabledProviders = (0, storage_1.getEnabledProviders)();
 (0, poller_1.notifyEnabledProvidersChanged)(initialEnabledProviders);
-// Legacy: also set active provider for backward compatibility
-const initialProviderId = (0, storage_1.getActiveProviderId)();
-(0, poller_1.notifyActiveProviderChanged)(initialProviderId);
 exports.appRouter = t.router({
     saveApiKey: t.procedure
         .input(schemas_1.saveApiKeyInputSchema)
@@ -31,21 +30,7 @@ exports.appRouter = t.router({
         const configured = await (0, credentials_1.isProviderConfigured)(input.providerId);
         return { isConfigured: configured };
     }),
-    // ============================================================
-    // Legacy single-provider procedures (backward compatible)
-    // ============================================================
-    getActiveProvider: t.procedure.query(async () => {
-        const providerId = (0, storage_1.getActiveProviderId)();
-        return { providerId };
-    }),
-    setActiveProvider: t.procedure
-        .input(schemas_1.activeProviderSchema)
-        .mutation(async ({ input }) => {
-        const providerId = input.providerId;
-        (0, storage_1.setActiveProviderId)(providerId);
-        (0, poller_1.notifyActiveProviderChanged)(providerId);
-        return { ok: true };
-    }),
+    // Legacy getActiveProvider/setActiveProvider removed in Story 5.1 cleanup
     // ============================================================
     // Multi-provider procedures (Story 5.1)
     // ============================================================
@@ -96,17 +81,31 @@ exports.appRouter = t.router({
         const enabledProviderIds = (0, storage_1.getEnabledProviders)();
         const status = await (0, poller_1.getDashboardStatusSnapshot)();
         // Concatenate opportunities from all enabled providers
-        const opportunities = [];
+        const rawOpportunities = [];
         let latestFetchedAt = null;
         for (const providerId of enabledProviderIds) {
             const snapshot = (0, poller_1.getLatestSnapshotForProvider)(providerId);
-            opportunities.push(...snapshot.opportunities);
+            rawOpportunities.push(...snapshot.opportunities);
             // Track most recent fetch time
             if (snapshot.fetchedAt) {
                 if (!latestFetchedAt || snapshot.fetchedAt > latestFetchedAt) {
                     latestFetchedAt = snapshot.fetchedAt;
                 }
             }
+        }
+        // Deduplicate opportunities across providers (Story 5.2)
+        const opportunities = (0, calculator_1.deduplicateOpportunities)(rawOpportunities);
+        // Log deduplication stats for observability (MED-002 fix: parity with pollAndGetFeedSnapshot)
+        const stats = (0, calculator_1.getDeduplicationStats)(rawOpportunities.length, opportunities.length);
+        if (stats.duplicatesRemoved > 0) {
+            (0, logger_1.logInfo)('feed.deduplication', {
+                context: 'service:router',
+                operation: 'getFeedSnapshot',
+                correlationId: undefined,
+                durationMs: null,
+                errorCategory: null,
+                ...stats
+            });
         }
         return {
             enabledProviderIds,
@@ -126,16 +125,30 @@ exports.appRouter = t.router({
         await (0, poller_1.pollOnceForEnabledProviders)();
         const status = await (0, poller_1.getDashboardStatusSnapshot)();
         // Concatenate opportunities from all enabled providers
-        const opportunities = [];
+        const rawOpportunities = [];
         let latestFetchedAt = null;
         for (const providerId of enabledProviderIds) {
             const snapshot = (0, poller_1.getLatestSnapshotForProvider)(providerId);
-            opportunities.push(...snapshot.opportunities);
+            rawOpportunities.push(...snapshot.opportunities);
             if (snapshot.fetchedAt) {
                 if (!latestFetchedAt || snapshot.fetchedAt > latestFetchedAt) {
                     latestFetchedAt = snapshot.fetchedAt;
                 }
             }
+        }
+        // Deduplicate opportunities across providers (Story 5.2)
+        const opportunities = (0, calculator_1.deduplicateOpportunities)(rawOpportunities);
+        // Log deduplication stats
+        const stats = (0, calculator_1.getDeduplicationStats)(rawOpportunities.length, opportunities.length);
+        if (stats.duplicatesRemoved > 0) {
+            (0, logger_1.logInfo)('feed.deduplication', {
+                context: 'service:router',
+                operation: 'pollAndGetFeedSnapshot',
+                correlationId: undefined,
+                durationMs: null,
+                errorCategory: null,
+                ...stats
+            });
         }
         return {
             enabledProviderIds,

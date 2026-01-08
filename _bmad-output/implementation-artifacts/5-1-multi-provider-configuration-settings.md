@@ -1,6 +1,6 @@
 # Story 5.1: Multi-Provider Configuration & Settings
 
-- **Status**: review
+- **Status**: done
 
 ## Story
 
@@ -65,6 +65,12 @@ so that I can increase bookmaker coverage without manually switching environment
     - ConfigMissing indicators: error display when enabled but no key, InlineError per provider
   - [x] 6.2 Import real functions from compiled output (per E4-AI-02)
   - [x] 6.3 Ensure existing Epic 4 tests still pass (no regressions)
+
+### Review Follow-ups (AI)
+
+- [x] [AI-Review][MEDIUM] Remove legacy `pollOnceForActiveProvider`, `getActiveProviderForPolling`, `activeProviderIdForPolling` in `poller.ts` – dead code after multi-provider migration
+- [x] [AI-Review][MEDIUM] Remove legacy `getActiveProvider`/`setActiveProvider` TRPC procedures in `router.ts` – redundant with `getEnabledProviders`/`setProviderEnabled`
+- [x] [AI-Review][LOW] Add per-request timeout wrapper in `pollOnceForEnabledProviders` to prevent adapter hangs from freezing entire polling loop (e.g., `Promise.race` with 30s timeout)
 
 ## Dev Notes
 
@@ -159,6 +165,7 @@ function migrateToMultiProvider(): void {
 - src/main/services/storage.ts
 - src/main/services/router.ts
 - src/main/services/poller.ts
+- src/main/services/calibration.ts (updated to use multi-provider polling API)
 - src/preload/index.ts
 - src/preload/index.d.ts
 - src/renderer/src/features/settings/ProviderSettings.tsx

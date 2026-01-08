@@ -9,13 +9,10 @@ exports.getProviderQuotaStatus = getProviderQuotaStatus;
 exports.scheduleProviderRequest = scheduleProviderRequest;
 exports.registerAdapter = registerAdapter;
 exports.registerAdapters = registerAdapters;
-exports.notifyActiveProviderChanged = notifyActiveProviderChanged;
-exports.getActiveProviderForPolling = getActiveProviderForPolling;
 exports.notifyEnabledProvidersChanged = notifyEnabledProvidersChanged;
 exports.getEnabledProvidersForPolling = getEnabledProvidersForPolling;
 exports.pollOnceForEnabledProviders = pollOnceForEnabledProviders;
 exports.getRegisteredAdapter = getRegisteredAdapter;
-exports.pollOnceForActiveProvider = pollOnceForActiveProvider;
 exports.getLatestSnapshotForProvider = getLatestSnapshotForProvider;
 exports.getDashboardStatusSnapshot = getDashboardStatusSnapshot;
 const bottleneck_1 = __importDefault(require("bottleneck"));
@@ -44,6 +41,8 @@ let lastSystemErrorTimestamp = null;
 const BASE_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 15000;
 const JITTER_MS = 300;
+/** Per-provider request timeout to prevent hangs from freezing entire polling loop */
+const PROVIDER_REQUEST_TIMEOUT_MS = 30_000;
 function resolveLimiterConfig(providerId) {
     return rateLimiterConfigByProvider[providerId] ?? DEFAULT_LIMITER_CONFIG;
 }
@@ -156,7 +155,6 @@ async function waitForCooldown(providerId) {
     const waitMs = state.cooldownUntil - now;
     await new Promise((resolve) => setTimeout(resolve, waitMs));
 }
-let activeProviderIdForPolling = null;
 // Multi-provider polling targets (Story 5.1)
 const enabledProvidersForPolling = new Set();
 const adaptersByProviderId = {};
@@ -246,12 +244,7 @@ function registerAdapters(adapters) {
         registerAdapter(adapter);
     }
 }
-function notifyActiveProviderChanged(providerId) {
-    activeProviderIdForPolling = providerId;
-}
-function getActiveProviderForPolling() {
-    return activeProviderIdForPolling;
-}
+// Legacy notifyActiveProviderChanged and getActiveProviderForPolling removed in Story 5.1 cleanup
 // ============================================================
 // Multi-provider polling functions (Story 5.1)
 // ============================================================
@@ -285,14 +278,21 @@ async function pollOnceForEnabledProviders() {
     const allOpportunities = [];
     const errors = [];
     currentCorrelationId = correlationId;
-    // Poll each enabled provider (sequentially to respect rate limits)
-    for (const providerId of providerIds) {
+    // Poll all enabled providers in parallel (each has its own rate limiter)
+    const pollPromises = providerIds.map(async (providerId) => {
         const adapter = adaptersByProviderId[providerId];
         if (!adapter) {
-            continue;
+            return { providerId, opportunities: [], success: true };
         }
         try {
-            const result = await adapter.fetchOpportunities();
+            // Wrap fetch with timeout to prevent hangs from freezing entire polling loop
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error(`Provider ${providerId} request timed out after ${PROVIDER_REQUEST_TIMEOUT_MS}ms`)), PROVIDER_REQUEST_TIMEOUT_MS);
+            });
+            const result = await Promise.race([
+                adapter.fetchOpportunities(),
+                timeoutPromise
+            ]);
             const validated = schemas_1.arbitrageOpportunityListSchema.parse(result);
             // Tag each opportunity with its source provider (Story 5.1)
             const taggedOpportunities = validated.map((opp) => ({
@@ -301,7 +301,7 @@ async function pollOnceForEnabledProviders() {
             }));
             latestSnapshotByProviderId[providerId] = taggedOpportunities;
             latestSnapshotTimestampByProviderId[providerId] = new Date().toISOString();
-            allOpportunities.push(...taggedOpportunities);
+            return { providerId, opportunities: taggedOpportunities, success: true };
         }
         catch (error) {
             const status = error.status ??
@@ -309,7 +309,24 @@ async function pollOnceForEnabledProviders() {
                 error.response?.status;
             const errorCategory = typeof status === 'number' && status >= 400 ? 'ProviderError' : 'SystemError';
             markErrorForStatus(providerId, errorCategory, error);
-            errors.push({ providerId, error });
+            return { providerId, error, success: false };
+        }
+    });
+    const results = await Promise.allSettled(pollPromises);
+    // Process results
+    for (const result of results) {
+        if (result.status === 'fulfilled') {
+            const { providerId, opportunities, success, error } = result.value;
+            if (success && opportunities) {
+                allOpportunities.push(...opportunities);
+            }
+            else if (!success && error) {
+                errors.push({ providerId, error });
+            }
+        }
+        else {
+            // Promise rejected (unexpected - inner try/catch should handle)
+            errors.push({ providerId: 'unknown', error: result.reason });
         }
     }
     currentCorrelationId = null;
@@ -366,96 +383,7 @@ async function pollOnceForEnabledProviders() {
 function getRegisteredAdapter(providerId) {
     return adaptersByProviderId[providerId] ?? null;
 }
-async function pollOnceForActiveProvider() {
-    const providerId = activeProviderIdForPolling;
-    if (!providerId) {
-        return [];
-    }
-    const adapter = adaptersByProviderId[providerId];
-    if (!adapter) {
-        return [];
-    }
-    const correlationId = (0, logger_1.createCorrelationId)();
-    const tickStartedAt = Date.now();
-    let success = false;
-    let opportunities = [];
-    let errorCategory = null;
-    let errorMessage;
-    currentCorrelationId = correlationId;
-    try {
-        const result = await adapter.fetchOpportunities();
-        const validated = schemas_1.arbitrageOpportunityListSchema.parse(result);
-        // Tag each opportunity with its source provider (Story 5.1)
-        opportunities = validated.map((opp) => ({
-            ...opp,
-            providerId
-        }));
-        latestSnapshotByProviderId[providerId] = opportunities;
-        latestSnapshotTimestampByProviderId[providerId] = new Date().toISOString();
-        success = true;
-        return validated;
-    }
-    catch (error) {
-        const status = error.status ??
-            error.statusCode ??
-            error.response?.status;
-        if (typeof status === 'number' && status >= 400) {
-            errorCategory = 'ProviderError';
-        }
-        else {
-            errorCategory = 'SystemError';
-        }
-        errorMessage = error?.message ?? 'pollOnceForActiveProvider error';
-        markErrorForStatus(providerId, errorCategory, error);
-        throw error;
-    }
-    finally {
-        currentCorrelationId = null;
-        const durationMs = Date.now() - tickStartedAt;
-        const nowIso = new Date().toISOString();
-        const providerStatuses = {
-            'odds-api-io': getProviderQuotaStatus('odds-api-io'),
-            'the-odds-api': getProviderQuotaStatus('the-odds-api')
-        };
-        const lastSuccessfulFetchTimestamps = {
-            'odds-api-io': latestSnapshotTimestampByProviderId['odds-api-io'] ?? null,
-            'the-odds-api': latestSnapshotTimestampByProviderId['the-odds-api'] ?? null
-        };
-        const staleThresholdMs = 5 * 60 * 1000;
-        const hasStaleProvider = Object.values(lastSuccessfulFetchTimestamps).some((ts) => {
-            if (!ts)
-                return false;
-            const ageMs = Date.now() - new Date(ts).getTime();
-            return ageMs > staleThresholdMs;
-        });
-        let systemStatus = 'OK';
-        if (!success && errorCategory === 'SystemError') {
-            systemStatus = 'Error';
-        }
-        else if (Object.values(providerStatuses).some((status) => status === 'QuotaLimited' || status === 'Degraded')) {
-            systemStatus = 'Degraded';
-        }
-        else if (hasStaleProvider) {
-            systemStatus = 'Stale';
-        }
-        (0, logger_1.logHeartbeat)({
-            context: 'service:poller',
-            operation: 'pollOnceForActiveProvider',
-            providerId,
-            correlationId,
-            durationMs,
-            errorCategory,
-            success,
-            opportunitiesCount: opportunities.length,
-            providerStatuses,
-            lastSuccessfulFetchTimestamps,
-            systemStatus,
-            tickStartedAt: new Date(tickStartedAt).toISOString(),
-            tickCompletedAt: nowIso,
-            errorMessage
-        });
-    }
-}
+// Legacy pollOnceForActiveProvider removed in Story 5.1 cleanup - use pollOnceForEnabledProviders instead
 function getLatestSnapshotForProvider(providerId) {
     return {
         opportunities: latestSnapshotByProviderId[providerId] ?? [],

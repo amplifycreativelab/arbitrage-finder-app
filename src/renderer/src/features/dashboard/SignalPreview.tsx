@@ -112,9 +112,17 @@ function SignalPreview({
     >
       <div className="mb-2 flex items-center justify-between text-[10px] text-ot-foreground/60">
         <span>
-          {effectiveProviderMetadata
-            ? `Provider: ${effectiveProviderMetadata.displayName}`
-            : 'Provider: (active)'}
+          {effectiveOpportunity.mergedFrom && effectiveOpportunity.mergedFrom.length > 1 ? (
+            <span className="text-purple-300/90">
+              ⚡ Merged from: {effectiveOpportunity.mergedFrom.join(' + ')}
+            </span>
+          ) : effectiveProviderMetadata ? (
+            `Provider: ${effectiveProviderMetadata.displayName}`
+          ) : effectiveOpportunity.providerId ? (
+            `Provider: ${effectiveOpportunity.providerId}`
+          ) : (
+            'Provider: (active)'
+          )}
         </span>
         <span className="font-semibold text-ot-accent">ROI {roiPercent}%</span>
       </div>

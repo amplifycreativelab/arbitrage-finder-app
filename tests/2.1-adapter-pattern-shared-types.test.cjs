@@ -189,9 +189,10 @@ test('[P1][2.1-PIPELINE-001] poller and calculator operate on ArbitrageOpportuni
   const adapter = new FakeAdapter('the-odds-api', [opportunity]);
 
   poller.registerAdapters([adapter]);
-  poller.notifyActiveProviderChanged('the-odds-api');
+  // Updated to use multi-provider API (Story 5.1)
+  poller.notifyEnabledProvidersChanged(['the-odds-api']);
 
-  const polled = await poller.pollOnceForActiveProvider();
+  const polled = await poller.pollOnceForEnabledProviders();
   const listParsed = arbitrageOpportunityListSchema.parse(polled);
 
   assert.strictEqual(listParsed.length, 1);
@@ -202,7 +203,12 @@ test('[P1][2.1-PIPELINE-001] poller and calculator operate on ArbitrageOpportuni
   assert.strictEqual(merged[0].id, opportunity.id);
 });
 
-test('[P1][2.1-ADAPTER-CONTRACT-001] poller rejects adapters that return invalid opportunities', async () => {
+test('[P1][2.1-ADAPTER-CONTRACT-001] poller handles invalid opportunities from single provider gracefully', async () => {
+  // NOTE: With multi-provider architecture (Story 5.1), the poller is resilient:
+  // - Validation errors per provider are caught and logged
+  // - The poller returns [] for failed providers instead of rejecting entirely
+  // - This allows other enabled providers to still return their opportunities
+  
   class BadAdapter {
     constructor(id, opportunities) {
       this.id = id;
@@ -230,35 +236,25 @@ test('[P1][2.1-ADAPTER-CONTRACT-001] poller rejects adapters that return invalid
         outcome: 'home'
       },
       {
-        bookmaker: 'Book-1',
+        bookmaker: 'Book-1', // Same bookmaker - violates schema
         market: 'moneyline',
         odds: 2.0,
         outcome: 'away'
       }
     ],
-    roi: -0.01,
+    roi: -0.01, // Negative ROI - also violates schema
     foundAt: '2025-11-22T16:00:10Z'
   };
 
   const adapter = new BadAdapter('odds-api-io', [badOpportunity]);
 
   poller.registerAdapters([adapter]);
-  poller.notifyActiveProviderChanged('odds-api-io');
+  poller.notifyEnabledProvidersChanged(['odds-api-io']);
 
-  await assert.rejects(
-    async () => {
-      await poller.pollOnceForActiveProvider();
-    },
-    (error) => {
-      return (
-        error &&
-        typeof error.message === 'string' &&
-        (error.message.includes('legs must reference distinct bookmakers') ||
-          error.message.toLowerCase().includes('invalid') ||
-          error.name === 'ZodError')
-      );
-    },
-    'Invalid opportunities must be rejected by the shared validation schema'
-  );
+  // With multi-provider resilience, this should NOT throw
+  // Instead it returns empty array and logs the error
+  const result = await poller.pollOnceForEnabledProviders();
+  
+  assert.ok(Array.isArray(result), 'Should return an array');
+  assert.strictEqual(result.length, 0, 'Should return empty array when validation fails');
 });
-

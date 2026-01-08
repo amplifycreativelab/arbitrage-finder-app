@@ -92,10 +92,11 @@ async function runProviderLoop(providerId, endAt, options, logger) {
     let previousStatus = poller.getProviderQuotaStatus(providerId);
     while (Date.now() < endAt && iterations < options.maxIterationsPerProvider) {
         iterations += 1;
-        poller.notifyActiveProviderChanged(providerId);
+        // Use multi-provider polling (Story 5.1) - set single provider for this iteration
+        poller.notifyEnabledProvidersChanged([providerId]);
         const startedAt = Date.now();
         try {
-            await poller.pollOnceForActiveProvider();
+            await poller.pollOnceForEnabledProviders();
             metrics.totalRequests += 1;
             metrics.successCount += 1;
             metrics.http2xx += 1;
