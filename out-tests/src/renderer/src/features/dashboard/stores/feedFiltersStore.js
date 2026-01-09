@@ -30,6 +30,7 @@ const defaultState = {
     regions: filters_1.ALL_REGION_CODES,
     sports: filters_1.ALL_SPORT_FILTERS,
     markets: filters_1.ALL_MARKET_FILTERS,
+    marketGroups: filters_1.ALL_MARKET_GROUPS,
     bookmakers: [],
     minRoi: 0
 };
@@ -48,6 +49,11 @@ exports.useFeedFiltersStore = (0, zustand_1.create)()((0, middleware_1.persist)(
     setMarkets: (markets) => {
         set({
             markets: [...markets]
+        });
+    },
+    setMarketGroups: (marketGroups) => {
+        set({
+            marketGroups: [...marketGroups]
         });
     },
     setBookmakers: (bookmakers) => {
@@ -99,6 +105,20 @@ exports.useFeedFiltersStore = (0, zustand_1.create)()((0, middleware_1.persist)(
             });
         }
     },
+    toggleMarketGroup: (marketGroup) => {
+        const { marketGroups } = get();
+        const groups = marketGroups ?? [];
+        if (groups.includes(marketGroup)) {
+            set({
+                marketGroups: groups.filter((value) => value !== marketGroup)
+            });
+        }
+        else {
+            set({
+                marketGroups: [...groups, marketGroup]
+            });
+        }
+    },
     toggleBookmaker: (bookmaker) => {
         const { bookmakers } = get();
         if (bookmakers.includes(bookmaker)) {
@@ -124,6 +144,7 @@ exports.useFeedFiltersStore = (0, zustand_1.create)()((0, middleware_1.persist)(
         regions: state.regions,
         sports: state.sports,
         markets: state.markets,
+        marketGroups: state.marketGroups,
         bookmakers: state.bookmakers,
         minRoi: state.minRoi
     })

@@ -1,6 +1,7 @@
 import { format, parseISO } from 'date-fns'
 
 import type { ArbitrageOpportunity, ProviderMetadata } from '../../../../../shared/types'
+import { formatMarketLabelFromKey } from '../../../../../shared/types'
 
 function formatDisplayDate(source: string | null | undefined): string {
   if (!source) {
@@ -42,49 +43,17 @@ function formatSportLabel(raw: string): string {
   return raw
 }
 
+/**
+ * Formats a market key into a human-readable label.
+ * Uses the centralized formatMarketLabelFromKey from shared types (Story 6.1).
+ * Falls back to the raw value if no label is found.
+ */
 function formatMarketLabel(raw: string): string {
-  const value = raw.trim().toLowerCase()
-
-  if (value === 'moneyline' || value === 'h2h' || value === 'match-winner') {
-    return 'Moneyline'
-  }
-
-  if (value === 'draw-no-bet' || value === 'dnb') {
-    return 'Draw No Bet'
-  }
-
-  if (value === 'totals' || value === 'over/under' || value === 'over_under') {
-    return 'Totals'
-  }
-
-  if (
-    value === 'btts' ||
-    value === 'both-teams-to-score' ||
-    value === 'both_teams_to_score' ||
-    value === 'both teams to score' ||
-    value === 'btts_yes' ||
-    value === 'btts_no' ||
-    value === 'both_teams_score'
-  ) {
-    return 'BTTS (Both Teams to Score)'
-  }
-
-  if (
-    value === 'handicap' ||
-    value === 'spreads' ||
-    value === 'spread' ||
-    value === 'asian_handicap' ||
-    value === 'asian handicap' ||
-    value === 'ah' ||
-    value === '0-handicap' ||
-    value === 'handicap_0' ||
-    value === 'handicap 0' ||
-    value.startsWith('spreads_')
-  ) {
-    return 'Handicap'
-  }
-
-  return raw
+  const label = formatMarketLabelFromKey(raw)
+  // If the label is identical to a title-cased version of the raw input,
+  // it means formatMarketLabelFromKey didn't find a specific mapping
+  // and just formatted the key - that's still valid output
+  return label
 }
 
 function formatOutcomeLabel(raw: string): string {

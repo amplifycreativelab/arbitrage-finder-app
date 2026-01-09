@@ -68,5 +68,12 @@ development_status:
   5-2-merged-multi-provider-feed: done
   5-3-additional-soccer-two-way-markets: done
   5-4-cross-provider-arbitrage-aggregator-advanced: done
-  5-5-advanced-soccer-markets-ui-selector: backlog
+  5-5-advanced-soccer-markets-ui-selector: superseded  # Superseded by Epic 6
   epic-5-retrospective: optional
+  epic-6: backlog
+  6-1-expanded-two-way-market-types: done
+  6-2-scalable-market-filter-ui: backlog
+  6-3-cascading-bookmaker-selection-by-region: backlog
+  6-4-full-width-desktop-layout: backlog
+  epic-6-retrospective: optional
+

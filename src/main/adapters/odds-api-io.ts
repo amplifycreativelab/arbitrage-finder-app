@@ -1,4 +1,5 @@
 import type { ArbitrageOpportunity, ProviderId } from '../../../shared/types'
+import { inferMarketMetadata } from '../../../shared/types'
 import { BaseArbitrageAdapter } from './base'
 import type { ProviderRequestContext } from '../services/poller'
 import { createCorrelationId, logError, logInfo, type StructuredLogBase } from '../services/logger'
@@ -28,10 +29,24 @@ export interface OddsApiIoArbitrageBet {
   roi: number
 }
 
+/**
+ * Normalizes a raw Odds-API.io opportunity to the standard ArbitrageOpportunity format.
+ * Market strings are normalized using inferMarketMetadata for consistent filtering (Story 6.1).
+ */
 export function normalizeOddsApiIoOpportunity(
   raw: OddsApiIoArbitrageBet,
   foundAt: string = new Date().toISOString()
 ): ArbitrageOpportunity {
+  // Normalize market keys using the shared market metadata inference (Story 6.1)
+  const normalizedLegs = raw.legs.map((leg) => {
+    const metadata = inferMarketMetadata(leg.market)
+    return {
+      ...leg,
+      // Use the canonical key from metadata for consistent filtering
+      market: metadata.key
+    }
+  }) as [typeof raw.legs[0], typeof raw.legs[1]]
+
   return {
     id: raw.id,
     sport: raw.sport,
@@ -40,7 +55,7 @@ export function normalizeOddsApiIoOpportunity(
       date: raw.event.date,
       league: raw.event.league
     },
-    legs: raw.legs,
+    legs: normalizedLegs,
     roi: raw.roi,
     foundAt
   }

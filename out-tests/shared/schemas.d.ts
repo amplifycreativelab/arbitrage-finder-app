@@ -116,6 +116,7 @@ export declare const arbitrageOpportunitySchema: z.ZodObject<{
         "odds-api-io": "odds-api-io";
         "the-odds-api": "the-odds-api";
     }>>>;
+    isCrossProvider: z.ZodOptional<z.ZodBoolean>;
 }, z.core.$strip>;
 export declare const arbitrageOpportunityListSchema: z.ZodArray<z.ZodObject<{
     id: z.ZodString;
@@ -146,4 +147,5 @@ export declare const arbitrageOpportunityListSchema: z.ZodArray<z.ZodObject<{
         "odds-api-io": "odds-api-io";
         "the-odds-api": "the-odds-api";
     }>>>;
+    isCrossProvider: z.ZodOptional<z.ZodBoolean>;
 }, z.core.$strip>>;

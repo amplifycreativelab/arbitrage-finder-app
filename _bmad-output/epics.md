@@ -622,21 +622,156 @@ So that I can find surebets across the same breadth of binary markets that profe
 
 ------------------------------------------------------------------------
 
+# **Epic 6: Enhanced Filtering & Desktop UX**
+
+Goal: Expand market coverage to 20+ two-way markets, redesign filter UX for scalability, enable granular bookmaker selection per region, and optimize the desktop layout for full-screen use.
+
+**Supersedes:** Story 5.5 (Advanced Soccer Markets & UI Selector) — Epic 6 provides a more comprehensive implementation of the same goals with additional UX improvements.
+
+------------------------------------------------------------------------
+
+## **Story 6.1 -- Expanded Two-Way Market Types**
+
+**As a User**\
+I want to see arbitrage opportunities across 20+ two-way soccer markets\
+So that I can find surebets across corners, cards, shots, team-specific lines, and other binary markets.
+
+### Acceptance Criteria
+
+- Market types are expanded to include at minimum:
+  - **Goals/Scoring**: Match totals O/U (FT, 1H, 2H), team totals O/U, BTTS (FT, 1H, 2H), Goal in 1H/2H Yes/No, clean sheet Yes/No
+  - **Handicaps**: Asian handicaps (FT, 1H, 2H), European handicaps, team spread lines (-0.5, -1.0, -1.5, etc.)
+  - **Corners**: Match corners O/U (FT, 1H, 2H), team corners O/U, corner handicaps, race to X corners
+  - **Cards**: Match cards O/U (FT, 1H, 2H), team cards O/U, red card Yes/No, player to be booked
+  - **Shots**: Match shots O/U, shots on target O/U, team shots O/U
+  - **Other**: Offsides O/U, fouls O/U, penalty Yes/No, own goal Yes/No
+- Each market is assigned to a **market group** for categorization: `goals`, `handicap`, `corners`, `cards`, `shots`, `other`
+- Market normalization maps provider-specific strings to canonical keys (e.g., `corners_over_9.5_ft`, `cards_under_4.5_1h`)
+- `inferMarketTypeFromOpportunity` is refactored to return a structured object `{ group: MarketGroup, key: string, label: string }` instead of a flat string
+- Adapters (`odds-api-io`, `the-odds-api`) are updated to normalize new market types into the shared schema
+- At least 5 golden fixtures are added covering new market groups (corners, cards, shots) with correct ROI and classification assertions
+
+### Technical Notes
+
+- Define `MarketGroup` enum: `goals | handicap | corners | cards | shots | other`
+- Update `shared/types.ts` with `MarketMetadata` interface
+- Consider provider-specific market availability (not all providers offer all markets)
+
+### Links
+
+- FR6 (Calculate local arbs)
+- FR7 (Normalize responses)
+- FR11 (Filter by Market Type)
+- Risk: R-002 (arbitrage correctness)
+
+------------------------------------------------------------------------
+
+## **Story 6.2 -- Scalable Market Filter UI**
+
+**As a User**\
+I want a compact, searchable market filter that can handle 20+ market options\
+So that I can quickly find and toggle specific markets without UI overflow.
+
+### Acceptance Criteria
+
+- The current 5-button market filter row is replaced with a **grouped dropdown/popover selector**
+- Markets are organized by group (Goals, Handicaps, Corners, Cards, Shots, Other) with collapsible sections or tabs
+- A **search/filter input** allows users to type and filter markets by name (e.g., typing "corner" shows only corner-related markets)
+- Selected markets are displayed as compact chips below the selector (with X to remove)
+- A "Select All" / "Clear All" action is available per group and globally
+- Filter state persists across sessions via the existing Zustand store
+- The filter UI fits within the existing dashboard layout without horizontal overflow
+- Keyboard accessibility: Tab navigation through groups, Enter/Space to toggle markets
+
+### Technical Notes
+
+- Use shadcn/ui `Popover` + `Command` (combobox) pattern for searchable multi-select
+- Consider virtualization if market list exceeds 50 items
+- Update `feedFiltersStore.ts` to handle `MarketGroup` + individual market toggles
+
+### Links
+
+- FR10 (Filter by ROI)
+- FR11 (Filter by Market Type)
+- Architecture: "Implementation Patterns – Naming/Structure"
+
+------------------------------------------------------------------------
+
+## **Story 6.3 -- Cascading Bookmaker Selection by Region**
+
+**As a User**\
+I want to select specific bookmakers within my chosen regions\
+So that I can focus on bookmakers I actually use instead of seeing all available options.
+
+### Acceptance Criteria
+
+- When one or more **regions are selected**, a secondary bookmaker filter appears showing only bookmakers available in those regions
+- Bookmakers are sourced from the current feed data (opportunities that match the selected regions)
+- The bookmaker selector uses a **multi-select dropdown** or checkbox list (not inline chips for 15+ bookmakers)
+- Bookmaker selections are **persisted per region combination** (e.g., "UK + IT" remembers different selections than "UK only")
+- When no bookmakers are explicitly selected, all bookmakers in the selected regions are included (current behavior)
+- A "Select All" / "Clear All" action is available for bookmakers
+- The UI clearly indicates the cascade relationship: Region → Bookmaker
+- If region selection changes, bookmaker selections are reset or filtered to only valid options
+
+### Technical Notes
+
+- Extend `feedFiltersStore.ts` to track `selectedBookmakersByRegion: Record<string, string[]>` or derive dynamically
+- Bookmaker availability may differ between providers; handle gracefully
+- Consider a two-column layout: Regions on left, Bookmakers on right
+
+### Links
+
+- FR3 (Filter Bookmakers by region)
+- Story 3.4 (Filters & Controls)
+
+------------------------------------------------------------------------
+
+## **Story 6.4 -- Full-Width Desktop Layout**
+
+**As a User**\
+I want the application to use the full available screen width\
+So that I can see more data and work efficiently on my desktop monitor.
+
+### Acceptance Criteria
+
+- The `max-w-6xl` constraint is **removed or significantly increased** from the header, main content, and dashboard areas
+- The layout adapts fluidly to viewport widths from 1024px to 2560px+
+- The feed pane (left) and signal preview pane (right) share the available width proportionally or with configurable column widths
+- On ultra-wide displays (≥1920px), additional horizontal space is used effectively (e.g., wider table columns, more visible data)
+- The split pane maintains usable proportions at all supported widths (min-width constraints prevent unusable narrow panes)
+- Typography and spacing scale appropriately for larger widths (no awkward stretched layouts)
+- The header and footer (if any) span the full width with appropriate internal padding
+
+### Technical Notes
+
+- Update `App.tsx`: Remove `max-w-6xl` from header and main content divs
+- Update `DashboardLayout.tsx`: Adjust pane width constraints (current: `w-[380px] min-w-[360px] max-w-[440px]`)
+- Consider CSS `fr` units or percentage-based widths for fluid columns
+- Test at 1280px, 1920px, and 2560px viewports
+
+### Links
+
+- Story 3.1 (Main Layout & Split Pane)
+- Architecture: "Implementation Patterns – Naming/Structure"
+
+------------------------------------------------------------------------
+
 # **FR Coverage Matrix**
 
   Requirement   Story
   ------------- ---------------
   FR1           1.3
   FR2           1.2, 1.3, 1.4
-  FR3           3.4, 5.3
+  FR3           3.4, 5.3, 6.3
   FR4           3.4, 5.3
   FR5           2.4, 2.6, 5.2, 5.4
-  FR6           2.5, 2.6, 5.2, 5.3, 5.4
-  FR7           2.1, 2.4, 2.5, 2.6, 5.2, 5.3, 5.4
+  FR6           2.5, 2.6, 5.2, 5.3, 5.4, 6.1
+  FR7           2.1, 2.4, 2.5, 2.6, 5.2, 5.3, 5.4, 6.1
   FR8           2.2, 2.3, 5.2
   FR9           3.2, 5.2, 5.4
-  FR10          3.4, 5.3, 5.4
-  FR11          3.4, 5.3, 5.4
+  FR10          3.4, 5.3, 5.4, 6.2
+  FR11          3.4, 5.3, 5.4, 6.1, 6.2
   FR12          3.2, 5.3
   FR13          3.3, 3.5
   FR14          4.3
@@ -651,7 +786,8 @@ This epic breakdown ensures:
 - **Epic 2** – high-frequency data ingestion with rate-limit safety and correctness  
 - **Epic 3** – fast, trustworthy visualization with health indicators  
 - **Epic 4** – zero-friction execution via keyboard workflows and clear error handling
-
-- **Epic 5** �?" expanded provider coverage and advanced market support for richer arbitrage opportunities
+- **Epic 5** – expanded provider coverage and advanced market support for richer arbitrage opportunities
+- **Epic 6** – enhanced filtering UX, granular bookmaker selection, and full-width desktop optimization
 
 A complete, production-grade arbitrage analysis workflow.
+

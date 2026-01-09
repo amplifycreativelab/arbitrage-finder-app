@@ -316,8 +316,20 @@ export function normalizeTheOddsApiMarket(
 
 const THE_ODDS_API_BASE_URL = 'https://api.the-odds-api.com'
 const THE_ODDS_API_ODDS_PATH = '/v4/sports/soccer/odds'
-// The-Odds-API.com only supports h2h for soccer odds endpoint
-// (btts and spreads cause 422 INVALID_MARKET errors)
+
+/**
+ * The-Odds-API.com market availability for soccer (Story 6.1 Task 4).
+ *
+ * Documented limitations:
+ * - h2h (moneyline): ✅ Supported
+ * - btts: ❌ Returns 422 INVALID_MARKET error
+ * - spreads: ❌ Returns 422 INVALID_MARKET error
+ * - totals: ❌ Not available for soccer
+ * - corners, cards, shots, other: ❌ Not supported by this provider
+ *
+ * The adapter only requests 'h2h' to avoid API errors.
+ * Future markets may be added as The-Odds-API.com expands support.
+ */
 const THE_ODDS_API_MARKETS = ['h2h'] as const
 const THE_ODDS_API_REGIONS = ['eu'] as const
 

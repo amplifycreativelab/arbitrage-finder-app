@@ -1,0 +1,67 @@
+{
+  "description": "Golden fixtures for shots market arbitrage opportunities (Story 6.1)",
+  "fixtures": [
+    {
+      "id": "fixture-shots-over-22.5",
+      "description": "Shots Over 22.5 vs Under 22.5 cross-bookmaker arbitrage",
+      "opportunity": {
+        "id": "shots-over-under-001",
+        "sport": "soccer",
+        "event": {
+          "name": "Bayern Munich vs Dortmund",
+          "date": "2026-01-25T17:30:00Z",
+          "league": "Bundesliga"
+        },
+        "legs": [
+          {
+            "bookmaker": "Bwin",
+            "market": "shots_over_22.5_ft",
+            "odds": 2.30,
+            "outcome": "over"
+          },
+          {
+            "bookmaker": "Tipico",
+            "market": "shots_under_22.5_ft",
+            "odds": 2.15,
+            "outcome": "under"
+          }
+        ],
+        "roi": 0.1001,
+        "foundAt": "2026-01-25T17:00:00Z"
+      },
+      "expectedGroup": "shots",
+      "expectedLabel": "Shots Over 22.5 Ft"
+    },
+    {
+      "id": "fixture-shots-on-target",
+      "description": "Shots on target over vs under cross-bookmaker arbitrage",
+      "opportunity": {
+        "id": "sot-over-under-001",
+        "sport": "soccer",
+        "event": {
+          "name": "RB Leipzig vs Leverkusen",
+          "date": "2026-01-26T15:30:00Z",
+          "league": "Bundesliga"
+        },
+        "legs": [
+          {
+            "bookmaker": "Betano",
+            "market": "shots_on_target_over_8.5",
+            "odds": 2.25,
+            "outcome": "over"
+          },
+          {
+            "bookmaker": "Interwetten",
+            "market": "shots_on_target_under_8.5",
+            "odds": 2.10,
+            "outcome": "under"
+          }
+        ],
+        "roi": 0.0794,
+        "foundAt": "2026-01-26T15:00:00Z"
+      },
+      "expectedGroup": "shots",
+      "expectedLabel": "Shots On Target Over 8.5"
+    }
+  ]
+}

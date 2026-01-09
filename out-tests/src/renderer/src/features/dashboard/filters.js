@@ -1,11 +1,17 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ALL_MARKET_FILTERS = exports.ALL_SPORT_FILTERS = exports.ALL_REGION_CODES = void 0;
+exports.LEGACY_MARKET_TO_GROUP = exports.ALL_MARKET_GROUPS = exports.ALL_MARKET_FILTERS = exports.ALL_SPORT_FILTERS = exports.ALL_REGION_CODES = void 0;
 exports.inferRegionFromOpportunity = inferRegionFromOpportunity;
 exports.inferMarketTypeFromOpportunity = inferMarketTypeFromOpportunity;
+exports.getMarketMetadataFromOpportunity = getMarketMetadataFromOpportunity;
+exports.getMarketGroupFromOpportunity = getMarketGroupFromOpportunity;
 exports.applyDashboardFilters = applyDashboardFilters;
+const types_1 = require("../../../../../shared/types");
 exports.ALL_REGION_CODES = ['AU', 'UK', 'IT', 'RO'];
 exports.ALL_SPORT_FILTERS = ['soccer', 'tennis'];
+/**
+ * Legacy market filters (5 original categories).
+ */
 exports.ALL_MARKET_FILTERS = [
     'moneyline',
     'draw-no-bet',
@@ -13,6 +19,20 @@ exports.ALL_MARKET_FILTERS = [
     'btts',
     'handicap'
 ];
+/**
+ * All market groups for group-based filtering (Story 6.1).
+ */
+exports.ALL_MARKET_GROUPS = [...types_1.MARKET_GROUPS];
+/**
+ * Maps legacy MarketFilterValue to corresponding MarketGroup.
+ */
+exports.LEGACY_MARKET_TO_GROUP = {
+    moneyline: 'goals',
+    'draw-no-bet': 'goals',
+    totals: 'goals',
+    btts: 'goals',
+    handicap: 'handicap'
+};
 function normalizeLeague(value) {
     return (value ?? '').toLowerCase();
 }
@@ -84,6 +104,21 @@ function inferMarketTypeFromOpportunity(opportunity) {
     }
     return null;
 }
+/**
+ * Gets rich market metadata from an opportunity (Story 6.1).
+ * Uses the new inferMarketMetadata from shared types for group-based categorization.
+ */
+function getMarketMetadataFromOpportunity(opportunity) {
+    const primaryMarket = opportunity.legs[0]?.market ?? '';
+    return (0, types_1.inferMarketMetadata)(primaryMarket);
+}
+/**
+ * Gets the market group for an opportunity (Story 6.1).
+ * Convenience function for group-based filtering.
+ */
+function getMarketGroupFromOpportunity(opportunity) {
+    return getMarketMetadataFromOpportunity(opportunity).group;
+}
 function arraysMatchIgnoringOrder(a, b) {
     if (a.length !== b.length)
         return false;
@@ -94,13 +129,18 @@ function applyDashboardFilters(opportunities, filters) {
     const regions = Array.isArray(filters.regions) ? filters.regions : [];
     const sports = Array.isArray(filters.sports) ? filters.sports : [];
     const markets = Array.isArray(filters.markets) ? filters.markets : [];
+    const marketGroups = Array.isArray(filters.marketGroups) ? filters.marketGroups : [];
     const bookmakers = Array.isArray(filters.bookmakers) ? filters.bookmakers : [];
     const minRoi = Number.isFinite(filters.minRoi) && filters.minRoi > 0 ? filters.minRoi : 0;
     const hasSportFilter = !arraysMatchIgnoringOrder(sports, exports.ALL_SPORT_FILTERS);
     const hasRegionFilter = !arraysMatchIgnoringOrder(regions, exports.ALL_REGION_CODES);
-    const hasMarketFilter = !arraysMatchIgnoringOrder(markets, exports.ALL_MARKET_FILTERS);
+    const hasLegacyMarketFilter = !arraysMatchIgnoringOrder(markets, exports.ALL_MARKET_FILTERS);
+    // New: Group-based market filtering (Story 6.1)
+    const hasMarketGroupFilter = marketGroups.length > 0 && !arraysMatchIgnoringOrder(marketGroups, exports.ALL_MARKET_GROUPS);
     const hasBookmakerFilter = bookmakers.length > 0;
     const hasRoiFilter = minRoi > 0;
+    // Use group filter if provided, otherwise fall back to legacy filter
+    const hasMarketFilter = hasMarketGroupFilter || hasLegacyMarketFilter;
     if (!hasSportFilter &&
         !hasRegionFilter &&
         !hasMarketFilter &&
@@ -118,10 +158,21 @@ function applyDashboardFilters(opportunities, filters) {
                 return false;
             }
         }
+        // Market filtering: prefer group-based if available, otherwise use legacy
         if (hasMarketFilter) {
-            const marketType = inferMarketTypeFromOpportunity(opportunity);
-            if (!marketType || !markets.includes(marketType)) {
-                return false;
+            if (hasMarketGroupFilter) {
+                // New: Group-based filtering (Story 6.1)
+                const opportunityGroup = getMarketGroupFromOpportunity(opportunity);
+                if (!marketGroups.includes(opportunityGroup)) {
+                    return false;
+                }
+            }
+            else if (hasLegacyMarketFilter) {
+                // Legacy: 5-category filtering
+                const marketType = inferMarketTypeFromOpportunity(opportunity);
+                if (!marketType || !markets.includes(marketType)) {
+                    return false;
+                }
             }
         }
         if (hasBookmakerFilter) {

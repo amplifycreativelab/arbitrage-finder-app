@@ -2,9 +2,23 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OddsApiIoAdapter = void 0;
 exports.normalizeOddsApiIoOpportunity = normalizeOddsApiIoOpportunity;
+const types_1 = require("../../../shared/types");
 const base_1 = require("./base");
 const logger_1 = require("../services/logger");
+/**
+ * Normalizes a raw Odds-API.io opportunity to the standard ArbitrageOpportunity format.
+ * Market strings are normalized using inferMarketMetadata for consistent filtering (Story 6.1).
+ */
 function normalizeOddsApiIoOpportunity(raw, foundAt = new Date().toISOString()) {
+    // Normalize market keys using the shared market metadata inference (Story 6.1)
+    const normalizedLegs = raw.legs.map((leg) => {
+        const metadata = (0, types_1.inferMarketMetadata)(leg.market);
+        return {
+            ...leg,
+            // Use the canonical key from metadata for consistent filtering
+            market: metadata.key
+        };
+    });
     return {
         id: raw.id,
         sport: raw.sport,
@@ -13,7 +27,7 @@ function normalizeOddsApiIoOpportunity(raw, foundAt = new Date().toISOString()) 
             date: raw.event.date,
             league: raw.event.league
         },
-        legs: raw.legs,
+        legs: normalizedLegs,
         roi: raw.roi,
         foundAt
     };

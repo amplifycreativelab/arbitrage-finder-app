@@ -4,10 +4,12 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 import type { RegionCode } from '../../../../../../shared/filters'
 import {
   ALL_MARKET_FILTERS,
+  ALL_MARKET_GROUPS,
   ALL_REGION_CODES,
   ALL_SPORT_FILTERS,
   type DashboardFilterState,
   type MarketFilterValue,
+  type MarketGroup,
   type SportFilterValue
 } from '../filters'
 
@@ -49,11 +51,13 @@ export interface FeedFiltersState extends DashboardFilterState {
   setRegions: (regions: RegionCode[]) => void
   setSports: (sports: SportFilterValue[]) => void
   setMarkets: (markets: MarketFilterValue[]) => void
+  setMarketGroups: (marketGroups: MarketGroup[]) => void
   setBookmakers: (bookmakers: string[]) => void
   setMinRoi: (minRoi: number) => void
   toggleRegion: (region: RegionCode) => void
   toggleSport: (sport: SportFilterValue) => void
   toggleMarket: (market: MarketFilterValue) => void
+  toggleMarketGroup: (marketGroup: MarketGroup) => void
   toggleBookmaker: (bookmaker: string) => void
   resetFilters: () => void
 }
@@ -62,6 +66,7 @@ const defaultState: DashboardFilterState = {
   regions: ALL_REGION_CODES,
   sports: ALL_SPORT_FILTERS,
   markets: ALL_MARKET_FILTERS,
+  marketGroups: ALL_MARKET_GROUPS,
   bookmakers: [],
   minRoi: 0
 }
@@ -83,6 +88,11 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
       setMarkets: (markets: MarketFilterValue[]) => {
         set({
           markets: [...markets]
+        })
+      },
+      setMarketGroups: (marketGroups: MarketGroup[]) => {
+        set({
+          marketGroups: [...marketGroups]
         })
       },
       setBookmakers: (bookmakers: string[]) => {
@@ -131,6 +141,19 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
           })
         }
       },
+      toggleMarketGroup: (marketGroup: MarketGroup) => {
+        const { marketGroups } = get()
+        const groups = marketGroups ?? []
+        if (groups.includes(marketGroup)) {
+          set({
+            marketGroups: groups.filter((value) => value !== marketGroup)
+          })
+        } else {
+          set({
+            marketGroups: [...groups, marketGroup]
+          })
+        }
+      },
       toggleBookmaker: (bookmaker: string) => {
         const { bookmakers } = get()
         if (bookmakers.includes(bookmaker)) {
@@ -156,6 +179,7 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
         regions: state.regions,
         sports: state.sports,
         markets: state.markets,
+        marketGroups: state.marketGroups,
         bookmakers: state.bookmakers,
         minRoi: state.minRoi
       })
