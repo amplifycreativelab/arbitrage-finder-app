@@ -77,7 +77,8 @@ exports.arbitrageOpportunitySchema = zod_1.z
     roi: zod_1.z.number().min(0),
     foundAt: zod_1.z.string(),
     providerId: exports.providerIdSchema.optional(), // Multi-provider source tracking (Story 5.1)
-    mergedFrom: zod_1.z.array(exports.providerIdSchema).optional() // All source providers after deduplication (Story 5.2)
+    mergedFrom: zod_1.z.array(exports.providerIdSchema).optional(), // All source providers after deduplication (Story 5.2)
+    isCrossProvider: zod_1.z.boolean().optional() // Cross-provider arbitrage indicator (Story 5.4)
 })
     .refine((value) => value.legs[0].bookmaker !== value.legs[1].bookmaker, {
     message: 'legs must reference distinct bookmakers',

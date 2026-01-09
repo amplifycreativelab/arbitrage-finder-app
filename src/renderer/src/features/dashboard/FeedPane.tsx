@@ -200,13 +200,17 @@ function FeedFilters({
 
         <div className="flex flex-wrap items-center gap-1">
           <span className="text-[10px] text-ot-foreground/60">Market</span>
-          {(['moneyline', 'draw-no-bet', 'totals'] as MarketFilterValue[]).map((market) =>
+          {(['moneyline', 'draw-no-bet', 'totals', 'btts', 'handicap'] as MarketFilterValue[]).map((market) =>
             renderFilterChip(
               market === 'moneyline'
                 ? 'Moneyline'
                 : market === 'draw-no-bet'
                   ? 'Draw No Bet'
-                  : 'Totals',
+                  : market === 'totals'
+                    ? 'Totals'
+                    : market === 'btts'
+                      ? 'BTTS'
+                      : 'Handicap',
               markets.includes(market),
               () => handleToggleMarket(market),
               `feed-filters-market-${market}`

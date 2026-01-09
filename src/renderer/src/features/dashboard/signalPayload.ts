@@ -45,16 +45,43 @@ function formatSportLabel(raw: string): string {
 function formatMarketLabel(raw: string): string {
   const value = raw.trim().toLowerCase()
 
-  if (value === 'moneyline') {
+  if (value === 'moneyline' || value === 'h2h' || value === 'match-winner') {
     return 'Moneyline'
   }
 
-  if (value === 'draw-no-bet') {
+  if (value === 'draw-no-bet' || value === 'dnb') {
     return 'Draw No Bet'
   }
 
-  if (value === 'totals') {
+  if (value === 'totals' || value === 'over/under' || value === 'over_under') {
     return 'Totals'
+  }
+
+  if (
+    value === 'btts' ||
+    value === 'both-teams-to-score' ||
+    value === 'both_teams_to_score' ||
+    value === 'both teams to score' ||
+    value === 'btts_yes' ||
+    value === 'btts_no' ||
+    value === 'both_teams_score'
+  ) {
+    return 'BTTS (Both Teams to Score)'
+  }
+
+  if (
+    value === 'handicap' ||
+    value === 'spreads' ||
+    value === 'spread' ||
+    value === 'asian_handicap' ||
+    value === 'asian handicap' ||
+    value === 'ah' ||
+    value === '0-handicap' ||
+    value === 'handicap_0' ||
+    value === 'handicap 0' ||
+    value.startsWith('spreads_')
+  ) {
+    return 'Handicap'
   }
 
   return raw
@@ -93,10 +120,18 @@ export function formatSignalPayload(
   const timeLabel = formatDisplayTime(eventDateSource)
   const sportLabel = formatSportLabel(opportunity.sport)
 
-  const providerLabel = provider?.displayName ?? provider?.label ?? ''
-  if (providerLabel) {
-    lines.push(providerLabel)
+  // Cross-provider header takes precedence (Story 5.4)
+  if (opportunity.isCrossProvider) {
+    const sourceProviders = opportunity.mergedFrom?.join(' + ') ?? 'Multiple Providers'
+    lines.push('⚡ Cross-Provider Arbitrage')
+    lines.push(`Sources: ${sourceProviders}`)
     lines.push('')
+  } else {
+    const providerLabel = provider?.displayName ?? provider?.label ?? ''
+    if (providerLabel) {
+      lines.push(providerLabel)
+      lines.push('')
+    }
   }
 
   const [firstLeg, secondLeg] = opportunity.legs

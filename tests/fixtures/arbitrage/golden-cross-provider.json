@@ -1,0 +1,259 @@
+{
+  "description": "Golden fixtures for cross-provider arbitrage testing - Story 5.4",
+  "scenarios": [
+    {
+      "id": "same-event-different-providers",
+      "description": "Same event from Odds-API.io and The-Odds-API with different bookmaker odds creating arbitrage",
+      "opportunities": [
+        {
+          "id": "odds-api-io:arsenal-chelsea:h2h:1",
+          "sport": "soccer",
+          "event": {
+            "name": "Arsenal FC vs Chelsea",
+            "date": "2025-01-15T15:00:00Z",
+            "league": "Premier League"
+          },
+          "legs": [
+            { "bookmaker": "Bet365", "market": "h2h", "odds": 2.10, "outcome": "home" },
+            { "bookmaker": "Pinnacle", "market": "h2h", "odds": 2.05, "outcome": "away" }
+          ],
+          "roi": 0.0,
+          "foundAt": "2025-01-15T14:30:00Z",
+          "providerId": "odds-api-io"
+        },
+        {
+          "id": "the-odds-api:arsenal-chelsea:h2h:2",
+          "sport": "soccer",
+          "event": {
+            "name": "Arsenal vs Chelsea",
+            "date": "2025-01-15T15:00:00Z",
+            "league": "English Premier League"
+          },
+          "legs": [
+            { "bookmaker": "William Hill", "market": "h2h", "odds": 2.25, "outcome": "home" },
+            { "bookmaker": "Betfair", "market": "h2h", "odds": 1.95, "outcome": "away" }
+          ],
+          "roi": 0.0,
+          "foundAt": "2025-01-15T14:31:00Z",
+          "providerId": "the-odds-api"
+        }
+      ],
+      "expectedCrossProviderArbs": 1,
+      "note": "Arsenal FC normalizes to arsenal, matching Arsenal => arsenal"
+    },
+    {
+      "id": "event-name-variations-with-fc",
+      "description": "Event with FC suffix/prefix variations that normalize to same name",
+      "opportunities": [
+        {
+          "id": "provider1:event1",
+          "sport": "soccer",
+          "event": {
+            "name": "FC Barcelona vs Real Madrid",
+            "date": "2025-01-20T17:30:00Z",
+            "league": "La Liga"
+          },
+          "legs": [
+            { "bookmaker": "Betway", "market": "h2h", "odds": 2.50, "outcome": "home" },
+            { "bookmaker": "Unibet", "market": "h2h", "odds": 1.80, "outcome": "away" }
+          ],
+          "roi": 0.0,
+          "foundAt": "2025-01-20T16:00:00Z",
+          "providerId": "odds-api-io"
+        },
+        {
+          "id": "provider2:event2",
+          "sport": "soccer",
+          "event": {
+            "name": "Barcelona vs Real Madrid",
+            "date": "2025-01-20T17:30:00Z",
+            "league": "Spanish La Liga"
+          },
+          "legs": [
+            { "bookmaker": "888Sport", "market": "h2h", "odds": 2.40, "outcome": "home" },
+            { "bookmaker": "Ladbrokes", "market": "h2h", "odds": 1.95, "outcome": "away" }
+          ],
+          "roi": 0.0,
+          "foundAt": "2025-01-20T16:01:00Z",
+          "providerId": "the-odds-api"
+        }
+      ],
+      "expectedCrossProviderArbs": 1,
+      "note": "FC Barcelona normalizes to barcelona, matching Barcelona => barcelona"
+    },
+    {
+      "id": "near-date-matching",
+      "description": "Events with slightly different dates within same hour should match",
+      "opportunities": [
+        {
+          "id": "near-date-1",
+          "sport": "soccer",
+          "event": {
+            "name": "Liverpool FC vs Manchester City",
+            "date": "2025-02-01T20:00:00Z",
+            "league": "Premier League"
+          },
+          "legs": [
+            { "bookmaker": "Bet365", "market": "h2h", "odds": 2.30, "outcome": "home" },
+            { "bookmaker": "Betfair", "market": "h2h", "odds": 1.90, "outcome": "away" }
+          ],
+          "roi": 0.0,
+          "foundAt": "2025-02-01T19:00:00Z",
+          "providerId": "odds-api-io"
+        },
+        {
+          "id": "near-date-2",
+          "sport": "soccer",
+          "event": {
+            "name": "Liverpool vs Manchester City",
+            "date": "2025-02-01T20:45:00Z",
+            "league": "EPL"
+          },
+          "legs": [
+            { "bookmaker": "William Hill", "market": "h2h", "odds": 2.35, "outcome": "home" },
+            { "bookmaker": "Pinnacle", "market": "h2h", "odds": 1.92, "outcome": "away" }
+          ],
+          "roi": 0.0,
+          "foundAt": "2025-02-01T19:01:00Z",
+          "providerId": "the-odds-api"
+        }
+      ],
+      "expectedCrossProviderArbs": 1,
+      "note": "Both events are in the same hour (20:xx), should match"
+    },
+    {
+      "id": "no-arb-high-implied-prob",
+      "description": "No arbitrage when implied probability >= 1 (negative expected value)",
+      "opportunities": [
+        {
+          "id": "no-arb-1",
+          "sport": "soccer",
+          "event": {
+            "name": "Bayern Munich vs Dortmund",
+            "date": "2025-03-01T18:30:00Z",
+            "league": "Bundesliga"
+          },
+          "legs": [
+            { "bookmaker": "Bet365", "market": "h2h", "odds": 1.80, "outcome": "home" },
+            { "bookmaker": "Betfair", "market": "h2h", "odds": 1.90, "outcome": "away" }
+          ],
+          "roi": 0.0,
+          "foundAt": "2025-03-01T17:00:00Z",
+          "providerId": "odds-api-io"
+        },
+        {
+          "id": "no-arb-2",
+          "sport": "soccer",
+          "event": {
+            "name": "Bayern Munich vs Dortmund",
+            "date": "2025-03-01T18:30:00Z",
+            "league": "German Bundesliga"
+          },
+          "legs": [
+            { "bookmaker": "Pinnacle", "market": "h2h", "odds": 1.85, "outcome": "home" },
+            { "bookmaker": "Unibet", "market": "h2h", "odds": 1.92, "outcome": "away" }
+          ],
+          "roi": 0.0,
+          "foundAt": "2025-03-01T17:01:00Z",
+          "providerId": "the-odds-api"
+        }
+      ],
+      "expectedCrossProviderArbs": 0,
+      "note": "Best combination: 1.85 (home) + 1.92 (away) => 1/1.85 + 1/1.92 = 1.06 > 1, no arb"
+    },
+    {
+      "id": "no-arb-same-bookmaker",
+      "description": "No arbitrage when best odds are from the same bookmaker on both legs",
+      "opportunities": [
+        {
+          "id": "same-bookie-1",
+          "sport": "soccer",
+          "event": {
+            "name": "Juventus vs Napoli",
+            "date": "2025-04-15T20:45:00Z",
+            "league": "Serie A"
+          },
+          "legs": [
+            { "bookmaker": "Bet365", "market": "h2h", "odds": 2.50, "outcome": "home" },
+            { "bookmaker": "Bet365", "market": "h2h", "odds": 1.80, "outcome": "away" }
+          ],
+          "roi": 0.0,
+          "foundAt": "2025-04-15T19:00:00Z",
+          "providerId": "odds-api-io"
+        },
+        {
+          "id": "same-bookie-2",
+          "sport": "soccer",
+          "event": {
+            "name": "Juventus vs Napoli",
+            "date": "2025-04-15T20:45:00Z",
+            "league": "Italian Serie A"
+          },
+          "legs": [
+            { "bookmaker": "Bet365", "market": "h2h", "odds": 2.45, "outcome": "home" },
+            { "bookmaker": "Bet365", "market": "h2h", "odds": 1.85, "outcome": "away" }
+          ],
+          "roi": 0.0,
+          "foundAt": "2025-04-15T19:01:00Z",
+          "providerId": "the-odds-api"
+        }
+      ],
+      "expectedCrossProviderArbs": 0,
+      "note": "Only Bet365 has odds - cannot create cross-bookmaker arb"
+    },
+    {
+      "id": "btts-cross-provider",
+      "description": "BTTS market cross-provider arbitrage (yes vs no)",
+      "opportunities": [
+        {
+          "id": "btts-1",
+          "sport": "soccer",
+          "event": {
+            "name": "Tottenham vs West Ham",
+            "date": "2025-05-10T15:00:00Z",
+            "league": "Premier League"
+          },
+          "legs": [
+            { "bookmaker": "Bet365", "market": "btts", "odds": 1.85, "outcome": "yes" },
+            { "bookmaker": "Pinnacle", "market": "btts", "odds": 2.30, "outcome": "no" }
+          ],
+          "roi": 0.0,
+          "foundAt": "2025-05-10T14:00:00Z",
+          "providerId": "odds-api-io"
+        },
+        {
+          "id": "btts-2",
+          "sport": "soccer",
+          "event": {
+            "name": "Tottenham vs West Ham",
+            "date": "2025-05-10T15:00:00Z",
+            "league": "EPL"
+          },
+          "legs": [
+            { "bookmaker": "William Hill", "market": "btts", "odds": 1.80, "outcome": "yes" },
+            { "bookmaker": "Betfair", "market": "btts", "odds": 2.35, "outcome": "no" }
+          ],
+          "roi": 0.0,
+          "foundAt": "2025-05-10T14:01:00Z",
+          "providerId": "the-odds-api"
+        }
+      ],
+      "expectedCrossProviderArbs": 1,
+      "note": "BTTS uses yes/no outcomes"
+    }
+  ],
+  "teamNameNormalizationTests": [
+    { "input": "Arsenal FC", "expected": "arsenal" },
+    { "input": "Manchester United", "expected": "manchester united" },
+    { "input": "Man Utd", "expected": "man utd" },
+    { "input": "FC Barcelona", "expected": "barcelona" },
+    { "input": "Inter Milan", "expected": "inter milan" },
+    { "input": "Atlético Madrid", "expected": "atletico madrid" },
+    { "input": "Bayern München", "expected": "bayern munchen" },
+    { "input": "Tottenham Hotspur FC", "expected": "tottenham hotspur" },
+    { "input": "Spurs", "expected": "spurs" },
+    { "input": "Wolves", "expected": "wolves" },
+    { "input": "Paris Saint-Germain", "expected": "paris saint-germain" },
+    { "input": "PSG", "expected": "psg" }
+  ]
+}

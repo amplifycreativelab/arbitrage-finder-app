@@ -112,7 +112,16 @@ function SignalPreview({
     >
       <div className="mb-2 flex items-center justify-between text-[10px] text-ot-foreground/60">
         <span>
-          {effectiveOpportunity.mergedFrom && effectiveOpportunity.mergedFrom.length > 1 ? (
+          {effectiveOpportunity.isCrossProvider ? (
+            <span className="text-violet-300 font-medium">
+              ⚡ Cross-Provider Arbitrage
+              {effectiveOpportunity.mergedFrom && effectiveOpportunity.mergedFrom.length > 1 && (
+                <span className="text-violet-300/70 ml-1">
+                  (via {effectiveOpportunity.mergedFrom.join(' + ')})
+                </span>
+              )}
+            </span>
+          ) : effectiveOpportunity.mergedFrom && effectiveOpportunity.mergedFrom.length > 1 ? (
             <span className="text-purple-300/90">
               ⚡ Merged from: {effectiveOpportunity.mergedFrom.join(' + ')}
             </span>

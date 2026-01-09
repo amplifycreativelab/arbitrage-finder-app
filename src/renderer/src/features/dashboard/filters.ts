@@ -3,7 +3,7 @@ import type { RegionCode } from '../../../../../shared/filters'
 
 export type SportFilterValue = 'soccer' | 'tennis'
 
-export type MarketFilterValue = 'moneyline' | 'draw-no-bet' | 'totals'
+export type MarketFilterValue = 'moneyline' | 'draw-no-bet' | 'totals' | 'btts' | 'handicap'
 
 export const ALL_REGION_CODES: RegionCode[] = ['AU', 'UK', 'IT', 'RO']
 
@@ -12,7 +12,9 @@ export const ALL_SPORT_FILTERS: SportFilterValue[] = ['soccer', 'tennis']
 export const ALL_MARKET_FILTERS: MarketFilterValue[] = [
   'moneyline',
   'draw-no-bet',
-  'totals'
+  'totals',
+  'btts',
+  'handicap'
 ]
 
 export interface DashboardFilterState {
@@ -78,10 +80,12 @@ export function inferMarketTypeFromOpportunity(
   const primaryMarket = opportunity.legs[0]?.market ?? ''
   const normalized = primaryMarket.toLowerCase()
 
+  // Moneyline / H2H variants
   if (normalized === 'moneyline' || normalized === 'match-winner' || normalized === 'h2h') {
     return 'moneyline'
   }
 
+  // Draw No Bet variants
   if (
     normalized === 'draw-no-bet' ||
     normalized === 'draw no bet' ||
@@ -90,12 +94,42 @@ export function inferMarketTypeFromOpportunity(
     return 'draw-no-bet'
   }
 
+  // Totals / Over-Under variants
   if (
     normalized === 'totals' ||
     normalized === 'over/under' ||
     normalized === 'over_under'
   ) {
     return 'totals'
+  }
+
+  // BTTS (Both Teams To Score) variants
+  if (
+    normalized === 'btts' ||
+    normalized === 'both-teams-to-score' ||
+    normalized === 'both_teams_to_score' ||
+    normalized === 'btts_yes' ||
+    normalized === 'btts_no' ||
+    normalized === 'both_teams_score' ||
+    normalized === 'both teams to score'
+  ) {
+    return 'btts'
+  }
+
+  // Handicap / Spread / Asian Handicap variants
+  if (
+    normalized === 'handicap' ||
+    normalized === 'spread' ||
+    normalized === 'spreads' ||
+    normalized === 'asian_handicap' ||
+    normalized === 'asian handicap' ||
+    normalized === 'ah' ||
+    normalized === '0-handicap' ||
+    normalized === 'handicap_0' ||
+    normalized === 'handicap 0' ||
+    normalized.startsWith('spreads_')
+  ) {
+    return 'handicap'
   }
 
   return null

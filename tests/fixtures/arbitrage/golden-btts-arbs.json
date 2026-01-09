@@ -1,0 +1,30 @@
+[
+  {
+    "id": "btts-arb-1",
+    "providerId": "the-odds-api",
+    "sport": "soccer",
+    "description": "BTTS arbitrage opportunity: Yes @ 1.90 from BookmakerA vs No @ 2.15 from BookmakerB. Expected ROI: ~2.5%",
+    "eventName": "Liverpool vs Arsenal",
+    "eventDate": "2026-01-15T20:00:00Z",
+    "league": "Premier League",
+    "market": "btts",
+    "homeBookmaker": "Bet365",
+    "homeOdds": 1.90,
+    "awayBookmaker": "Betway",
+    "awayOdds": 2.15
+  },
+  {
+    "id": "btts-arb-2",
+    "providerId": "the-odds-api",
+    "sport": "soccer",
+    "description": "BTTS arbitrage opportunity: Yes @ 1.85 from BookmakerC vs No @ 2.25 from BookmakerD. Expected ROI: ~3.3%",
+    "eventName": "AC Milan vs Inter",
+    "eventDate": "2026-01-20T19:45:00Z",
+    "league": "Serie A",
+    "market": "btts",
+    "homeBookmaker": "Unibet",
+    "homeOdds": 1.85,
+    "awayBookmaker": "Pinnacle",
+    "awayOdds": 2.25
+  }
+]

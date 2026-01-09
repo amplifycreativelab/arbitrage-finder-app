@@ -377,6 +377,9 @@ function FeedRow({
     ? opportunity.mergedFrom!.map(getProviderBadgeLabel).filter(Boolean).join('+')
     : null
 
+  // Cross-provider badge (Story 5.4)
+  const isCrossProvider = opportunity.isCrossProvider === true
+
   return (
     <div
       id={`feed-row-${opportunity.id}`}
@@ -391,6 +394,7 @@ function FeedRow({
       data-processed={isProcessed ? 'true' : 'false'}
       data-provider={opportunity.providerId ?? 'unknown'}
       data-merged={isMerged ? 'true' : 'false'}
+      data-cross-provider={isCrossProvider ? 'true' : 'false'}
       onClick={onSelect}
       role="option"
       aria-selected={isSelected ? 'true' : 'false'}
@@ -410,8 +414,18 @@ function FeedRow({
           ✓
         </div>
       )}
-      {/* Merged provider badge (Story 5.2) - takes priority over single provider */}
-      {isMerged && mergedBadgeLabel && (
+      {/* Cross-provider badge (Story 5.4) - highest priority badge */}
+      {isCrossProvider && (
+        <div
+          className="mx-1 rounded-full border border-violet-400/50 bg-violet-500/20 px-1.5 py-0.5 text-[8px] font-semibold text-violet-300"
+          data-testid="feed-row-cross-provider-badge"
+          aria-label="Cross-provider arbitrage combining odds from multiple feeds"
+        >
+          ⚡ Cross-Feed
+        </div>
+      )}
+      {/* Merged provider badge (Story 5.2) - only show if not cross-provider */}
+      {!isCrossProvider && isMerged && mergedBadgeLabel && (
         <div
           className="mx-1 rounded-full border border-purple-400/40 bg-purple-500/15 px-1.5 py-0.5 text-[8px] font-medium text-purple-300/90"
           data-testid="feed-row-merged-badge"
@@ -420,8 +434,8 @@ function FeedRow({
           ⚡{mergedBadgeLabel}
         </div>
       )}
-      {/* Single provider source badge (Story 5.1) - only show if not merged */}
-      {!isMerged && providerBadge && (
+      {/* Single provider source badge (Story 5.1) - only show if not merged and not cross-provider */}
+      {!isCrossProvider && !isMerged && providerBadge && (
         <div
           className="mx-1 rounded-full border border-ot-accent/30 bg-ot-accent/10 px-1.5 py-0.5 text-[8px] font-medium text-ot-accent/80"
           data-testid="feed-row-provider-badge"

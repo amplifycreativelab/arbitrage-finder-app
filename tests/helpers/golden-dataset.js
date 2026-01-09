@@ -27,6 +27,14 @@ function loadGoldenSnapshotsForNoSurebets() {
   return readGoldenFixture('golden-odds-no-surebets.json');
 }
 
+function loadGoldenSnapshotsForBtts() {
+  return readGoldenFixture('golden-btts-arbs.json');
+}
+
+function loadGoldenSnapshotsForHandicap() {
+  return readGoldenFixture('golden-handicap-arbs.json');
+}
+
 function buildOddsApiIoArbitrageBets() {
   const snapshots = loadGoldenSnapshotsForOddsApiIo();
   const { calculateTwoLegArbitrageRoi } = require('../../out-tests/src/main/services/calculator.js');
@@ -106,11 +114,83 @@ function buildTheOddsApiRawEvents() {
   });
 }
 
+function buildBttsOpportunities() {
+  const snapshots = loadGoldenSnapshotsForBtts();
+  const { calculateTwoLegArbitrageRoi } = require('../../out-tests/src/main/services/calculator.js');
+
+  return snapshots.map((snapshot) => {
+    const roi = calculateTwoLegArbitrageRoi(snapshot.homeOdds, snapshot.awayOdds);
+
+    return {
+      id: snapshot.id,
+      sport: snapshot.sport,
+      event: {
+        name: snapshot.eventName,
+        date: snapshot.eventDate,
+        league: snapshot.league
+      },
+      legs: [
+        {
+          bookmaker: snapshot.homeBookmaker,
+          market: snapshot.market,
+          odds: snapshot.homeOdds,
+          outcome: 'yes'
+        },
+        {
+          bookmaker: snapshot.awayBookmaker,
+          market: snapshot.market,
+          odds: snapshot.awayOdds,
+          outcome: 'no'
+        }
+      ],
+      roi
+    };
+  });
+}
+
+function buildHandicapOpportunities() {
+  const snapshots = loadGoldenSnapshotsForHandicap();
+  const { calculateTwoLegArbitrageRoi } = require('../../out-tests/src/main/services/calculator.js');
+
+  return snapshots.map((snapshot) => {
+    const roi = calculateTwoLegArbitrageRoi(snapshot.homeOdds, snapshot.awayOdds);
+
+    return {
+      id: snapshot.id,
+      sport: snapshot.sport,
+      event: {
+        name: snapshot.eventName,
+        date: snapshot.eventDate,
+        league: snapshot.league
+      },
+      legs: [
+        {
+          bookmaker: snapshot.homeBookmaker,
+          market: snapshot.market,
+          odds: snapshot.homeOdds,
+          outcome: 'home'
+        },
+        {
+          bookmaker: snapshot.awayBookmaker,
+          market: snapshot.market,
+          odds: snapshot.awayOdds,
+          outcome: 'away'
+        }
+      ],
+      roi
+    };
+  });
+}
+
 module.exports = {
   readGoldenFixture,
   loadGoldenSnapshotsForOddsApiIo,
   loadGoldenSnapshotsForTheOddsApi,
   loadGoldenSnapshotsForNoSurebets,
+  loadGoldenSnapshotsForBtts,
+  loadGoldenSnapshotsForHandicap,
   buildOddsApiIoArbitrageBets,
-  buildTheOddsApiRawEvents
+  buildTheOddsApiRawEvents,
+  buildBttsOpportunities,
+  buildHandicapOpportunities
 };

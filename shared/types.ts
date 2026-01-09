@@ -51,6 +51,43 @@ export interface ArbitrageOpportunity {
    * (highest ROI or first-seen), while `mergedFrom` contains all source providers.
    */
   mergedFrom?: ProviderId[]
+  /**
+   * Indicates this opportunity was created by combining odds from different providers.
+   * Story 5.4: Cross-Provider Arbitrage Aggregator.
+   */
+  isCrossProvider?: boolean
+}
+
+/**
+ * Represents a single market quote extracted from an arbitrage opportunity leg.
+ * Used for cross-provider arbitrage detection where quotes from different
+ * providers/bookmakers are combined to find new arbitrage opportunities.
+ *
+ * Story 5.4: Cross-Provider Arbitrage Aggregator
+ */
+export interface MarketQuote {
+  /** Normalized event key for cross-provider matching */
+  eventKey: string
+  /** Source provider ID */
+  providerId: ProviderId
+  /** Bookmaker name */
+  bookmaker: string
+  /** Canonical market type (e.g., 'h2h', 'btts', 'handicap') */
+  market: string
+  /** Outcome identifier ('home', 'away', 'yes', 'no', etc.) */
+  outcome: string
+  /** Decimal odds */
+  odds: number
+  /** Original event name for display/debugging */
+  originalEventName: string
+  /** Original event date for staleness tracking */
+  originalEventDate: string
+  /** Original event league for cross-provider opportunity display */
+  originalLeague: string
+  /** When the quote was fetched */
+  foundAt: string
+  /** Handicap point value for spread markets (optional, future use) */
+  point?: number
 }
 
 export interface ArbitrageAdapter {

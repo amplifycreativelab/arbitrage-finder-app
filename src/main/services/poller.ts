@@ -8,8 +8,10 @@ import type {
   SystemStatus
 } from '../../../shared/types'
 import { arbitrageOpportunityListSchema } from '../../../shared/schemas'
-import { createCorrelationId, logHeartbeat, logWarn, type StructuredLogBase } from './logger'
+import { createCorrelationId, logHeartbeat, logInfo, logWarn, type StructuredLogBase } from './logger'
 import { isProviderConfigured } from '../credentials'
+import { extractAllQuotes } from './eventMatcher'
+import { findCrossProviderArbitrages } from './crossProviderCalculator'
 
 /**
  * Rate limit parameters derived from PRD FR8 (5,000 req/hour) and Architecture R-001 (NFR1).
@@ -427,6 +429,41 @@ export async function pollOnceForEnabledProviders(): Promise<ArbitrageOpportunit
     }
   }
 
+  // Story 5.4: Generate cross-provider arbitrage opportunities
+  let crossProviderArbs: ArbitrageOpportunity[] = []
+  const crossProviderStartedAt = Date.now()
+
+  if (allOpportunities.length > 0 && providerIds.length >= 2) {
+    try {
+      const quotes = extractAllQuotes(allOpportunities)
+      crossProviderArbs = findCrossProviderArbitrages(quotes)
+
+      logInfo('cross-provider.generated', {
+        context: 'service:poller',
+        operation: 'pollOnceForEnabledProviders',
+        providerId: undefined,
+        correlationId,
+        durationMs: Date.now() - crossProviderStartedAt,
+        errorCategory: null,
+        quotesExtracted: quotes.length,
+        crossProviderArbsFound: crossProviderArbs.length
+      } satisfies StructuredLogBase)
+    } catch (error) {
+      logWarn('cross-provider.error', {
+        context: 'service:poller',
+        operation: 'pollOnceForEnabledProviders',
+        providerId: undefined,
+        correlationId,
+        durationMs: Date.now() - crossProviderStartedAt,
+        errorCategory: 'SystemError',
+        message: (error as Error)?.message ?? 'Cross-provider calculation failed'
+      } satisfies StructuredLogBase)
+    }
+  }
+
+  // Combine same-provider and cross-provider opportunities
+  const combinedOpportunities = [...allOpportunities, ...crossProviderArbs]
+
   currentCorrelationId = null
 
   const durationMs = Date.now() - tickStartedAt
@@ -474,7 +511,9 @@ export async function pollOnceForEnabledProviders(): Promise<ArbitrageOpportunit
     durationMs,
     errorCategory: hasErrors ? 'ProviderError' : null,
     success: errors.length === 0,
-    opportunitiesCount: allOpportunities.length,
+    opportunitiesCount: combinedOpportunities.length,
+    sameProviderArbsCount: allOpportunities.length,
+    crossProviderArbsCount: crossProviderArbs.length,
     providerStatuses,
     lastSuccessfulFetchTimestamps,
     systemStatus,
@@ -483,7 +522,7 @@ export async function pollOnceForEnabledProviders(): Promise<ArbitrageOpportunit
     errorMessage: errors.length > 0 ? `Errors from ${errors.map((e) => e.providerId).join(', ')}` : undefined
   } satisfies StructuredLogBase)
 
-  return allOpportunities
+  return combinedOpportunities
 }
 
 export function getRegisteredAdapter(providerId: ProviderId): ArbitrageAdapter | null {

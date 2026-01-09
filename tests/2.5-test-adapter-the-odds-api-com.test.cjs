@@ -104,7 +104,7 @@ test('[P0][2.5-ADAPTER-HTTP-001] test adapter uses credentials, central schedule
     assert.strictEqual(
       requestedUrl.searchParams.get('markets'),
       'h2h',
-      'Markets must be configured on the request'
+      'Markets must be configured on the request (The-Odds-API.com only supports h2h)'
     );
 
     assert.ok(parsed.length >= 1, 'Expected at least one arbitrage opportunity');
@@ -216,9 +216,10 @@ test('[P1][2.5-FILTERS-PIPELINE-001] poller + test adapter + filters honor sport
     };
 
     poller.registerAdapters([new TheOddsApiAdapter()]);
-    poller.notifyActiveProviderChanged('the-odds-api');
+    // Use multi-provider polling API (Story 5.1)
+    poller.notifyEnabledProvidersChanged(['the-odds-api']);
 
-    const polled = await poller.pollOnceForActiveProvider();
+    const polled = await poller.pollOnceForEnabledProviders();
     const normalized = arbitrageOpportunityListSchema.parse(polled);
 
     const inferredRegion = (opportunity) => {

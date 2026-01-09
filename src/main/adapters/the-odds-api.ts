@@ -52,9 +52,6 @@ function mapRawEventToMarkets(event: TheOddsApiEventFragment): TheOddsApiMarket[
     return []
   }
 
-  const homeCandidates: { bookmaker: string; odds: number }[] = []
-  const awayCandidates: { bookmaker: string; odds: number }[] = []
-
   const sportKey = event.sport_key
   const sportTitle = event.sport_title
 
@@ -72,43 +69,152 @@ function mapRawEventToMarkets(event: TheOddsApiEventFragment): TheOddsApiMarket[
     sport = sportTitle
   }
 
+  const markets: TheOddsApiMarket[] = []
+  const eventName = `${event.home_team} vs ${event.away_team}`
+  const league = event.sport_title ?? ''
+
+  // H2H (Moneyline) candidates
+  const h2hHomeCandidates: { bookmaker: string; odds: number }[] = []
+  const h2hAwayCandidates: { bookmaker: string; odds: number }[] = []
+
+  // BTTS candidates: Yes and No across bookmakers
+  const bttsYesCandidates: { bookmaker: string; odds: number }[] = []
+  const bttsNoCandidates: { bookmaker: string; odds: number }[] = []
+
+  // Spreads candidates: Group by handicap point value
+  // Key: point value (e.g., "0.5"), Value: { home: [], away: [] }
+  const spreadsCandidates: Map<string, {
+    home: { bookmaker: string; odds: number; point: number }[]
+    away: { bookmaker: string; odds: number; point: number }[]
+  }> = new Map()
+
   for (const bookmaker of event.bookmakers) {
     if (!Array.isArray(bookmaker.markets)) continue
 
-    const headToHeadMarket = bookmaker.markets.find((market) => market.key === 'h2h')
-    if (!headToHeadMarket || !Array.isArray(headToHeadMarket.outcomes)) continue
+    const bookmakerLabel = bookmaker.title || bookmaker.key
 
-    for (const outcome of headToHeadMarket.outcomes) {
-      if (!isFinitePositive(outcome.price)) continue
+    // Process H2H market
+    const h2hMarket = bookmaker.markets.find((m) => m.key === 'h2h')
+    if (h2hMarket && Array.isArray(h2hMarket.outcomes)) {
+      for (const outcome of h2hMarket.outcomes) {
+        if (!isFinitePositive(outcome.price)) continue
 
-      const bookmakerLabel = bookmaker.title || bookmaker.key
+        if (outcome.name === event.home_team) {
+          h2hHomeCandidates.push({ bookmaker: bookmakerLabel, odds: outcome.price })
+        } else if (outcome.name === event.away_team) {
+          h2hAwayCandidates.push({ bookmaker: bookmakerLabel, odds: outcome.price })
+        }
+      }
+    }
 
-      if (outcome.name === event.home_team) {
-        homeCandidates.push({ bookmaker: bookmakerLabel, odds: outcome.price })
-      } else if (outcome.name === event.away_team) {
-        awayCandidates.push({ bookmaker: bookmakerLabel, odds: outcome.price })
+    // Process BTTS market
+    const bttsMarket = bookmaker.markets.find((m) => m.key === 'btts')
+    if (bttsMarket && Array.isArray(bttsMarket.outcomes)) {
+      for (const outcome of bttsMarket.outcomes) {
+        if (!isFinitePositive(outcome.price)) continue
+
+        const outcomeName = outcome.name.toLowerCase()
+        if (outcomeName === 'yes') {
+          bttsYesCandidates.push({ bookmaker: bookmakerLabel, odds: outcome.price })
+        } else if (outcomeName === 'no') {
+          bttsNoCandidates.push({ bookmaker: bookmakerLabel, odds: outcome.price })
+        }
+      }
+    }
+
+    // Process Spreads market
+    const spreadsMarket = bookmaker.markets.find((m) => m.key === 'spreads')
+    if (spreadsMarket && Array.isArray(spreadsMarket.outcomes)) {
+      for (const outcome of spreadsMarket.outcomes) {
+        if (!isFinitePositive(outcome.price)) continue
+
+        // outcomes have: name (team name), price, point (handicap value)
+        const point = (outcome as { point?: number }).point
+        if (typeof point !== 'number') continue
+
+        // Asian Handicap Pairing Logic:
+        // Use absolute point value as key for grouping opposite sides.
+        // E.g., Home -0.5 pairs with Away +0.5 → both keyed as "0.5".
+        // This ensures correct cross-bookmaker arbitrage detection where
+        // one bookmaker offers Home -0.5 and another offers Away +0.5.
+        const pointKey = Math.abs(point).toString()
+
+        if (!spreadsCandidates.has(pointKey)) {
+          spreadsCandidates.set(pointKey, { home: [], away: [] })
+        }
+
+        const group = spreadsCandidates.get(pointKey)!
+
+        if (outcome.name === event.home_team) {
+          group.home.push({ bookmaker: bookmakerLabel, odds: outcome.price, point })
+        } else if (outcome.name === event.away_team) {
+          group.away.push({ bookmaker: bookmakerLabel, odds: outcome.price, point })
+        }
       }
     }
   }
 
-  const markets: TheOddsApiMarket[] = []
-
-  for (const home of homeCandidates) {
-    for (const away of awayCandidates) {
+  // Generate H2H opportunities (cross-bookmaker only)
+  for (const home of h2hHomeCandidates) {
+    for (const away of h2hAwayCandidates) {
       if (home.bookmaker === away.bookmaker) continue
 
       markets.push({
-        id: `${event.id}:${home.bookmaker}:${away.bookmaker}`,
+        id: `${event.id}:h2h:${home.bookmaker}:${away.bookmaker}`,
         sport,
-        eventName: `${event.home_team} vs ${event.away_team}`,
+        eventName,
         eventDate: event.commence_time,
-        league: event.sport_title ?? '',
-        market: 'match-winner',
+        league,
+        market: 'h2h',
         homeBookmaker: home.bookmaker,
         homeOdds: home.odds,
         awayBookmaker: away.bookmaker,
         awayOdds: away.odds
       })
+    }
+  }
+
+  // Generate BTTS opportunities (cross-bookmaker only)
+  // BTTS Yes from BookmakerA vs BTTS No from BookmakerB
+  for (const yes of bttsYesCandidates) {
+    for (const no of bttsNoCandidates) {
+      if (yes.bookmaker === no.bookmaker) continue
+
+      markets.push({
+        id: `${event.id}:btts:${yes.bookmaker}:${no.bookmaker}`,
+        sport,
+        eventName,
+        eventDate: event.commence_time,
+        league,
+        market: 'btts',
+        homeBookmaker: yes.bookmaker,
+        homeOdds: yes.odds,
+        awayBookmaker: no.bookmaker,
+        awayOdds: no.odds
+      })
+    }
+  }
+
+  // Generate Spreads opportunities (cross-bookmaker only, matching point values)
+  // For each point value, pair home handicap with away handicap
+  for (const [, group] of spreadsCandidates) {
+    for (const home of group.home) {
+      for (const away of group.away) {
+        if (home.bookmaker === away.bookmaker) continue
+
+        markets.push({
+          id: `${event.id}:spreads:${home.point}:${home.bookmaker}:${away.bookmaker}`,
+          sport,
+          eventName,
+          eventDate: event.commence_time,
+          league,
+          market: 'spreads',
+          homeBookmaker: home.bookmaker,
+          homeOdds: home.odds,
+          awayBookmaker: away.bookmaker,
+          awayOdds: away.odds
+        })
+      }
     }
   }
 
@@ -176,6 +282,11 @@ export function normalizeTheOddsApiMarket(
     return null
   }
 
+  // BTTS markets use yes/no outcomes; others use home/away
+  const isBtts = raw.market === 'btts'
+  const leg1Outcome = isBtts ? 'yes' : 'home'
+  const leg2Outcome = isBtts ? 'no' : 'away'
+
   return {
     id: raw.id,
     sport: raw.sport,
@@ -189,13 +300,13 @@ export function normalizeTheOddsApiMarket(
         bookmaker: raw.homeBookmaker,
         market: raw.market,
         odds: raw.homeOdds,
-        outcome: 'home'
+        outcome: leg1Outcome
       },
       {
         bookmaker: raw.awayBookmaker,
         market: raw.market,
         odds: raw.awayOdds,
-        outcome: 'away'
+        outcome: leg2Outcome
       }
     ],
     roi,
@@ -205,6 +316,8 @@ export function normalizeTheOddsApiMarket(
 
 const THE_ODDS_API_BASE_URL = 'https://api.the-odds-api.com'
 const THE_ODDS_API_ODDS_PATH = '/v4/sports/soccer/odds'
+// The-Odds-API.com only supports h2h for soccer odds endpoint
+// (btts and spreads cause 422 INVALID_MARKET errors)
 const THE_ODDS_API_MARKETS = ['h2h'] as const
 const THE_ODDS_API_REGIONS = ['eu'] as const
 

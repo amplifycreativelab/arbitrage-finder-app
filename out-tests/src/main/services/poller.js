@@ -19,6 +19,8 @@ const bottleneck_1 = __importDefault(require("bottleneck"));
 const schemas_1 = require("../../../shared/schemas");
 const logger_1 = require("./logger");
 const credentials_1 = require("../credentials");
+const eventMatcher_1 = require("./eventMatcher");
+const crossProviderCalculator_1 = require("./crossProviderCalculator");
 const PRD_REQUESTS_PER_HOUR = 5000;
 const DEFAULT_LIMITER_CONFIG = {
     minTime: 720, // 3600s / 5000 req => ~0.72s spacing (FR8, NFR1)
@@ -329,6 +331,38 @@ async function pollOnceForEnabledProviders() {
             errors.push({ providerId: 'unknown', error: result.reason });
         }
     }
+    // Story 5.4: Generate cross-provider arbitrage opportunities
+    let crossProviderArbs = [];
+    const crossProviderStartedAt = Date.now();
+    if (allOpportunities.length > 0 && providerIds.length >= 2) {
+        try {
+            const quotes = (0, eventMatcher_1.extractAllQuotes)(allOpportunities);
+            crossProviderArbs = (0, crossProviderCalculator_1.findCrossProviderArbitrages)(quotes);
+            (0, logger_1.logInfo)('cross-provider.generated', {
+                context: 'service:poller',
+                operation: 'pollOnceForEnabledProviders',
+                providerId: undefined,
+                correlationId,
+                durationMs: Date.now() - crossProviderStartedAt,
+                errorCategory: null,
+                quotesExtracted: quotes.length,
+                crossProviderArbsFound: crossProviderArbs.length
+            });
+        }
+        catch (error) {
+            (0, logger_1.logWarn)('cross-provider.error', {
+                context: 'service:poller',
+                operation: 'pollOnceForEnabledProviders',
+                providerId: undefined,
+                correlationId,
+                durationMs: Date.now() - crossProviderStartedAt,
+                errorCategory: 'SystemError',
+                message: error?.message ?? 'Cross-provider calculation failed'
+            });
+        }
+    }
+    // Combine same-provider and cross-provider opportunities
+    const combinedOpportunities = [...allOpportunities, ...crossProviderArbs];
     currentCorrelationId = null;
     const durationMs = Date.now() - tickStartedAt;
     const nowIso = new Date().toISOString();
@@ -370,7 +404,9 @@ async function pollOnceForEnabledProviders() {
         durationMs,
         errorCategory: hasErrors ? 'ProviderError' : null,
         success: errors.length === 0,
-        opportunitiesCount: allOpportunities.length,
+        opportunitiesCount: combinedOpportunities.length,
+        sameProviderArbsCount: allOpportunities.length,
+        crossProviderArbsCount: crossProviderArbs.length,
         providerStatuses,
         lastSuccessfulFetchTimestamps,
         systemStatus,
@@ -378,7 +414,7 @@ async function pollOnceForEnabledProviders() {
         tickCompletedAt: nowIso,
         errorMessage: errors.length > 0 ? `Errors from ${errors.map((e) => e.providerId).join(', ')}` : undefined
     });
-    return allOpportunities;
+    return combinedOpportunities;
 }
 function getRegisteredAdapter(providerId) {
     return adaptersByProviderId[providerId] ?? null;

@@ -90,7 +90,8 @@ export const arbitrageOpportunitySchema = z
     roi: z.number().min(0),
     foundAt: z.string(),
     providerId: providerIdSchema.optional(), // Multi-provider source tracking (Story 5.1)
-    mergedFrom: z.array(providerIdSchema).optional() // All source providers after deduplication (Story 5.2)
+    mergedFrom: z.array(providerIdSchema).optional(), // All source providers after deduplication (Story 5.2)
+    isCrossProvider: z.boolean().optional() // Cross-provider arbitrage indicator (Story 5.4)
   })
   .refine(
     (value) => value.legs[0].bookmaker !== value.legs[1].bookmaker,

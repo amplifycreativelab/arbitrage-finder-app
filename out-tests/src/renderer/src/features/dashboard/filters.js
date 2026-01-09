@@ -9,7 +9,9 @@ exports.ALL_SPORT_FILTERS = ['soccer', 'tennis'];
 exports.ALL_MARKET_FILTERS = [
     'moneyline',
     'draw-no-bet',
-    'totals'
+    'totals',
+    'btts',
+    'handicap'
 ];
 function normalizeLeague(value) {
     return (value ?? '').toLowerCase();
@@ -41,18 +43,44 @@ function inferRegionFromOpportunity(opportunity) {
 function inferMarketTypeFromOpportunity(opportunity) {
     const primaryMarket = opportunity.legs[0]?.market ?? '';
     const normalized = primaryMarket.toLowerCase();
+    // Moneyline / H2H variants
     if (normalized === 'moneyline' || normalized === 'match-winner' || normalized === 'h2h') {
         return 'moneyline';
     }
+    // Draw No Bet variants
     if (normalized === 'draw-no-bet' ||
         normalized === 'draw no bet' ||
         normalized === 'dnb') {
         return 'draw-no-bet';
     }
+    // Totals / Over-Under variants
     if (normalized === 'totals' ||
         normalized === 'over/under' ||
         normalized === 'over_under') {
         return 'totals';
+    }
+    // BTTS (Both Teams To Score) variants
+    if (normalized === 'btts' ||
+        normalized === 'both-teams-to-score' ||
+        normalized === 'both_teams_to_score' ||
+        normalized === 'btts_yes' ||
+        normalized === 'btts_no' ||
+        normalized === 'both_teams_score' ||
+        normalized === 'both teams to score') {
+        return 'btts';
+    }
+    // Handicap / Spread / Asian Handicap variants
+    if (normalized === 'handicap' ||
+        normalized === 'spread' ||
+        normalized === 'spreads' ||
+        normalized === 'asian_handicap' ||
+        normalized === 'asian handicap' ||
+        normalized === 'ah' ||
+        normalized === '0-handicap' ||
+        normalized === 'handicap_0' ||
+        normalized === 'handicap 0' ||
+        normalized.startsWith('spreads_')) {
+        return 'handicap';
     }
     return null;
 }

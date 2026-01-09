@@ -1,0 +1,30 @@
+[
+  {
+    "id": "spreads-arb-1",
+    "providerId": "the-odds-api",
+    "sport": "soccer",
+    "description": "Handicap arbitrage opportunity: Home +0 @ 1.95 vs Away +0 @ 2.10. Expected ROI: ~2.7%",
+    "eventName": "Barcelona vs Real Madrid",
+    "eventDate": "2026-01-25T21:00:00Z",
+    "league": "La Liga",
+    "market": "spreads",
+    "homeBookmaker": "1xBet",
+    "homeOdds": 1.95,
+    "awayBookmaker": "Betfair",
+    "awayOdds": 2.10
+  },
+  {
+    "id": "spreads-arb-2",
+    "providerId": "the-odds-api",
+    "sport": "soccer",
+    "description": "Handicap arbitrage opportunity: Home -0.5 @ 2.00 vs Away +0.5 @ 2.05. Expected ROI: ~2.6%",
+    "eventName": "PSG vs Marseille",
+    "eventDate": "2026-01-28T20:45:00Z",
+    "league": "Ligue 1",
+    "market": "spreads",
+    "homeBookmaker": "Sbobet",
+    "homeOdds": 2.00,
+    "awayBookmaker": "888sport",
+    "awayOdds": 2.05
+  }
+]
