@@ -9,7 +9,7 @@ function App(): React.JSX.Element {
   return (
     <div className="flex min-h-screen flex-col bg-ot-background text-ot-foreground">
       <header className="border-b border-ot-accent/40 bg-black/20">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-6 py-4">
+        <div className="mx-auto flex w-full items-center justify-between gap-3 px-4 py-4 md:px-6 lg:px-8">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-md bg-ot-accent/10">
               <img alt="Arbitrage Finder" className="h-6 w-6" src={electronLogo} />
@@ -19,7 +19,7 @@ function App(): React.JSX.Element {
                 The Orange Terminal
               </div>
               <div className="text-[11px] text-ot-foreground/70">
-                Arbitrage Finder - Story 3.1: Main Layout &amp; Split Pane
+                Arbitrage Finder - Story 6.4: Full-Width Desktop Layout
               </div>
             </div>
           </div>
@@ -29,10 +29,10 @@ function App(): React.JSX.Element {
         </div>
       </header>
 
-      <main className="flex flex-1 px-6 py-6">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
+      <main className="flex flex-1 px-4 py-6 md:px-6 lg:px-8">
+        <div className="mx-auto flex w-full flex-col gap-4">
           <div className="text-[11px] text-ot-foreground/70">
-            Dashboard shell with a fixed-width feed pane and fluid signal preview pane, ready for Epic 3 stories.
+            Dashboard shell with fluid full-width layout, ready for Epic 6 stories.
           </div>
           <DashboardLayout />
           <div className="mt-2 flex justify-end">

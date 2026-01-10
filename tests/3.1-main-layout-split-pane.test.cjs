@@ -38,21 +38,18 @@ test('[P1][3.1-INT-001] dashboard layout exposes feed and signal preview panes a
   );
 });
 
-test('[P1][3.1-INT-002] dashboard left pane uses fixed-width split around 400px at runtime', () => {
+test('[P1][3.1-INT-002] dashboard left pane uses fluid width with min-width constraint at runtime', () => {
   const html = renderToHtml(React.createElement(DashboardLayout));
 
   assert.ok(
-    html.includes('w-[380px]'),
-    'Expected left pane base width to be ~380px',
+    html.includes('flex-1'),
+    'Expected left pane to be fluid (flex-1)',
   );
   assert.ok(
     html.includes('min-w-[360px]'),
     'Expected left pane min width of 360px',
   );
-  assert.ok(
-    html.includes('max-w-[440px]'),
-    'Expected left pane max width of 440px',
-  );
+  // Fixed width constraints removed in Story 6.4
 });
 
 test('[P1][3.1-INT-003] dashboard applies Orange Terminal theme at root', () => {

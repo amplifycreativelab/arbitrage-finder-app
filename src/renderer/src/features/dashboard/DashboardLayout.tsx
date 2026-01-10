@@ -99,7 +99,7 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
       >
         <section
           aria-label="Feed"
-          className="flex w-[380px] min-w-[360px] max-w-[440px] flex-col gap-3 border-r border-white/10 pr-4"
+          className="flex flex-1 min-w-[360px] flex-col gap-3 border-r border-white/10 pr-4"
           data-testid="feed-pane"
         >
           <header className="flex items-center justify-between gap-2">

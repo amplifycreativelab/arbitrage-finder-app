@@ -6,6 +6,7 @@ exports.inferMarketTypeFromOpportunity = inferMarketTypeFromOpportunity;
 exports.getMarketMetadataFromOpportunity = getMarketMetadataFromOpportunity;
 exports.getMarketGroupFromOpportunity = getMarketGroupFromOpportunity;
 exports.applyDashboardFilters = applyDashboardFilters;
+exports.getAvailableBookmakers = getAvailableBookmakers;
 const types_1 = require("../../../../../shared/types");
 exports.ALL_REGION_CODES = ['AU', 'UK', 'IT', 'RO'];
 exports.ALL_SPORT_FILTERS = ['soccer', 'tennis'];
@@ -41,23 +42,51 @@ function inferRegionFromOpportunity(opportunity) {
     if (!league) {
         return null;
     }
-    if (league.includes('serie a') || league.includes('serie b') || league.includes('coppa italia')) {
+    // Italy
+    if (league.includes('serie a') ||
+        league.includes('serie b') ||
+        league.includes('coppa italia') ||
+        league.includes('supercoppa') ||
+        league.includes('italy')) {
         return 'IT';
     }
+    // UK
     if (league.includes('wimbledon') ||
         league.includes('premier league') ||
+        league.includes('epl') ||
         league.includes('championship') ||
-        league.includes('england')) {
+        league.includes('league one') ||
+        league.includes('league two') ||
+        league.includes('fa cup') ||
+        league.includes('efl cup') ||
+        league.includes('carabao cup') ||
+        league.includes('england') ||
+        league.includes('scotland') ||
+        league.includes('premiership') // Scottish Premiership often just 'Premiership'
+    ) {
         return 'UK';
     }
-    if (league.includes('a-league') || league.includes('a league') || league.includes('australia')) {
+    // Australia
+    if (league.includes('a-league') ||
+        league.includes('a league') ||
+        league.includes('ffa cup') ||
+        league.includes('australia')) {
         return 'AU';
     }
+    // Romania
     if (league.includes('liga i') ||
         league.includes('liga 1') ||
+        league.includes('cupa romaniei') ||
         league.includes('romania')) {
         return 'RO';
     }
+    // Fallback: If no specific region detected, return null.
+    // BUT: logic in getAvailableBookmakers only skips if region IS detected and doesn't match.
+    // If region is null (unknown), stricter filtering might be safer, OR permissive?
+    // Current logic: `if (!region || !regions.includes(region))`
+    // This means Unknown regions are ALWAYS HIDDEN when filtering is active.
+    // This is safe but hides data.
+    // Let's keep it safe for now, as user explicitly selected "UK", "Italy" etc.
     return null;
 }
 function inferMarketTypeFromOpportunity(opportunity) {
@@ -187,4 +216,26 @@ function applyDashboardFilters(opportunities, filters) {
         }
         return true;
     });
+}
+function getAvailableBookmakers(opportunities, regions) {
+    const seen = new Set();
+    const result = [];
+    const hasRegionFilter = regions.length !== exports.ALL_REGION_CODES.length ||
+        !exports.ALL_REGION_CODES.every((code) => regions.includes(code));
+    for (const opportunity of opportunities) {
+        const region = inferRegionFromOpportunity(opportunity);
+        if (hasRegionFilter) {
+            if (!region || !regions.includes(region)) {
+                continue;
+            }
+        }
+        for (const leg of opportunity.legs) {
+            const name = leg.bookmaker;
+            if (!seen.has(name)) {
+                seen.add(name);
+                result.push(name);
+            }
+        }
+    }
+    return result.sort((a, b) => a.localeCompare(b));
 }

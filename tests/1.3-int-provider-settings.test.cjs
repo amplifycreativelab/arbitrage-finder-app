@@ -26,9 +26,15 @@ test.beforeEach(() => {
   credentialsStore.set('providerSecrets', {});
   credentialsStore.delete('fallbackWarningShown');
   credentialsStore.delete('activeProviderId');
+  credentialsStore.delete('enabledProviders'); // Clear multi-provider state
 
   if (typeof storage.__setSafeStorageForTests === 'function') {
     storage.__setSafeStorageForTests(null);
+  }
+
+  // Reset migration flag to allow fresh migration on each test
+  if (typeof storage.__resetMigrationForTests === 'function') {
+    storage.__resetMigrationForTests();
   }
 });
 
@@ -56,23 +62,23 @@ test('[P1][1.3-INT-001] active provider persists via storage helpers', () => {
   );
 });
 
-test('[P1][1.3-INT-002] TRPC getActiveProvider/setActiveProvider round-trip', async () => {
+test('[P1][1.3-INT-002] TRPC getEnabledProviders/setProviderEnabled round-trip', async () => {
   const caller = router.appRouter.createCaller({});
 
-  const initial = await caller.getActiveProvider();
-  assert.strictEqual(
-    initial.providerId,
-    storage.getActiveProviderId(),
-    'Expected TRPC getActiveProvider to reflect storage default'
+  // Get initial enabled providers
+  const initial = await caller.getEnabledProviders();
+  assert.ok(
+    Array.isArray(initial.enabledProviders),
+    'Expected enabledProviders to be an array'
   );
 
-  await caller.setActiveProvider({ providerId: 'odds-api-io' });
-  const updated = await caller.getActiveProvider();
+  // Toggle a provider on
+  await caller.setProviderEnabled({ providerId: 'odds-api-io', enabled: true });
+  const afterEnable = await caller.getEnabledProviders();
 
-  assert.strictEqual(
-    updated.providerId,
-    'odds-api-io',
-    'Expected TRPC setActiveProvider to update active provider'
+  assert.ok(
+    afterEnable.enabledProviders.includes('odds-api-io'),
+    'Expected odds-api-io to be enabled after setProviderEnabled(true)'
   );
 });
 
@@ -112,15 +118,14 @@ test('[P1][1.3-INT-003] TRPC storage status toggles fallback warning flag', asyn
   );
 });
 
-test('[P2][1.3-INT-004] poller sees updated active provider after TRPC change', async () => {
+test('[P2][1.3-INT-004] poller sees updated enabled providers after TRPC change', async () => {
   const caller = router.appRouter.createCaller({});
 
-  await caller.setActiveProvider({ providerId: 'odds-api-io' });
+  await caller.setProviderEnabled({ providerId: 'odds-api-io', enabled: true });
 
-  const activeForPolling = poller.getActiveProviderForPolling();
-  assert.strictEqual(
-    activeForPolling,
-    'odds-api-io',
-    'Expected poller active provider to track TRPC selection without restart'
+  const enabledForPolling = poller.getEnabledProvidersForPolling();
+  assert.ok(
+    enabledForPolling.includes('odds-api-io'),
+    'Expected poller enabled providers to include odds-api-io after TRPC enable'
   );
 });

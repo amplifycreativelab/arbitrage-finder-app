@@ -26,9 +26,15 @@ test.beforeEach(() => {
   credentialsStore.set('providerSecrets', {});
   credentialsStore.delete('fallbackWarningShown');
   credentialsStore.delete('activeProviderId');
+  credentialsStore.delete('enabledProviders'); // Clear multi-provider state
 
   if (typeof storage.__setSafeStorageForTests === 'function') {
     storage.__setSafeStorageForTests(null);
+  }
+
+  // Reset migration flag to allow fresh migration on each test
+  if (typeof storage.__resetMigrationForTests === 'function') {
+    storage.__resetMigrationForTests();
   }
 });
 
@@ -38,12 +44,14 @@ test('[P1][1.4-SEC-001] renderer-facing TRPC surface does not expose raw keys', 
   await caller.saveApiKey({ providerId: 'odds-api-io', apiKey: SENTINEL_KEY });
 
   const status = await caller.getStorageStatus();
-  const active = await caller.getActiveProvider();
+  const enabled = await caller.getEnabledProviders();
+  const allProviders = await caller.getAllProvidersStatus();
   const configured = await caller.isProviderConfigured({ providerId: 'odds-api-io' });
 
   const payloads = [
     JSON.stringify(status),
-    JSON.stringify(active),
+    JSON.stringify(enabled),
+    JSON.stringify(allProviders),
     JSON.stringify(configured)
   ];
 

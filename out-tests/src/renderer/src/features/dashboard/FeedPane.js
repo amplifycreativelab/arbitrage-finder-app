@@ -43,6 +43,8 @@ const FeedTable_1 = require("./FeedTable");
 const filters_1 = require("./filters");
 const feedFiltersStore_1 = require("./stores/feedFiltersStore");
 const useStalenessTicker_1 = require("./useStalenessTicker");
+const MarketFilterPopover_1 = require("./MarketFilterPopover");
+const BookmakerFilterPopover_1 = require("./BookmakerFilterPopover");
 const types_1 = require("../../../../../shared/types");
 const input_1 = require("../../components/ui/input");
 const utils_1 = require("../../lib/utils");
@@ -58,14 +60,14 @@ function FeedFilters({ totalCount, filteredCount, availableBookmakers }) {
             unsubscribe();
         };
     }, []);
-    const { regions, sports, markets, bookmakers, minRoi, toggleRegion, toggleSport, toggleMarket, toggleBookmaker, setMinRoi, resetFilters } = filterState;
+    const { regions, sports, marketGroups, bookmakers, minRoi, toggleRegion, toggleSport, setMinRoi, resetFilters } = filterState;
     const hasActiveRoi = minRoi > 0;
     const hasNonDefaultRegions = regions.length !== filters_1.ALL_REGION_CODES.length ||
         !filters_1.ALL_REGION_CODES.every((code) => regions.includes(code));
     const hasNonDefaultSports = sports.length !== filters_1.ALL_SPORT_FILTERS.length ||
         !filters_1.ALL_SPORT_FILTERS.every((sport) => sports.includes(sport));
-    const hasNonDefaultMarkets = markets.length !== filters_1.ALL_MARKET_FILTERS.length ||
-        !filters_1.ALL_MARKET_FILTERS.every((market) => markets.includes(market));
+    const hasNonDefaultMarkets = (marketGroups?.length ?? filters_1.ALL_MARKET_GROUPS.length) !== filters_1.ALL_MARKET_GROUPS.length ||
+        !(marketGroups ?? filters_1.ALL_MARKET_GROUPS).every((group) => filters_1.ALL_MARKET_GROUPS.includes(group));
     const hasBookmakerFilters = Array.isArray(bookmakers) && bookmakers.length > 0;
     const hasActiveFilters = hasNonDefaultRegions ||
         hasNonDefaultSports ||
@@ -77,12 +79,6 @@ function FeedFilters({ totalCount, filteredCount, availableBookmakers }) {
     };
     const handleToggleSport = (sport) => {
         toggleSport(sport);
-    };
-    const handleToggleMarket = (market) => {
-        toggleMarket(market);
-    };
-    const handleToggleBookmaker = (bookmaker) => {
-        toggleBookmaker(bookmaker);
     };
     const handleMinRoiChange = (event) => {
         const value = event.target.value.trim();
@@ -103,15 +99,7 @@ function FeedFilters({ totalCount, filteredCount, availableBookmakers }) {
                 ? 'border-ot-accent bg-ot-accent/20 text-ot-accent'
                 : 'border-white/20 text-ot-foreground/60 hover:border-ot-accent/60 hover:text-ot-accent'), "data-testid": testId, "aria-pressed": active ? 'true' : 'false', onClick: onClick, children: label }, testId));
     };
-    return ((0, jsx_runtime_1.jsxs)("section", { className: "mb-2 space-y-2 border-b border-white/10 pb-2 text-[10px]", "aria-label": "Feed filters", children: [(0, jsx_runtime_1.jsxs)("div", { className: "flex items-center justify-between gap-2", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-foreground/60", children: "Filters" }), (0, jsx_runtime_1.jsxs)("span", { className: "text-[10px] text-ot-foreground/60", children: [filteredCount, " of ", totalCount, " shown"] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap gap-2", children: [(0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Region" }), ['AU', 'UK', 'IT', 'RO'].map((code) => renderFilterChip(code, regions.includes(code), () => handleToggleRegion(code), `feed-filters-region-${code}`))] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Sport" }), ['soccer', 'tennis'].map((sport) => renderFilterChip(sport === 'soccer' ? 'Soccer' : 'Tennis', sports.includes(sport), () => handleToggleSport(sport), `feed-filters-sport-${sport}`))] }), availableBookmakers.length > 0 && ((0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Bookmaker" }), availableBookmakers.map((name) => renderFilterChip(name, bookmakers.includes(name), () => handleToggleBookmaker(name), `feed-filters-bookmaker-${name.replace(/[^a-zA-Z0-9]/g, '_')}`))] })), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Market" }), ['moneyline', 'draw-no-bet', 'totals', 'btts', 'handicap'].map((market) => renderFilterChip(market === 'moneyline'
-                                ? 'Moneyline'
-                                : market === 'draw-no-bet'
-                                    ? 'Draw No Bet'
-                                    : market === 'totals'
-                                        ? 'Totals'
-                                        : market === 'btts'
-                                            ? 'BTTS'
-                                            : 'Handicap', markets.includes(market), () => handleToggleMarket(market), `feed-filters-market-${market}`))] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Min ROI" }), (0, jsx_runtime_1.jsxs)("div", { className: "flex items-center gap-1", children: [(0, jsx_runtime_1.jsx)(input_1.Input, { type: "number", className: "h-6 w-16 px-1 py-0 text-[10px]", value: minRoiPercent, onChange: handleMinRoiChange, placeholder: "0.0", min: "0", step: "0.5", "data-testid": "feed-filters-min-roi" }), (0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "%" })] })] })] }), hasActiveFilters && ((0, jsx_runtime_1.jsxs)("div", { className: "flex items-center justify-between gap-2 text-[10px] text-ot-foreground/60", children: [(0, jsx_runtime_1.jsx)("span", { children: "Active filters applied." }), (0, jsx_runtime_1.jsx)("button", { type: "button", className: "text-[10px] text-ot-accent hover:underline", onClick: () => resetFilters(), "data-testid": "feed-filters-reset", children: "Reset" })] }))] }));
+    return ((0, jsx_runtime_1.jsxs)("section", { className: "mb-2 space-y-2 border-b border-white/10 pb-2 text-[10px]", "aria-label": "Feed filters", children: [(0, jsx_runtime_1.jsxs)("div", { className: "flex items-center justify-between gap-2", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-foreground/60", children: "Filters" }), (0, jsx_runtime_1.jsxs)("span", { className: "text-[10px] text-ot-foreground/60", children: [filteredCount, " of ", totalCount, " shown"] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap gap-2", children: [(0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Region" }), ['AU', 'UK', 'IT', 'RO'].map((code) => renderFilterChip(code, regions.includes(code), () => handleToggleRegion(code), `feed-filters-region-${code}`))] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-wrap items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Sport" }), ['soccer', 'tennis'].map((sport) => renderFilterChip(sport === 'soccer' ? 'Soccer' : 'Tennis', sports.includes(sport), () => handleToggleSport(sport), `feed-filters-sport-${sport}`))] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-col gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Bookmaker" }), (0, jsx_runtime_1.jsx)(BookmakerFilterPopover_1.BookmakerFilterPopover, { availableBookmakers: availableBookmakers })] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-col gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Market" }), (0, jsx_runtime_1.jsx)(MarketFilterPopover_1.MarketFilterPopover, {})] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex items-center gap-1", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "Min ROI" }), (0, jsx_runtime_1.jsxs)("div", { className: "flex items-center gap-1", children: [(0, jsx_runtime_1.jsx)(input_1.Input, { type: "number", className: "h-6 w-16 px-1 py-0 text-[10px]", value: minRoiPercent, onChange: handleMinRoiChange, placeholder: "0.0", min: "0", step: "0.5", "data-testid": "feed-filters-min-roi" }), (0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/60", children: "%" })] })] })] }), hasActiveFilters && ((0, jsx_runtime_1.jsxs)("div", { className: "flex items-center justify-between gap-2 text-[10px] text-ot-foreground/60", children: [(0, jsx_runtime_1.jsx)("span", { children: "Active filters applied." }), (0, jsx_runtime_1.jsx)("button", { type: "button", className: "text-[10px] text-ot-accent hover:underline", onClick: () => resetFilters(), "data-testid": "feed-filters-reset", children: "Reset" })] }))] }));
 }
 function getProviderRecommendedAction(status) {
     switch (status) {
@@ -175,26 +163,7 @@ function FeedPane() {
     }, [refreshSnapshot]);
     const safeOpportunities = Array.isArray(opportunities) ? opportunities : [];
     const availableBookmakersForRegions = React.useMemo(() => {
-        const seen = new Set();
-        const result = [];
-        const hasRegionFilter = regions.length !== filters_1.ALL_REGION_CODES.length ||
-            !filters_1.ALL_REGION_CODES.every((code) => regions.includes(code));
-        for (const opportunity of safeOpportunities) {
-            const region = (0, filters_1.inferRegionFromOpportunity)(opportunity);
-            if (hasRegionFilter) {
-                if (!region || !regions.includes(region)) {
-                    continue;
-                }
-            }
-            for (const leg of opportunity.legs) {
-                const name = leg.bookmaker;
-                if (!seen.has(name)) {
-                    seen.add(name);
-                    result.push(name);
-                }
-            }
-        }
-        return result.sort((a, b) => a.localeCompare(b));
+        return (0, filters_1.getAvailableBookmakers)(safeOpportunities, regions);
     }, [safeOpportunities, regions]);
     const filteredOpportunities = React.useMemo(() => (0, filters_1.applyDashboardFilters)(safeOpportunities, {
         regions,

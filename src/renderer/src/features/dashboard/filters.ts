@@ -66,6 +66,12 @@ export interface DashboardFilterState {
    */
   bookmakers: string[]
   /**
+   * Internal persistence map for bookmaker selections per region combination.
+   * Key: Comma-separated sorted region codes.
+   * Value: Selected bookmakers for that region combination.
+   */
+  bookmakerSelections?: Record<string, string[]>
+  /**
    * Minimum ROI threshold as a decimal (e.g., 0.03 for 3%).
    */
   minRoi: number
@@ -84,31 +90,62 @@ export function inferRegionFromOpportunity(
     return null
   }
 
-  if (league.includes('serie a') || league.includes('serie b') || league.includes('coppa italia')) {
+  // Italy
+  if (
+    league.includes('serie a') ||
+    league.includes('serie b') ||
+    league.includes('coppa italia') ||
+    league.includes('supercoppa') ||
+    league.includes('italy')
+  ) {
     return 'IT'
   }
 
+  // UK
   if (
     league.includes('wimbledon') ||
     league.includes('premier league') ||
+    league.includes('epl') ||
     league.includes('championship') ||
-    league.includes('england')
+    league.includes('league one') ||
+    league.includes('league two') ||
+    league.includes('fa cup') ||
+    league.includes('efl cup') ||
+    league.includes('carabao cup') ||
+    league.includes('england') ||
+    league.includes('scotland') ||
+    league.includes('premiership') // Scottish Premiership often just 'Premiership'
   ) {
     return 'UK'
   }
 
-  if (league.includes('a-league') || league.includes('a league') || league.includes('australia')) {
+  // Australia
+  if (
+    league.includes('a-league') ||
+    league.includes('a league') ||
+    league.includes('ffa cup') ||
+    league.includes('australia')
+  ) {
     return 'AU'
   }
 
+  // Romania
   if (
     league.includes('liga i') ||
     league.includes('liga 1') ||
+    league.includes('cupa romaniei') ||
     league.includes('romania')
   ) {
     return 'RO'
   }
 
+  // Fallback: If no specific region detected, return null.
+  // BUT: logic in getAvailableBookmakers only skips if region IS detected and doesn't match.
+  // If region is null (unknown), stricter filtering might be safer, OR permissive?
+  // Current logic: `if (!region || !regions.includes(region))`
+  // This means Unknown regions are ALWAYS HIDDEN when filtering is active.
+  // This is safe but hides data.
+  // Let's keep it safe for now, as user explicitly selected "UK", "Italy" etc.
   return null
 }
 
@@ -275,5 +312,37 @@ export function applyDashboardFilters(
 
     return true
   })
+}
+
+export function getAvailableBookmakers(
+  opportunities: ArbitrageOpportunity[],
+  regions: RegionCode[]
+): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  const hasRegionFilter =
+    regions.length !== ALL_REGION_CODES.length ||
+    !ALL_REGION_CODES.every((code) => regions.includes(code))
+
+  for (const opportunity of opportunities) {
+    const region = inferRegionFromOpportunity(opportunity)
+
+    if (hasRegionFilter) {
+      if (!region || !regions.includes(region)) {
+        continue
+      }
+    }
+
+    for (const leg of opportunity.legs) {
+      const name = leg.bookmaker
+      if (!seen.has(name)) {
+        seen.add(name)
+        result.push(name)
+      }
+    }
+  }
+
+  return result.sort((a, b) => a.localeCompare(b))
 }
 

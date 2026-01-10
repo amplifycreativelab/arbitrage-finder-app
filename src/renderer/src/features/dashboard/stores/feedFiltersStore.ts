@@ -48,6 +48,7 @@ function getStorage(): StorageLike {
 const storage = createJSONStorage(() => getStorage())
 
 export interface FeedFiltersState extends DashboardFilterState {
+  bookmakerSelections: Record<string, string[]>
   setRegions: (regions: RegionCode[]) => void
   setSports: (sports: SportFilterValue[]) => void
   setMarkets: (markets: MarketFilterValue[]) => void
@@ -62,13 +63,18 @@ export interface FeedFiltersState extends DashboardFilterState {
   resetFilters: () => void
 }
 
-const defaultState: DashboardFilterState = {
+const defaultState = {
   regions: ALL_REGION_CODES,
   sports: ALL_SPORT_FILTERS,
   markets: ALL_MARKET_FILTERS,
   marketGroups: ALL_MARKET_GROUPS,
   bookmakers: [],
+  bookmakerSelections: {},
   minRoi: 0
+}
+
+const getRegionKey = (regions: RegionCode[]): string => {
+  return regions.slice().sort().join(',')
 }
 
 export const useFeedFiltersStore = create<FeedFiltersState>()(
@@ -76,8 +82,12 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
     (set, get) => ({
       ...defaultState,
       setRegions: (regions: RegionCode[]) => {
+        const { bookmakerSelections } = get()
+        const newKey = getRegionKey(regions)
+        const restoredBookmakers = bookmakerSelections[newKey] ?? []
         set({
-          regions: [...regions]
+          regions: [...regions],
+          bookmakers: restoredBookmakers
         })
       },
       setSports: (sports: SportFilterValue[]) => {
@@ -96,8 +106,14 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
         })
       },
       setBookmakers: (bookmakers: string[]) => {
+        const { regions, bookmakerSelections } = get()
+        const regionKey = getRegionKey(regions)
         set({
-          bookmakers: [...bookmakers]
+          bookmakers: [...bookmakers],
+          bookmakerSelections: {
+            ...bookmakerSelections,
+            [regionKey]: [...bookmakers]
+          }
         })
       },
       setMinRoi: (minRoi: number) => {
@@ -106,16 +122,19 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
         })
       },
       toggleRegion: (region: RegionCode) => {
-        const { regions } = get()
+        const { regions, bookmakerSelections } = get()
+        let newRegions: RegionCode[]
         if (regions.includes(region)) {
-          set({
-            regions: regions.filter((value) => value !== region)
-          })
+          newRegions = regions.filter((value) => value !== region)
         } else {
-          set({
-            regions: [...regions, region]
-          })
+          newRegions = [...regions, region]
         }
+        const newKey = getRegionKey(newRegions)
+        const restoredBookmakers = bookmakerSelections[newKey] ?? []
+        set({
+          regions: newRegions,
+          bookmakers: restoredBookmakers
+        })
       },
       toggleSport: (sport: SportFilterValue) => {
         const { sports } = get()
@@ -155,16 +174,21 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
         }
       },
       toggleBookmaker: (bookmaker: string) => {
-        const { bookmakers } = get()
+        const { bookmakers, regions, bookmakerSelections } = get()
+        let newBookmakers: string[]
         if (bookmakers.includes(bookmaker)) {
-          set({
-            bookmakers: bookmakers.filter((value) => value !== bookmaker)
-          })
+          newBookmakers = bookmakers.filter((value) => value !== bookmaker)
         } else {
-          set({
-            bookmakers: [...bookmakers, bookmaker]
-          })
+          newBookmakers = [...bookmakers, bookmaker]
         }
+        const regionKey = getRegionKey(regions)
+        set({
+          bookmakers: newBookmakers,
+          bookmakerSelections: {
+            ...bookmakerSelections,
+            [regionKey]: newBookmakers
+          }
+        })
       },
       resetFilters: () => {
         set({
@@ -181,6 +205,7 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
         markets: state.markets,
         marketGroups: state.marketGroups,
         bookmakers: state.bookmakers,
+        bookmakerSelections: state.bookmakerSelections,
         minRoi: state.minRoi
       })
     }

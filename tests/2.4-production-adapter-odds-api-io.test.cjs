@@ -230,9 +230,10 @@ test('[P1][2.4-FILTERS-PIPELINE-001] poller + production adapter + filters honor
     };
 
     poller.registerAdapters([new OddsApiIoAdapter()]);
-    poller.notifyActiveProviderChanged('odds-api-io');
+    poller.notifyEnabledProvidersChanged(['odds-api-io']);
 
-    const polled = await poller.pollOnceForActiveProvider();
+    await poller.pollOnceForEnabledProviders();
+    const polled = poller.getLatestSnapshotForProvider('odds-api-io').opportunities;
     const normalized = arbitrageOpportunityListSchema.parse(polled);
 
     const inferredRegion = (opportunity) => {

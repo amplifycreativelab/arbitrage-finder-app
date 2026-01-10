@@ -3,15 +3,17 @@ import * as React from 'react'
 import { useFeedStore } from './stores/feedStore'
 import { FeedTable } from './FeedTable'
 import {
-  ALL_MARKET_FILTERS,
+  ALL_MARKET_GROUPS,
   ALL_REGION_CODES,
   ALL_SPORT_FILTERS,
   applyDashboardFilters,
-  inferRegionFromOpportunity
+  getAvailableBookmakers
 } from './filters'
 import { useFeedFiltersStore } from './stores/feedFiltersStore'
 import { useStalenessTicker } from './useStalenessTicker'
-import type { MarketFilterValue, SportFilterValue } from './filters'
+import { MarketFilterPopover } from './MarketFilterPopover'
+import { BookmakerFilterPopover } from './BookmakerFilterPopover'
+import type { SportFilterValue } from './filters'
 import type { RegionCode } from '../../../../../shared/filters'
 import type {
   DashboardStatusSnapshot,
@@ -54,18 +56,17 @@ function FeedFilters({
   const {
     regions,
     sports,
-    markets,
+    marketGroups,
     bookmakers,
     minRoi,
     toggleRegion,
     toggleSport,
-    toggleMarket,
-    toggleBookmaker,
     setMinRoi,
     resetFilters
   } = filterState
 
   const hasActiveRoi = minRoi > 0
+
   const hasNonDefaultRegions =
     regions.length !== ALL_REGION_CODES.length ||
     !ALL_REGION_CODES.every((code) => regions.includes(code))
@@ -73,8 +74,8 @@ function FeedFilters({
     sports.length !== ALL_SPORT_FILTERS.length ||
     !ALL_SPORT_FILTERS.every((sport) => sports.includes(sport))
   const hasNonDefaultMarkets =
-    markets.length !== ALL_MARKET_FILTERS.length ||
-    !ALL_MARKET_FILTERS.every((market) => markets.includes(market))
+    (marketGroups?.length ?? ALL_MARKET_GROUPS.length) !== ALL_MARKET_GROUPS.length ||
+    !(marketGroups ?? ALL_MARKET_GROUPS).every((group) => ALL_MARKET_GROUPS.includes(group))
   const hasBookmakerFilters = Array.isArray(bookmakers) && bookmakers.length > 0
 
   const hasActiveFilters =
@@ -90,14 +91,6 @@ function FeedFilters({
 
   const handleToggleSport = (sport: SportFilterValue): void => {
     toggleSport(sport)
-  }
-
-  const handleToggleMarket = (market: MarketFilterValue): void => {
-    toggleMarket(market)
-  }
-
-  const handleToggleBookmaker = (bookmaker: string): void => {
-    toggleBookmaker(bookmaker)
   }
 
   const handleMinRoiChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
@@ -184,38 +177,14 @@ function FeedFilters({
           )}
         </div>
 
-        {availableBookmakers.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1">
-            <span className="text-[10px] text-ot-foreground/60">Bookmaker</span>
-            {availableBookmakers.map((name) =>
-              renderFilterChip(
-                name,
-                bookmakers.includes(name),
-                () => handleToggleBookmaker(name),
-                `feed-filters-bookmaker-${name.replace(/[^a-zA-Z0-9]/g, '_')}`
-              )
-            )}
-          </div>
-        )}
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] text-ot-foreground/60">Bookmaker</span>
+          <BookmakerFilterPopover availableBookmakers={availableBookmakers} />
+        </div>
 
-        <div className="flex flex-wrap items-center gap-1">
+        <div className="flex flex-col gap-1">
           <span className="text-[10px] text-ot-foreground/60">Market</span>
-          {(['moneyline', 'draw-no-bet', 'totals', 'btts', 'handicap'] as MarketFilterValue[]).map((market) =>
-            renderFilterChip(
-              market === 'moneyline'
-                ? 'Moneyline'
-                : market === 'draw-no-bet'
-                  ? 'Draw No Bet'
-                  : market === 'totals'
-                    ? 'Totals'
-                    : market === 'btts'
-                      ? 'BTTS'
-                      : 'Handicap',
-              markets.includes(market),
-              () => handleToggleMarket(market),
-              `feed-filters-market-${market}`
-            )
-          )}
+          <MarketFilterPopover />
         </div>
 
         <div className="flex items-center gap-1">
@@ -372,32 +341,7 @@ function FeedPane(): React.JSX.Element {
   const safeOpportunities = Array.isArray(opportunities) ? opportunities : []
 
   const availableBookmakersForRegions = React.useMemo(() => {
-    const seen = new Set<string>()
-    const result: string[] = []
-
-    const hasRegionFilter =
-      regions.length !== ALL_REGION_CODES.length ||
-      !ALL_REGION_CODES.every((code) => regions.includes(code))
-
-    for (const opportunity of safeOpportunities) {
-      const region = inferRegionFromOpportunity(opportunity)
-
-      if (hasRegionFilter) {
-        if (!region || !regions.includes(region)) {
-          continue
-        }
-      }
-
-      for (const leg of opportunity.legs) {
-        const name = leg.bookmaker
-        if (!seen.has(name)) {
-          seen.add(name)
-          result.push(name)
-        }
-      }
-    }
-
-    return result.sort((a, b) => a.localeCompare(b))
+    return getAvailableBookmakers(safeOpportunities, regions)
   }, [safeOpportunities, regions])
 
   const filteredOpportunities = React.useMemo(

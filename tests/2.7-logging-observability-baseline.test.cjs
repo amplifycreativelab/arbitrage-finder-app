@@ -171,13 +171,9 @@ test('[P0][2.7-LOG-REDACTION-002] adapter and poller logs never include API keys
 
     poller.registerAdapters([new OddsApiIoAdapter(), new TheOddsApiAdapter()]);
 
-    // Exercise Odds-API.io
-    poller.notifyActiveProviderChanged('odds-api-io');
-    await poller.pollOnceForActiveProvider();
-
-    // Exercise The-Odds-API.com
-    poller.notifyActiveProviderChanged('the-odds-api');
-    await poller.pollOnceForActiveProvider();
+    // Exercise both providers in multi-provider mode
+    poller.notifyEnabledProvidersChanged(['odds-api-io', 'the-odds-api']);
+    await poller.pollOnceForEnabledProviders();
 
     const serialized = entries.map((e) => JSON.stringify(e));
 
