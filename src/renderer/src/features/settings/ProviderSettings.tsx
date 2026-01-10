@@ -52,8 +52,8 @@ function ProviderCard({
   return (
     <div
       className={`rounded-md border p-3 transition-colors ${enabled
-        ? 'border-ot-accent/60 bg-black/50'
-        : 'border-ot-foreground/20 bg-black/30'
+        ? 'border-ot-accent/60 bg-ot-surface'
+        : 'border-ot-border bg-ot-surface'
         }`}
       data-testid={`provider-card-${provider.id}`}
     >
@@ -66,7 +66,7 @@ function ProviderCard({
             role="switch"
             aria-checked={enabled}
             onClick={() => onToggle(!enabled)}
-            className={`relative h-5 w-9 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ot-accent/50 ${enabled ? 'bg-ot-accent' : 'bg-ot-foreground/30'
+            className={`relative h-5 w-9 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ot-accent/50 ${enabled ? 'bg-ot-accent' : 'bg-ot-muted/30'
               }`}
             data-testid={`provider-toggle-${provider.id}`}
           >
@@ -80,7 +80,7 @@ function ProviderCard({
             <span className="text-sm font-medium text-ot-foreground">
               {provider.displayName}
             </span>
-            <span className="ml-2 text-[10px] text-ot-foreground/50">
+            <span className="ml-2 text-[10px] text-ot-muted">
               ({provider.kind})
             </span>
           </div>
@@ -374,14 +374,14 @@ function ProviderSettings(): React.JSX.Element {
   const enabledCount = Object.values(providers).filter((p) => p.enabled).length
 
   return (
-    <section className="mt-4 space-y-4 rounded-md border border-ot-accent/40 bg-black/40 p-4">
+    <section className="mt-4 space-y-4 rounded-md border border-ot-accent/40 bg-ot-background p-4">
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div>
           <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-ot-accent">
             Provider Configuration
           </h2>
-          <p className="mt-1 text-[11px] text-ot-foreground/70">
+          <p className="mt-1 text-[11px] text-ot-muted">
             Enable providers and configure API keys for multi-source arbitrage detection.
           </p>
         </div>
@@ -439,7 +439,7 @@ function ProviderSettings(): React.JSX.Element {
       </div>
 
       {/* Help text */}
-      <p className="text-[10px] text-ot-foreground/50">
+      <p className="text-[10px] text-ot-muted/70">
         Keys are stored per provider using secure OS storage and never logged or exposed.
       </p>
     </section>

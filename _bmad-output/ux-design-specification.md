@@ -114,3 +114,30 @@ The app is designed to be used 100% without a mouse.
 ## 7. Implementation Notes
 * **No Browser Integration:** The app strictly generates text. No deep links to bookmakers are required in the primary view.
 * **Local Logic:** The "Staleness" check must run locally on a timer (e.g., every 30s) to update row opacity without re-fetching API data.
+
+---
+
+## 8. Design System Update: "Swiss Clarity" (January 2026)
+
+### 8.1 Aesthetic Pivot
+Detailed analysis revealed a preference for a cleaner, high-contrast, professional "financial instrument" look over the previous "dark terminal" aesthetic.
+*   **Theme:** **Ultra Light (Pure White).**
+*   **Philosophy:** "Radical Simplification." Removal of heavy containment backgrounds in favor of whitespace and crisp borders.
+
+### 8.2 The "Swiss Clarity" Palette
+A semantic, CSS-variable driven color system replacing hardcoded values.
+
+| Token | Previous (Dark) | **New (Swiss Light)** | Usage |
+| :--- | :--- | :--- | :--- |
+| `ot-background` | `#0F172A` (Slate 900) | **`#FFFFFF` (Pure White)** | Main application canvas. |
+| `ot-surface` | `#1E293B` (Slate 800) | **`#FFFFFF` (Pure White)** | Cards, Panels, Settings (Clean look). |
+| `ot-border` | `white/10` | **`#E2E8F0` (Slate 200)** | Structural definition. |
+| `ot-foreground` | `#F8FAFC` (Slate 50) | **`#0F172A` (Slate 900)** | Primary text opacity 100%. |
+| `ot-muted` | `#64748B` (Slate 500) | **`#475569` (Slate 600)** | Secondary text (Darkened for AAA accessibility). |
+| `ot-accent` | `#F97316` (Orange 500) | **`#EA580C` (Orange 600)** | Primary actions (Darkened for contrast). |
+
+### 8.3 Accessibility & Legibility Improvements
+*   **Contrast Boost:** Increased contrast on "Muted" text (from Slate 500 to Slate 600) to ensure readability on white backgrounds.
+*   **Input Fields:** Transformed from "Black Boxes" to transparent, bordered fields that integrate naturally with the white canvas.
+*   **Badges:** Status badges refactored to use `ot-surface` backgrounds + `ot-border`, eliminating "dark grey patches" on the white UI.
+*   **Code Preview:** Switched Signal Preview payload text to `ot-foreground` (Slate 900) with `font-medium` weight for maximum legibility.

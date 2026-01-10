@@ -138,7 +138,7 @@ function StatusBar({ stalenessNow, statusSnapshot, fetchedAt }: StatusBarProps):
         {providers.map((provider) => (
           <span
             key={provider.providerId}
-            className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-black/20 px-2 py-[1px] text-[9px] text-ot-foreground/70"
+            className="inline-flex items-center gap-1 rounded-full border border-ot-border bg-ot-surface px-2 py-[1px] text-[9px] text-ot-muted"
           >
             <span className="font-medium">{provider.displayName}</span>
             <span

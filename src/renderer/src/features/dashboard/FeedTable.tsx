@@ -207,12 +207,12 @@ export function FeedTable({
       data-testid="feed-table"
       data-virtualized={virtualizationEnabled ? 'true' : 'false'}
     >
-      <div className="mb-2 flex items-center border-b border-white/10 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-foreground/60">
+      <div className="mb-2 flex items-center border-b border-ot-border pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-muted">
         <button
           type="button"
           className={cn(
             'mr-3 flex items-center gap-1 text-left',
-            sortBy === 'time' ? 'text-ot-foreground' : 'text-ot-foreground/70'
+            sortBy === 'time' ? 'text-ot-foreground' : 'text-ot-muted'
           )}
           aria-label="Sort by time"
           aria-sort={getAriaSort(sortBy, 'time', sortDirection)}
@@ -226,7 +226,7 @@ export function FeedTable({
           type="button"
           className={cn(
             'mr-3 flex flex-1 items-center gap-1 text-left',
-            sortBy === 'time' ? 'text-ot-foreground' : 'text-ot-foreground/70'
+            sortBy === 'time' ? 'text-ot-foreground' : 'text-ot-muted'
           )}
           aria-disabled="true"
           data-testid="feed-header-event"
@@ -237,7 +237,7 @@ export function FeedTable({
           type="button"
           className={cn(
             'ml-auto flex items-center gap-1 text-right',
-            sortBy === 'roi' ? 'text-ot-foreground' : 'text-ot-foreground/70'
+            sortBy === 'roi' ? 'text-ot-foreground' : 'text-ot-muted'
           )}
           aria-label="Sort by ROI"
           aria-sort={getAriaSort(sortBy, 'roi', sortDirection)}
@@ -263,7 +263,7 @@ export function FeedTable({
         onScroll={handleScroll}
       >
         {totalCount === 0 && (
-          <div className="flex h-full items-center justify-center text-[11px] text-ot-foreground/50">
+          <div className="flex h-full items-center justify-center text-[11px] text-ot-muted">
             No opportunities yet. Configure a provider to start the feed.
           </div>
         )}
@@ -384,9 +384,9 @@ function FeedRow({
     <div
       id={`feed-row-${opportunity.id}`}
       className={cn(
-        'flex cursor-pointer items-center justify-between border-b border-white/5 py-1.5 text-[11px]',
+        'flex cursor-pointer items-center justify-between border-b border-ot-border py-1.5 text-[11px]',
         isStale || isProcessed ? 'opacity-50' : '',
-        isSelected ? 'bg-ot-accent/10' : 'hover:bg-white/5'
+        isSelected ? 'bg-ot-accent/10' : 'hover:bg-black/5'
       )}
       data-testid="feed-row"
       data-staleness={isStale ? 'stale' : 'fresh'}
@@ -400,7 +400,7 @@ function FeedRow({
       aria-selected={isSelected ? 'true' : 'false'}
     >
       <div
-        className="w-[72px] shrink-0 text-ot-foreground/70"
+        className="w-[72px] shrink-0 text-ot-muted font-medium"
         data-testid="feed-cell-time"
       >
         {combinedTimeLabel}

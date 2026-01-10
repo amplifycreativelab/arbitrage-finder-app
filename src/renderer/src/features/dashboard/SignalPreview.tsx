@@ -59,7 +59,7 @@ function SignalPreview({
   if (!effectiveOpportunity) {
     return (
       <div
-        className="flex h-full items-center justify-center text-[11px] text-ot-foreground/60"
+        className="flex h-full items-center justify-center text-[11px] text-ot-muted"
         data-testid="signal-preview-empty"
       >
         Select an opportunity from the feed to see its signal preview.
@@ -110,7 +110,7 @@ function SignalPreview({
       data-testid="signal-preview"
       data-opportunity-id={effectiveOpportunity.id}
     >
-      <div className="mb-2 flex items-center justify-between text-[10px] text-ot-foreground/60">
+      <div className="mb-2 flex items-center justify-between text-[10px] text-ot-muted">
         <span>
           {effectiveOpportunity.isCrossProvider ? (
             <span className="text-violet-300 font-medium">
@@ -148,8 +148,8 @@ function SignalPreview({
         </Button>
       </div>
 
-      <div className="flex-1 overflow-auto rounded-md border border-white/10 bg-black/80 p-3">
-        <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-snug">
+      <div className="flex-1 overflow-auto rounded-md border border-ot-border p-3">
+        <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-ot-foreground font-medium">
           {payload}
         </pre>
       </div>

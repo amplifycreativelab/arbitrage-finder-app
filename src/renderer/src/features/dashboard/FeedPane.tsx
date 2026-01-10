@@ -126,8 +126,8 @@ function FeedFilters({
         className={cn(
           'rounded-full border px-2 py-[2px] text-[9px] font-medium',
           active
-            ? 'border-ot-accent bg-ot-accent/20 text-ot-accent'
-            : 'border-white/20 text-ot-foreground/60 hover:border-ot-accent/60 hover:text-ot-accent'
+            ? 'border-ot-accent bg-ot-accent/10 text-ot-accent'
+            : 'border-ot-border text-ot-muted hover:border-ot-accent/60 hover:text-ot-accent'
         )}
         data-testid={testId}
         aria-pressed={active ? 'true' : 'false'}
@@ -140,21 +140,21 @@ function FeedFilters({
 
   return (
     <section
-      className="mb-2 space-y-2 border-b border-white/10 pb-2 text-[10px]"
+      className="mb-2 space-y-2 border-b border-ot-border pb-2 text-[10px]"
       aria-label="Feed filters"
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-foreground/60">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-muted">
           Filters
         </span>
-        <span className="text-[10px] text-ot-foreground/60">
+        <span className="text-[10px] text-ot-muted">
           {filteredCount} of {totalCount} shown
         </span>
       </div>
 
       <div className="flex flex-wrap gap-2">
         <div className="flex flex-wrap items-center gap-1">
-          <span className="text-[10px] text-ot-foreground/60">Region</span>
+          <span className="text-[10px] text-ot-muted">Region</span>
           {(['AU', 'UK', 'IT', 'RO'] as RegionCode[]).map((code) =>
             renderFilterChip(
               code,
@@ -166,7 +166,7 @@ function FeedFilters({
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
-          <span className="text-[10px] text-ot-foreground/60">Sport</span>
+          <span className="text-[10px] text-ot-muted">Sport</span>
           {(['soccer', 'tennis'] as SportFilterValue[]).map((sport) =>
             renderFilterChip(
               sport === 'soccer' ? 'Soccer' : 'Tennis',
@@ -178,17 +178,17 @@ function FeedFilters({
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-[10px] text-ot-foreground/60">Bookmaker</span>
+          <span className="text-[10px] text-ot-muted">Bookmaker</span>
           <BookmakerFilterPopover availableBookmakers={availableBookmakers} />
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-[10px] text-ot-foreground/60">Market</span>
+          <span className="text-[10px] text-ot-muted">Market</span>
           <MarketFilterPopover />
         </div>
 
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-ot-foreground/60">Min ROI</span>
+          <span className="text-[10px] text-ot-muted">Min ROI</span>
           <div className="flex items-center gap-1">
             <Input
               type="number"
@@ -200,13 +200,13 @@ function FeedFilters({
               step="0.5"
               data-testid="feed-filters-min-roi"
             />
-            <span className="text-[10px] text-ot-foreground/60">%</span>
+            <span className="text-[10px] text-ot-muted">%</span>
           </div>
         </div>
       </div>
 
       {hasActiveFilters && (
-        <div className="flex items-center justify-between gap-2 text-[10px] text-ot-foreground/60">
+        <div className="flex items-center justify-between gap-2 text-[10px] text-ot-muted">
           <span>Active filters applied.</span>
           <button
             type="button"
@@ -395,7 +395,7 @@ function FeedPane(): React.JSX.Element {
   } else if (isLoading && !hasUnderlyingData) {
     content = (
       <div
-        className="flex h-full items-center justify-center text-[11px] text-ot-foreground/60"
+        className="flex h-full items-center justify-center text-[11px] text-ot-muted"
         role="status"
         data-testid="feed-loading"
       >
@@ -405,7 +405,7 @@ function FeedPane(): React.JSX.Element {
   } else if (hasUnderlyingData && filteredCount === 0) {
     content = (
       <div
-        className="flex h-full items-center justify-center text-[11px] text-ot-foreground/60"
+        className="flex h-full items-center justify-center text-[11px] text-ot-muted"
         data-testid="feed-empty-filters"
       >
         No opportunities match the current filters.
@@ -440,12 +440,12 @@ function FeedPane(): React.JSX.Element {
 
       content = (
         <div
-          className="flex h-full flex-col items-center justify-center space-y-1 text-center text-[11px] text-ot-foreground/60"
+          className="flex h-full flex-col items-center justify-center space-y-1 text-center text-[11px] text-ot-muted"
           data-testid="feed-empty-healthy"
         >
           <p>No current surebets. System and providers are healthy.</p>
           {lastUpdatedLabel && (
-            <p className="text-[10px] text-ot-foreground/50">Last update {lastUpdatedLabel}.</p>
+            <p className="text-[10px] text-ot-muted/70">Last update {lastUpdatedLabel}.</p>
           )}
         </div>
       )

@@ -4,7 +4,16 @@
 
 @layer base {
   :root {
-    color-scheme: dark;
+    color-scheme: light;
+
+    /* Swiss Clarity - Ultra Light Theme */
+    --ot-background: #FFFFFF;
+    --ot-surface: #FFFFFF;
+    --ot-border: #E2E8F0;
+    --ot-foreground: #0F172A;
+    --ot-muted: #475569;
+    --ot-accent: #EA580C;
+    --ot-accent-foreground: #FFFFFF;
   }
 
   body {

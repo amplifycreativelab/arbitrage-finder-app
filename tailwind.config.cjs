@@ -7,9 +7,13 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        'ot-background': '#0F172A',
-        'ot-foreground': '#F8FAFC',
-        'ot-accent': '#F97316',
+        'ot-background': 'var(--ot-background)',
+        'ot-surface': 'var(--ot-surface)',
+        'ot-border': 'var(--ot-border)',
+        'ot-foreground': 'var(--ot-foreground)',
+        'ot-muted': 'var(--ot-muted)',
+        'ot-accent': 'var(--ot-accent)',
+        'ot-accent-foreground': 'var(--ot-accent-foreground)',
       },
       fontFamily: {
         mono: [
