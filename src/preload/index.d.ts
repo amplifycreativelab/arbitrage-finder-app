@@ -23,11 +23,16 @@ export interface CredentialsAPI {
   getAllProvidersStatus: () => Promise<ProviderStatusInfo[]>
 }
 
+export interface FeedAPI {
+  runManualFetch: () => Promise<void>
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
     api: {
       credentials: CredentialsAPI
+      feed: FeedAPI
     }
   }
 }

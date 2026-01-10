@@ -7,6 +7,9 @@ import {
   type ProviderId,
   type ProviderMetadata
 } from '../../../../../shared/types'
+import { useFeedStore } from '../dashboard/stores/feedStore'
+import { useAppSettingsStore } from './stores/appSettingsStore'
+import { Select } from '../../components/ui/select'
 
 // ============================================================
 // Types
@@ -182,6 +185,7 @@ function ProviderSettings(): React.JSX.Element {
   const [isFallbackActive, setIsFallbackActive] = React.useState(false)
   const [showFallbackWarning, setShowFallbackWarning] = React.useState(false)
   const [globalMessage, setGlobalMessage] = React.useState<string | null>(null)
+  const [isFetching, setIsFetching] = React.useState(false)
 
   const credentialsApi = React.useMemo(() => window.api?.credentials ?? null, [])
 
@@ -370,6 +374,25 @@ function ProviderSettings(): React.JSX.Element {
     }
   }, [credentialsApi])
 
+  // Handler: manual fetch
+  const refreshSnapshot = useFeedStore((state) => state.refreshSnapshot)
+
+  const handleManualFetch = React.useCallback(async (): Promise<void> => {
+    setIsFetching(true)
+    setGlobalMessage(null)
+
+    try {
+      await refreshSnapshot()
+      setGlobalMessage("Manual fetch triggered. Check your provider dashboard for usage.")
+      // Clear message after 5 seconds
+      setTimeout(() => setGlobalMessage(null), 5000)
+    } catch {
+      setGlobalMessage("Failed to trigger manual fetch.")
+    } finally {
+      setIsFetching(false)
+    }
+  }, [refreshSnapshot])
+
   // Count enabled providers
   const enabledCount = Object.values(providers).filter((p) => p.enabled).length
 
@@ -442,6 +465,62 @@ function ProviderSettings(): React.JSX.Element {
       <p className="text-[10px] text-ot-muted/70">
         Keys are stored per provider using secure OS storage and never logged or exposed.
       </p>
+
+      {/* Diagnostics */}
+      <div className="border-t border-ot-border/40 pt-3 space-y-3">
+        {/* Auto Refresh Toggle */}
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col">
+            <span className="text-[10px] text-ot-muted">Auto-Refresh</span>
+            <span className="text-[9px] text-ot-muted/60">Poll for new opportunities automatically</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select
+              value={useAppSettingsStore((s) => s.refreshIntervalMs.toString())}
+              onChange={(e) => useAppSettingsStore.getState().setRefreshIntervalMs(Number(e.target.value))}
+              disabled={!useAppSettingsStore((s) => s.autoRefreshEnabled)}
+              className="w-24 h-6 py-0 px-2"
+            >
+              <option value="15000">15s</option>
+              <option value="30000">30s</option>
+              <option value="60000">1m</option>
+              <option value="300000">5m</option>
+            </Select>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={useAppSettingsStore((s) => s.autoRefreshEnabled)}
+              onClick={() => {
+                const s = useAppSettingsStore.getState()
+                s.setAutoRefreshEnabled(!s.autoRefreshEnabled)
+              }}
+              className={`relative h-5 w-9 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ot-accent/50 ${useAppSettingsStore((s) => s.autoRefreshEnabled) ? 'bg-ot-accent' : 'bg-ot-muted/30'
+                }`}
+            >
+              <span
+                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${useAppSettingsStore((s) => s.autoRefreshEnabled) ? 'left-[18px]' : 'left-0.5'
+                  }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* Manual Fetch */}
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-ot-muted">
+            Manual Controls
+          </span>
+          <Button
+            type="button"
+            onClick={() => void handleManualFetch()}
+            disabled={isFetching || enabledCount === 0}
+            className="h-6 px-3 text-[10px] bg-ot-surface border border-ot-border hover:bg-ot-muted/20 text-ot-foreground"
+          >
+            {isFetching ? 'Fetching...' : 'Trigger Manual Fetch'}
+          </Button>
+        </div>
+      </div>
     </section>
   )
 }

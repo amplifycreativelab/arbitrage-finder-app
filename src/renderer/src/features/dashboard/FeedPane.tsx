@@ -11,6 +11,7 @@ import {
 } from './filters'
 import { useFeedFiltersStore } from './stores/feedFiltersStore'
 import { useStalenessTicker } from './useStalenessTicker'
+import { useAutoRefresh } from './hooks/useAutoRefresh'
 import { MarketFilterPopover } from './MarketFilterPopover'
 import { BookmakerFilterPopover } from './BookmakerFilterPopover'
 import type { SportFilterValue } from './filters'
@@ -306,6 +307,9 @@ function FeedPane(): React.JSX.Element {
     (state) => state.syncSelectionWithVisibleIds
   )
 
+  // Enable auto-refresh polling
+  useAutoRefresh()
+
   React.useEffect(() => {
     const unsubscribe = useFeedStore.subscribe((nextState) => {
       setFeedState(nextState)
@@ -408,7 +412,16 @@ function FeedPane(): React.JSX.Element {
         className="flex h-full items-center justify-center text-[11px] text-ot-muted"
         data-testid="feed-empty-filters"
       >
-        No opportunities match the current filters.
+        <div className="flex flex-col items-center gap-2">
+          <p>No opportunities match the current filters.</p>
+          <button
+            type="button"
+            className="text-[10px] text-ot-accent hover:underline"
+            onClick={() => useFeedFiltersStore.getState().resetFilters()}
+          >
+            Reset Filters
+          </button>
+        </div>
       </div>
     )
   } else if (noUnderlyingData) {

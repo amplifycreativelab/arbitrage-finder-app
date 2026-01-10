@@ -1,11 +1,8 @@
 import Versions from './components/Versions'
-import { Button } from './components/ui/button'
 import DashboardLayout from './features/dashboard/DashboardLayout'
 import electronLogo from './assets/electron.svg'
 
 function App(): React.JSX.Element {
-  const handlePing = (): void => window.electron.ipcRenderer.send('ping')
-
   return (
     <div className="flex min-h-screen flex-col bg-ot-background text-ot-foreground">
       <header className="border-b border-ot-border bg-ot-surface/50">
@@ -23,9 +20,6 @@ function App(): React.JSX.Element {
               </div>
             </div>
           </div>
-          <Button className="hidden text-[11px] sm:inline-flex" onClick={handlePing}>
-            Ping main process
-          </Button>
         </div>
       </header>
 

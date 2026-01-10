@@ -160,6 +160,8 @@ function migrateToMultiProvider(): void {
 - Redesigned ProviderSettings UI with per-provider cards and toggles
 - Updated FeedStore and FeedTable to handle multi-provider data and display source badges
 - Added comprehensive tests covering storage, poller, and hot reconfiguration
+- **Fix (2026-01-10):** Connected Manual Fetch button in ProviderSettings directly to feedStore to ensure dashboard updates immediately (resolved data visibility disconnect).
+- **Feat (2026-01-10):** Added Auto-Refresh configuration (Toggle & Interval) to ProviderSettings, persisted via `appSettingsStore` and hooked into `FeedPane`.
 
 ### File List
 - src/main/services/storage.ts
@@ -174,3 +176,5 @@ function migrateToMultiProvider(): void {
 - shared/types.ts
 - shared/schemas.ts
 - tests/5-1-multi-provider-configuration.test.cjs
+- src/renderer/src/features/settings/stores/appSettingsStore.ts
+- src/renderer/src/features/dashboard/hooks/useAutoRefresh.ts

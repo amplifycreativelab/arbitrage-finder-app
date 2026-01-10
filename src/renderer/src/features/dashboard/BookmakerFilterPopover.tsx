@@ -6,7 +6,6 @@ import {
     CommandInput
 } from '../../components/ui/command'
 import { Checkbox } from '../../components/ui/checkbox'
-import { Badge } from '../../components/ui/badge'
 import { cn } from '../../lib/utils'
 import { useFeedFiltersStore } from './stores/feedFiltersStore'
 
@@ -147,13 +146,7 @@ export function BookmakerFilterPopover({ availableBookmakers }: BookmakerFilterP
         return selectedBookmakers.includes(bookmaker)
     }
 
-    // Visual text for chips
-    const MAX_VISIBLE_CHIPS = 3
-    const visibleBookmakers = isExplicitlyEmpty
-        ? []
-        : selectedBookmakers.filter(b => availableBookmakers.includes(b)).slice(0, MAX_VISIBLE_CHIPS)
 
-    const hiddenCount = Math.max(0, selectedBookmakers.length - MAX_VISIBLE_CHIPS)
 
     const getSummaryText = (): string => {
         if (isExplicitlyEmpty) {
@@ -175,10 +168,10 @@ export function BookmakerFilterPopover({ availableBookmakers }: BookmakerFilterP
                         disabled={availableBookmakers.length === 0}
                         className={cn(
                             'flex h-7 w-full items-center justify-between rounded-md border px-2 py-1 text-[10px]',
-                            'border-white/20 bg-transparent text-ot-foreground/80',
+                            'border-ot-border bg-transparent text-ot-foreground/80',
                             'hover:border-ot-accent/60 hover:text-ot-accent',
                             'focus:outline-none focus:ring-1 focus:ring-ot-accent',
-                            'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-white/20 disabled:hover:text-ot-foreground/80',
+                            'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-ot-border disabled:hover:text-ot-foreground/80',
                             open && 'border-ot-accent text-ot-accent'
                         )}
                         data-testid="bookmaker-filter-trigger"
@@ -231,7 +224,7 @@ export function BookmakerFilterPopover({ availableBookmakers }: BookmakerFilterP
                         />
 
                         {/* Bulk Actions */}
-                        <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                        <div className="flex items-center justify-between border-b border-ot-border px-3 py-2">
                             <span className="text-[10px] font-medium text-ot-foreground/60">
                                 {isExplicitlyEmpty ? 'All' : selectedBookmakers.length} of {availableBookmakers.length} selected
                             </span>
@@ -272,7 +265,7 @@ export function BookmakerFilterPopover({ availableBookmakers }: BookmakerFilterP
 
                             {filteredBookmakers.map((bookmaker: string, index: number) => (
                                 <React.Fragment key={bookmaker}>
-                                    {index > 0 && <div className="-mx-1 h-px bg-white/10" />}
+                                    {index > 0 && <div className="-mx-1 h-px bg-ot-border" />}
                                     <button
                                         type="button"
                                         role="option"
@@ -303,50 +296,6 @@ export function BookmakerFilterPopover({ availableBookmakers }: BookmakerFilterP
                 </PopoverContent>
             </Popover>
 
-            {/* Selected Chips Display */}
-            {!isExplicitlyEmpty && (
-                <div className="flex flex-wrap items-center gap-1" data-testid="bookmaker-filter-chips">
-                    {visibleBookmakers.map((bookmaker) => (
-                        <Badge
-                            key={bookmaker}
-                            variant="accent"
-                            className="flex items-center gap-1 px-1.5 py-0 text-[9px]"
-                        >
-                            {bookmaker}
-                            <button
-                                type="button"
-                                className="ml-0.5 rounded-full hover:bg-white/10"
-                                onClick={() => handleToggleBookmaker(bookmaker)}
-                                aria-label={`Remove ${bookmaker} filter`}
-                            >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    className="h-2.5 w-2.5"
-                                >
-                                    <path d="M18 6 6 18" />
-                                    <path d="m6 6 12 12" />
-                                </svg>
-                            </button>
-                        </Badge>
-                    ))}
-                    {hiddenCount > 0 && (
-                        <button
-                            type="button"
-                            className="text-[9px] text-ot-accent hover:underline"
-                            onClick={() => setOpen(true)}
-                            data-testid="bookmaker-filter-show-more"
-                        >
-                            +{hiddenCount} more
-                        </button>
-                    )}
-                </div>
-            )}
         </div>
     )
 }

@@ -6,7 +6,6 @@ import {
     CommandInput
 } from '../../components/ui/command'
 import { Checkbox } from '../../components/ui/checkbox'
-import { Badge } from '../../components/ui/badge'
 import { cn } from '../../lib/utils'
 import { useFeedFiltersStore } from './stores/feedFiltersStore'
 import { ALL_MARKET_GROUPS, type MarketGroup } from './filters'
@@ -71,13 +70,7 @@ export function MarketFilterPopover(): React.JSX.Element {
         return marketGroups.includes(group)
     }
 
-    // Get display chips for selected groups (max 3 visible)
-    const MAX_VISIBLE_CHIPS = 3
-    const visibleGroups = MARKET_GROUP_DISPLAYS.filter((d) => marketGroups.includes(d.group)).slice(
-        0,
-        MAX_VISIBLE_CHIPS
-    )
-    const hiddenCount = Math.max(0, selectedCount - MAX_VISIBLE_CHIPS)
+
 
     // Summary text for trigger
     const getSummaryText = (): string => {
@@ -102,7 +95,7 @@ export function MarketFilterPopover(): React.JSX.Element {
                         aria-label="Select market groups"
                         className={cn(
                             'flex h-7 w-full items-center justify-between rounded-md border px-2 py-1 text-[10px]',
-                            'border-white/20 bg-transparent text-ot-foreground/80',
+                            'border-ot-border bg-transparent text-ot-foreground/80',
                             'hover:border-ot-accent/60 hover:text-ot-accent',
                             'focus:outline-none focus:ring-1 focus:ring-ot-accent',
                             open && 'border-ot-accent text-ot-accent'
@@ -156,7 +149,7 @@ export function MarketFilterPopover(): React.JSX.Element {
                         />
 
                         {/* Bulk Actions */}
-                        <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                        <div className="flex items-center justify-between border-b border-ot-border px-3 py-2">
                             <span className="text-[10px] font-medium text-ot-foreground/60">
                                 {selectedCount} of {totalCount} selected
                             </span>
@@ -197,7 +190,7 @@ export function MarketFilterPopover(): React.JSX.Element {
 
                             {filteredGroups.map((display: MarketGroupDisplay, index: number) => (
                                 <React.Fragment key={display.group}>
-                                    {index > 0 && <div className="-mx-1 h-px bg-white/10" />}
+                                    {index > 0 && <div className="-mx-1 h-px bg-ot-border" />}
                                     <button
                                         type="button"
                                         role="option"
@@ -229,50 +222,6 @@ export function MarketFilterPopover(): React.JSX.Element {
                 </PopoverContent>
             </Popover>
 
-            {/* Selected Chips Display */}
-            {selectedCount > 0 && !allSelected && (
-                <div className="flex flex-wrap items-center gap-1" data-testid="market-filter-chips">
-                    {visibleGroups.map((display) => (
-                        <Badge
-                            key={display.group}
-                            variant="accent"
-                            className="flex items-center gap-1 px-1.5 py-0 text-[9px]"
-                        >
-                            {display.label}
-                            <button
-                                type="button"
-                                className="ml-0.5 rounded-full hover:bg-white/10"
-                                onClick={() => handleToggleGroup(display.group)}
-                                aria-label={`Remove ${display.label} filter`}
-                            >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    className="h-2.5 w-2.5"
-                                >
-                                    <path d="M18 6 6 18" />
-                                    <path d="m6 6 12 12" />
-                                </svg>
-                            </button>
-                        </Badge>
-                    ))}
-                    {hiddenCount > 0 && (
-                        <button
-                            type="button"
-                            className="text-[9px] text-ot-accent hover:underline"
-                            onClick={() => setOpen(true)}
-                            data-testid="market-filter-show-more"
-                        >
-                            +{hiddenCount} more
-                        </button>
-                    )}
-                </div>
-            )}
         </div>
     )
 }

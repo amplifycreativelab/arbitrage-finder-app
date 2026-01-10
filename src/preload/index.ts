@@ -85,9 +85,15 @@ const credentialsApi: CredentialsAPI = {
   }
 }
 
+// ... existing imports
 // Custom APIs for renderer
 const api = {
-  credentials: credentialsApi
+  credentials: credentialsApi,
+  feed: {
+    async runManualFetch() {
+      await trpcClient.pollAndGetFeedSnapshot.mutate()
+    }
+  }
 }
 
 if (process.contextIsolated) {

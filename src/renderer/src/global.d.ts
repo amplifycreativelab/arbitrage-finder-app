@@ -3,6 +3,9 @@ declare global {
     electron: any
     api: {
       credentials: any
+      feed: {
+        runManualFetch: () => Promise<void>
+      }
     }
   }
 }

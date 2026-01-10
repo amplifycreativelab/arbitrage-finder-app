@@ -10,7 +10,7 @@ const Command = React.forwardRef<
     <CommandPrimitive
         ref={ref}
         className={cn(
-            'flex h-full w-full flex-col overflow-hidden rounded-md bg-ot-bg text-ot-foreground',
+            'flex h-full w-full flex-col overflow-hidden rounded-md bg-ot-surface text-ot-foreground',
             className
         )}
         {...props}
@@ -22,7 +22,7 @@ const CommandInput = React.forwardRef<
     React.ElementRef<typeof CommandPrimitive.Input>,
     React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
 >(({ className, ...props }, ref) => (
-    <div className="flex items-center border-b border-white/10 px-3" cmdk-input-wrapper="">
+    <div className="flex items-center border-b border-ot-border px-3" cmdk-input-wrapper="">
         <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 24 24"
@@ -90,7 +90,7 @@ const CommandSeparator = React.forwardRef<
     React.ElementRef<typeof CommandPrimitive.Separator>,
     React.ComponentPropsWithoutRef<typeof CommandPrimitive.Separator>
 >(({ className, ...props }, ref) => (
-    <CommandPrimitive.Separator ref={ref} className={cn('-mx-1 h-px bg-white/10', className)} {...props} />
+    <CommandPrimitive.Separator ref={ref} className={cn('-mx-1 h-px bg-ot-border', className)} {...props} />
 ))
 CommandSeparator.displayName = CommandPrimitive.Separator.displayName
 
