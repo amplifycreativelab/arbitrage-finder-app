@@ -1,36 +1,37 @@
-# generated: 2025-11-20
+# generated: 2026-01-27
 # project: Arbitrage_Finder_App
-# project_key: 
+# project_key:
 # tracking_system: file-system
 # story_location: _bmad-output/implementation-artifacts
 
 # STATUS DEFINITIONS:
 # ==================
 # Epic Status:
-#   - backlog: Epic exists in epic file but not contexted
-#   - contexted: Next epic tech context created by *epic-tech-context (required)
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
 #
 # Story Status:
 #   - backlog: Story only exists in epic file
-#   - drafted: Story file created in stories folder by *create-story
-#   - ready-for-dev: Draft approved and story context created by *story-ready
-#   - in-progress: Developer actively working on implementation by *dev-story
-#   - review: Implementation complete, ready for review by *code-review
-#   - done: Story completed by *story-done
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+#   - superseded: Story replaced by another epic/story
 #
 # Retrospective Status:
 #   - optional: Can be completed but not required
-#   - completed: Retrospective has been done by *retrospective
+#   - done: Retrospective has been completed
 #
 # WORKFLOW NOTES:
 # ===============
-# - Epics should be 'contexted' before stories can be 'drafted'
-# - SM typically drafts next story ONLY after previous one is 'done' to incorporate learnings
-# - Dev moves story to 'review', dev reviews, then Dev moves to 'done'
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review workflow
 
-generated: 2025-11-20
+generated: 2026-01-27
 project: Arbitrage_Finder_App
-project_key: 
+project_key:
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 
@@ -63,17 +64,24 @@ development_status:
   4-3-copy-advance-workflow: done
   4-4-structured-error-surfacing-in-dashboard: done
   epic-4-retrospective: done
-  epic-5: in-progress
+  epic-5: done
   5-1-multi-provider-configuration-settings: done
   5-2-merged-multi-provider-feed: done
   5-3-additional-soccer-two-way-markets: done
   5-4-cross-provider-arbitrage-aggregator-advanced: done
   5-5-advanced-soccer-markets-ui-selector: superseded  # Superseded by Epic 6
   epic-5-retrospective: optional
-  epic-6: in-progress
+  epic-6: done
   6-1-expanded-two-way-market-types: done
   6-2-scalable-market-filter-ui: done
   6-3-cascading-bookmaker-selection-by-region: done
   6-4-full-width-desktop-layout: done
   epic-6-retrospective: optional
+  epic-7: in-progress
+  7-1-deep-scan-mode-hybrid-feed: done
+  7-2-event-discovery-search-select: backlog
+  7-3-raw-odds-retrieval-per-event: backlog
+  7-4-market-normalization-for-odds: backlog
+  7-5-local-arbitrage-detection-across-all-markets: backlog
+  epic-7-retrospective: optional
 

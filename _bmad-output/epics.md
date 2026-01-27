@@ -47,6 +47,7 @@ We follow a **Walking Skeleton** approach:
   FR12   Highlight ROI
   FR13   Staleness Indicator
   FR14   One-click copy to clipboard
+  FR15   Deep Scan all markets (raw odds)
 
 ------------------------------------------------------------------------
 
@@ -59,6 +60,8 @@ We follow a **Walking Skeleton** approach:
   Epic 3 -- Dashboard     FR3, FR4, FR9, FR10, FR11, FR12, FR13
   Epic 4 -- Interaction   FR14
   Epic 5 -- Multi-Provider & Advanced Markets   FR3, FR4, FR5, FR6, FR7, FR9, FR10, FR11
+  Epic 6 -- Enhanced Filtering & Desktop UX     FR3, FR6, FR9, FR10, FR11, FR13
+  Epic 7 -- Deep Scan (All Markets)             FR5, FR6, FR7, FR8, FR9, FR10, FR11, FR15
 
 ------------------------------------------------------------------------
 
@@ -83,6 +86,12 @@ We follow a **Walking Skeleton** approach:
 - **Epic 4 – Interaction & Workflow Efficiency**
   - Renderer: dashboard interaction components and future `renderer/src/features/interaction/**`
   - Architecture refs: “Implementation Patterns – Naming/Structure”, “End-to-End Flow Diagram”, “For AI Agents (Summary)”
+
+- **Epic 7 â€“ Deep Scan (All Markets)**
+  - Main: `src/main/adapters/odds-api-io.ts`, `src/main/services/poller.ts`, `src/main/services/calculator.ts`
+  - Shared: `shared/types.ts` (`ArbitrageOpportunity`, market metadata), `shared/schemas.ts`
+  - Renderer: `renderer/src/features/dashboard/**`, `renderer/src/features/settings/**`
+  - Architecture refs: â€œHigh-Risk Domain Patterns â€“ Rate Limiting (R-001)â€, â€œHigh-Risk Domain Patterns â€“ Arbitrage Correctness (R-002)â€
 
 Each story below should be read together with these architecture touchpoints to avoid introducing ad-hoc patterns or file layouts.
 
@@ -238,6 +247,9 @@ So that I can see live surebet opportunities.
 ### Acceptance Criteria
 
 - Calls the provider’s pre-calculated arbs endpoint (e.g. `/v3/arbitrage-bets`)
+- Calls /v3/arbitrage-bets with a comma-separated `bookmakers=` parameter.
+- The `bookmakers` value is sourced from the authenticated user’s selected bookmakers (Odds-API.io account-level selection), and is never hardcoded in the adapter.
+- If no selected bookmakers are configured, the app surfaces an actionable error (prompting the user to select bookmakers in Settings) rather than silently polling a known-bad request.
 - Strict mapping into `ArbitrageOpportunity`
 - Region/sport filters applied according to PRD
 
@@ -757,24 +769,307 @@ So that I can see more data and work efficiently on my desktop monitor.
 
 ------------------------------------------------------------------------
 
+# **Epic 7: Deep Scan (All Markets via /odds)**
+
+Goal: Maximize arbitrage discovery by fetching raw odds via Odds-API.io `/odds` for **all events and markets**, calculating arbitrage locally. Deep Scan operates as the **primary discovery mechanism** running continuously alongside regular polling, ensuring no arbitrage opportunity is missed across any market type (corners, cards, goals, handicaps, etc.).
+
+**Design Philosophy:** Arbitrage opportunities are rare and time-sensitive. With 5,000 requests/hour capacity, the system should scan aggressively across all available events and markets rather than waiting for user-initiated scans. The existing `/arbitrage-bets` endpoint provides a fast initial feed, while Continuous Deep Scan ensures comprehensive coverage of all two-way markets.
+
+------------------------------------------------------------------------
+
+## **Story 7.1 -- Deep Scan Mode (Hybrid Feed)**
+
+**As a User**\
+I want a "Deep Scan" mode that searches all markets for selected events/leagues\
+So that I can find arbitrage opportunities beyond Moneyline.
+
+### Acceptance Criteria
+
+- Existing feed behavior is preserved: `/arbitrage-bets` continues to provide quick Moneyline opportunities
+- A new Deep Scan entrypoint exists (button or toggle) that:
+  - runs on-demand (not continuous polling by default)
+  - shows scan progress (events scanned, requests made, time elapsed)
+  - supports cancel/stop without leaving stale loading states
+- Deep Scan results are merged into the feed and clearly labeled (e.g., `source: deepScan`)
+- The user can set Deep Scan scope (at minimum: specific event; optional: league/sport batch)
+- Per-market (or per-market-group) minimum ROI thresholds are supported for Deep Scan results
+
+### Technical Notes
+
+- Prefer an explicit TRPC procedure (e.g., `deepScan.start`, `deepScan.cancel`, `deepScan.status`) instead of overloading the existing poller RPC
+- Reuse the existing rate limiting and structured logging patterns for scan telemetry
+
+### Links
+
+- FR5 (Retrieve pre-calculated bets)
+- FR6 (Calculate local arbs)
+- FR8 (API rate limiting)
+- FR10 (Filter by ROI)
+- FR15 (Deep Scan all markets)
+
+------------------------------------------------------------------------
+
+## **Story 7.2 -- Continuous Deep Scan Mode**
+
+**As a User**\
+I want Deep Scan to run automatically and continuously\
+So that I never miss arbitrage opportunities across any market without manual intervention.
+
+### Acceptance Criteria
+
+- A **"Continuous Deep Scan"** toggle exists in Settings (default: **ON**)
+- When enabled, Deep Scan runs automatically after each regular poll cycle completes
+- The system automatically discovers all upcoming events from enabled sports/leagues via `/events` endpoint
+- No manual scope selection required - scans all available events by default
+- Deep Scan results merge seamlessly into the main feed in real-time
+- The UI displays continuous scan status (events scanned, opportunities found, last scan time)
+- Users can still trigger manual Deep Scans for targeted searches when needed (existing Story 7.1 functionality preserved)
+
+### Technical Notes
+
+- Implement a scheduler in `deepScan.ts` that triggers after `pollOnceForEnabledProviders()` completes
+- Add `continuousDeepScanEnabled: boolean` to app settings store (persisted)
+- With 5,000 req/hour (~1.4 req/sec), budget allows scanning 80-100 events/hour at full market depth
+- Prioritize events by start time (soonest first) to maximize actionable opportunities
+- Skip events already scanned within a configurable TTL (e.g., 5 minutes) to avoid redundant API calls
+
+### Links
+
+- FR5 (Retrieve pre-calculated bets)
+- FR6 (Calculate local arbs)
+- FR8 (API rate limiting)
+- FR15 (Deep Scan all markets)
+
+------------------------------------------------------------------------
+
+## **Story 7.3 -- Automatic Event Discovery & Batch Scanning**
+
+**As a Developer**\
+I want the system to automatically discover and batch-scan all available events\
+So that Continuous Deep Scan covers the full event landscape without manual configuration.
+
+### Acceptance Criteria
+
+- The system fetches all upcoming events via `/events` endpoint for each enabled sport
+- Events are sorted by start time (ascending) to prioritize imminent matches
+- Batch scanning processes events in configurable chunks (default: 10-20 events per cycle)
+- Each event retrieves odds via `/odds?eventId={id}&bookmakers={list}` for **all available markets**
+- Bookmaker selection uses the user's configured bookmakers/regions from Settings
+- A **scan cache** tracks recently scanned events to avoid redundant API calls:
+  - Cache key: `eventId + bookmakerHash`
+  - TTL: configurable (default 5 minutes, adjustable in Settings)
+  - Cache invalidation on bookmaker selection change
+- Logging includes: events discovered, events scanned (new vs cached), markets retrieved, opportunities found
+- Progress is visible in the UI status bar during continuous scanning
+
+### Technical Notes
+
+- Extend `deepScan.ts` with `discoverAllEvents()` function that queries `/events` without scope restrictions
+- Implement event prioritization: live/starting soon > today > future
+- Use bounded concurrency (default: 5 concurrent requests) to balance throughput and rate limits
+- Store scan timestamps per event in memory to enforce TTL-based deduplication
+- Consider adding a "scan budget" setting: max events per cycle (e.g., 50) to control API usage
+
+### Links
+
+- FR3 (Filter Bookmakers by region)
+- FR7 (Normalize responses)
+- FR8 (API rate limiting)
+- FR15 (Deep Scan all markets)
+
+------------------------------------------------------------------------
+
+## **Story 7.4 -- Comprehensive Market Normalization**
+
+**As a Developer**\
+I want all `/odds` markets normalized into canonical keys supporting the full breadth of two-way markets\
+So that Continuous Deep Scan can find arbitrage across every market type the API provides.
+
+### Acceptance Criteria
+
+- `/odds` response parsing produces normalized outcomes for **all two-way markets**, including:
+  - **Goals/Scoring**: Match totals O/U, team totals O/U, BTTS, Goal in 1H/2H, clean sheet
+  - **Handicaps**: Asian handicaps, European handicaps, team spreads
+  - **Corners**: Match/team corners O/U, corner handicaps, race to X corners
+  - **Cards**: Match/team cards O/U, red card Yes/No, player bookings
+  - **Shots**: Match/team shots O/U, shots on target O/U
+  - **Other**: Offsides O/U, fouls O/U, penalty Yes/No, own goal Yes/No
+- Each normalized market includes:
+  - canonical market key (e.g., `corners_over_9.5_ft`, `cards_red_yes_ft`)
+  - market group (aligns with Epic 6: `goals`, `handicap`, `corners`, `cards`, `shots`, `other`)
+  - human-readable label for UI display
+  - line/parameter value where applicable (e.g., 9.5 for corners O/U 9.5)
+- Normalization handles provider naming variance (case, punctuation, abbreviations)
+- Unknown/unsupported markets are logged at debug level and skipped (no crashes)
+- **No minimum ROI threshold by default** - all arbitrage opportunities are surfaced regardless of ROI (user can filter in UI)
+- Golden fixtures cover: Moneyline, Corners O/U, Cards O/U, BTTS, Asian Handicap, Red Card Yes/No
+
+### Technical Notes
+
+- Extend `inferMarketMetadata()` to handle all market types from Odds-API.io `/odds` response
+- Create a market key registry mapping provider strings to canonical keys
+- Reuse Epic 6's `MarketMetadata` / `MarketGroup` types for consistency
+- Consider fuzzy matching for market name variations across bookmakers
+
+### Links
+
+- FR7 (Normalize responses)
+- FR11 (Filter by Market Type)
+- FR15 (Deep Scan all markets)
+
+------------------------------------------------------------------------
+
+## **Story 7.5 -- Exhaustive Arbitrage Detection Engine**
+
+**As a User**\
+I want the app to find every possible arbitrage opportunity across all markets and bookmakers\
+So that I maximize my chances of finding profitable surebets.
+
+### Acceptance Criteria
+
+- The arbitrage engine computes opportunities from raw odds by:
+  - Collecting best prices per outcome across **all configured bookmakers**
+  - Calculating ROI using the standard formula: `ROI = (1 - (1/oddsA + 1/oddsB)) * 100`
+  - Selecting the optimal bookmaker pair that maximizes ROI for each market
+- **All two-way markets** are supported: O/U, Yes/No, team totals, handicaps, corners, cards, shots, etc.
+- Markets with incomplete outcome sets (missing one side from all bookmakers) are excluded
+- **No ROI floor by default** - opportunities with any positive ROI are included (filtering happens in UI)
+- Resulting opportunities include:
+  - participating bookmakers with their respective odds
+  - implied probabilities for each leg
+  - ROI percentage
+  - normalized market metadata (group, key, label)
+  - stable `opportunityId` derived from: `event + market key + bookmakers + outcomes`
+  - `source: 'deepScan'` tag to distinguish from pre-calculated feed
+- **Best odds comparison**: For each market, the engine identifies which bookmaker offers the best odds for each outcome (useful for users who want to compare lines even without arbitrage)
+- Regression tests verify:
+  - Non-ML markets (Corners O/U, Red Card Yes/No) produce valid opportunities
+  - Cross-bookmaker best price selection works correctly
+  - Edge cases: identical odds, single bookmaker markets, extremely low ROI
+
+### Technical Notes
+
+- The existing `buildOpportunitiesFromRawOdds()` function handles this logic
+- Consider adding a "best odds" view mode that shows optimal bookmaker per outcome (even without arb)
+- 3-way markets (soccer 1X2) can be supported by checking all 3 pairwise combinations, but start with 2-way only
+
+### Links
+
+- FR6 (Calculate local arbs)
+- FR9 (Sortable Data Grid)
+- FR10 (Filter by ROI)
+- FR11 (Filter by Market Type)
+- FR15 (Deep Scan all markets)
+
+------------------------------------------------------------------------
+
+## **Story 7.6 -- Continuous Deep Scan Settings & Status UI**
+
+**As a User**\
+I want to configure Continuous Deep Scan behavior and monitor its status\
+So that I can control how aggressively the system scans and see what it's doing.
+
+### Acceptance Criteria
+
+- **Settings Panel** (in Provider Settings or new Deep Scan section):
+  - Toggle: "Continuous Deep Scan" (default: ON)
+  - Dropdown: "Scan Scope" - All Sports / Selected Sports / Selected Leagues
+  - Number input: "Scan Interval" - minutes between full scan cycles (default: 5 min)
+  - Number input: "Event Cache TTL" - minutes before re-scanning same event (default: 5 min)
+  - Number input: "Max Events Per Cycle" - budget limit per scan (default: 50, max: 200)
+  - Number input: "Concurrent Requests" - parallel API calls (default: 5, max: 10)
+  - All settings persisted to app settings store
+
+- **Status Bar Integration**:
+  - Show Deep Scan status: "Scanning 12/47 events..." or "Idle - Last scan: 2m ago"
+  - Show running totals: "Deep Scan: 156 opportunities found today"
+  - Visual indicator when scan is active (subtle animation or icon)
+
+- **Deep Scan Panel** (existing UI, enhanced):
+  - Real-time progress: events scanned, requests made, opportunities found, elapsed time
+  - "Pause/Resume" button for Continuous Deep Scan (distinct from Cancel)
+  - History: last 5 scan cycles with summary stats
+  - Manual scan button remains available for targeted single-event scans
+
+- **Performance Guardrails**:
+  - Warning if settings would exceed 5,000 req/hour budget
+  - Auto-throttle if approaching rate limit (reduce concurrency dynamically)
+  - Clear feedback when rate-limited: "Scan paused - rate limit reached, resuming in Xm"
+
+### Technical Notes
+
+- Add settings to `appSettingsStore.ts`:
+  ```typescript
+  continuousDeepScanEnabled: boolean
+  deepScanIntervalMinutes: number
+  deepScanEventCacheTtlMinutes: number
+  deepScanMaxEventsPerCycle: number
+  deepScanConcurrentRequests: number
+  ```
+- Create new TRPC endpoints:
+  - `deepScan.pauseContinuous` / `deepScan.resumeContinuous`
+  - `deepScan.getConfig` / `deepScan.setConfig`
+- Status bar component reads from `deepScanStore` for real-time updates
+
+### Links
+
+- FR1 (Select Active Data Provider)
+- FR8 (API rate limiting)
+- FR15 (Deep Scan all markets)
+
+------------------------------------------------------------------------
+
+## **Story 7.7 -- Odds Comparison View**
+
+**As a User**\
+I want to see which bookmaker offers the best odds for each outcome\
+So that I can place bets at the best available price even when no arbitrage exists.
+
+### Acceptance Criteria
+
+- A new view mode or panel displays **best odds comparison** for selected events/markets
+- For each two-way market outcome, shows:
+  - Best available odds and which bookmaker offers them
+  - Comparison across all configured bookmakers (sorted by odds descending)
+  - Visual highlighting of the best price
+- Users can filter by market group (Goals, Corners, Cards, etc.)
+- One-click copy of odds/bookmaker info to clipboard
+- This view uses the same raw odds data collected by Deep Scan (no additional API calls)
+- Useful even when no arbitrage exists - helps users find value bets
+
+### Technical Notes
+
+- Reuse `RawOddsPayload` data structure from Deep Scan
+- Add a `bestOddsView` component in dashboard
+- Consider caching odds snapshots for comparison over time (see odds movement)
+
+### Links
+
+- FR9 (Sortable Data Grid)
+- FR14 (One-click copy to clipboard)
+- FR15 (Deep Scan all markets)
+
+------------------------------------------------------------------------
+
 # **FR Coverage Matrix**
 
   Requirement   Story
   ------------- ---------------
-  FR1           1.3
+  FR1           1.3, 7.6
   FR2           1.2, 1.3, 1.4
-  FR3           3.4, 5.3, 6.3
+  FR3           3.4, 5.3, 6.3, 7.3
   FR4           3.4, 5.3
-  FR5           2.4, 2.6, 5.2, 5.4
-  FR6           2.5, 2.6, 5.2, 5.3, 5.4, 6.1
-  FR7           2.1, 2.4, 2.5, 2.6, 5.2, 5.3, 5.4, 6.1
-  FR8           2.2, 2.3, 5.2
-  FR9           3.2, 5.2, 5.4
-  FR10          3.4, 5.3, 5.4, 6.2
-  FR11          3.4, 5.3, 5.4, 6.1, 6.2
+  FR5           2.4, 2.6, 5.2, 5.4, 7.2
+  FR6           2.5, 2.6, 5.2, 5.3, 5.4, 6.1, 7.2, 7.5
+  FR7           2.1, 2.4, 2.5, 2.6, 5.2, 5.3, 5.4, 6.1, 7.3, 7.4
+  FR8           2.2, 2.3, 5.2, 7.2, 7.3, 7.6
+  FR9           3.2, 5.2, 5.4, 7.5, 7.7
+  FR10          3.4, 5.3, 5.4, 6.2, 7.5
+  FR11          3.4, 5.3, 5.4, 6.1, 6.2, 7.4, 7.5
   FR12          3.2, 5.3
   FR13          3.3, 3.5
-  FR14          4.3
+  FR14          4.3, 7.7
+  FR15          7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7
 
 ------------------------------------------------------------------------
 
@@ -782,12 +1077,58 @@ So that I can see more data and work efficiently on my desktop monitor.
 
 This epic breakdown ensures:
 
-- **Epic 1** – secure, stable runtime  
-- **Epic 2** – high-frequency data ingestion with rate-limit safety and correctness  
-- **Epic 3** – fast, trustworthy visualization with health indicators  
+- **Epic 1** – secure, stable runtime
+- **Epic 2** – high-frequency data ingestion with rate-limit safety and correctness
+- **Epic 3** – fast, trustworthy visualization with health indicators
 - **Epic 4** – zero-friction execution via keyboard workflows and clear error handling
 - **Epic 5** – expanded provider coverage and advanced market support for richer arbitrage opportunities
 - **Epic 6** – enhanced filtering UX, granular bookmaker selection, and full-width desktop optimization
+- **Epic 7** – **Continuous Deep Scan** as the primary arbitrage discovery mechanism, automatically scanning all events and markets to maximize opportunity detection
 
-A complete, production-grade arbitrage analysis workflow.
+## Epic 7 Architecture Overview
 
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Continuous Deep Scan Flow                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Regular Poll (/arbitrage-bets)                                 │
+│       │                                                          │
+│       ▼                                                          │
+│  ┌─────────────┐    ┌──────────────────┐    ┌────────────────┐  │
+│  │ Fast Feed   │───▶│ Event Discovery  │───▶│ Batch Scanner  │  │
+│  │ (Moneyline) │    │ (/events)        │    │ (/odds)        │  │
+│  └─────────────┘    └──────────────────┘    └────────────────┘  │
+│                              │                      │            │
+│                              ▼                      ▼            │
+│                     ┌──────────────┐      ┌─────────────────┐   │
+│                     │ Event Cache  │      │ Market          │   │
+│                     │ (TTL-based)  │      │ Normalization   │   │
+│                     └──────────────┘      └─────────────────┘   │
+│                                                    │            │
+│                                                    ▼            │
+│                                          ┌─────────────────┐   │
+│                                          │ Arbitrage       │   │
+│                                          │ Detection       │   │
+│                                          │ (All Markets)   │   │
+│                                          └─────────────────┘   │
+│                                                    │            │
+│                                                    ▼            │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │              Merged Feed (Deduplicated)                  │   │
+│  │   • Pre-calculated arbs (fast)                          │   │
+│  │   • Deep Scan arbs (comprehensive)                      │   │
+│  │   • Tagged by source for filtering                      │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key Design Decisions:**
+- Deep Scan runs continuously by default (5,000 req/hour budget allows ~80-100 events/hour)
+- No ROI thresholds - all positive arbitrage opportunities are surfaced
+- Event caching prevents redundant API calls (configurable TTL)
+- Results merge seamlessly with fast feed, deduplicated by event/market/bookmaker key
+- Manual Deep Scan remains available for targeted single-event investigation
+
+A complete, production-grade arbitrage analysis workflow optimized for maximum opportunity discovery.

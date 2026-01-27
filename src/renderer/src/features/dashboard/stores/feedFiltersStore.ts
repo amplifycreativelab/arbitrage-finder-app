@@ -49,12 +49,18 @@ const storage = createJSONStorage(() => getStorage())
 
 export interface FeedFiltersState extends DashboardFilterState {
   bookmakerSelections: Record<string, string[]>
+  deepScanRoiThresholds: {
+    globalMinRoi: number
+    marketGroupMinRoi: Partial<Record<MarketGroup, number>>
+  }
   setRegions: (regions: RegionCode[]) => void
   setSports: (sports: SportFilterValue[]) => void
   setMarkets: (markets: MarketFilterValue[]) => void
   setMarketGroups: (marketGroups: MarketGroup[]) => void
   setBookmakers: (bookmakers: string[]) => void
   setMinRoi: (minRoi: number) => void
+  setDeepScanGlobalMinRoi: (minRoi: number) => void
+  setDeepScanMarketGroupMinRoi: (group: MarketGroup, minRoi: number) => void
   toggleRegion: (region: RegionCode) => void
   toggleSport: (sport: SportFilterValue) => void
   toggleMarket: (market: MarketFilterValue) => void
@@ -70,11 +76,19 @@ const defaultState = {
   marketGroups: ALL_MARKET_GROUPS,
   bookmakers: [],
   bookmakerSelections: {},
-  minRoi: 0
+  minRoi: 0,
+  deepScanRoiThresholds: {
+    globalMinRoi: 0,
+    marketGroupMinRoi: {}
+  }
 }
 
 const getRegionKey = (regions: RegionCode[]): string => {
   return regions.slice().sort().join(',')
+}
+
+const normalizeMinRoi = (minRoi: number): number => {
+  return Number.isFinite(minRoi) && minRoi > 0 ? minRoi : 0
 }
 
 export const useFeedFiltersStore = create<FeedFiltersState>()(
@@ -118,7 +132,34 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
       },
       setMinRoi: (minRoi: number) => {
         set({
-          minRoi: Number.isFinite(minRoi) && minRoi > 0 ? minRoi : 0
+          minRoi: normalizeMinRoi(minRoi)
+        })
+      },
+      setDeepScanGlobalMinRoi: (minRoi: number) => {
+        const { deepScanRoiThresholds } = get()
+        set({
+          deepScanRoiThresholds: {
+            ...deepScanRoiThresholds,
+            globalMinRoi: normalizeMinRoi(minRoi)
+          }
+        })
+      },
+      setDeepScanMarketGroupMinRoi: (group: MarketGroup, minRoi: number) => {
+        const { deepScanRoiThresholds } = get()
+        const nextValue = normalizeMinRoi(minRoi)
+        const nextOverrides = {
+          ...deepScanRoiThresholds.marketGroupMinRoi
+        }
+        if (nextValue > 0) {
+          nextOverrides[group] = nextValue
+        } else {
+          delete nextOverrides[group]
+        }
+        set({
+          deepScanRoiThresholds: {
+            ...deepScanRoiThresholds,
+            marketGroupMinRoi: nextOverrides
+          }
         })
       },
       toggleRegion: (region: RegionCode) => {
@@ -206,7 +247,8 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
         marketGroups: state.marketGroups,
         bookmakers: state.bookmakers,
         bookmakerSelections: state.bookmakerSelections,
-        minRoi: state.minRoi
+        minRoi: state.minRoi,
+        deepScanRoiThresholds: state.deepScanRoiThresholds
       })
     }
   )

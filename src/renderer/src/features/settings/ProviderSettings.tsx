@@ -10,6 +10,7 @@ import {
 import { useFeedStore } from '../dashboard/stores/feedStore'
 import { useAppSettingsStore } from './stores/appSettingsStore'
 import { Select } from '../../components/ui/select'
+import { OddsApiIoBookmakerSettings } from './OddsApiIoBookmakerSettings'
 
 // ============================================================
 // Types
@@ -449,15 +450,22 @@ function ProviderSettings(): React.JSX.Element {
       {/* Provider cards */}
       <div className="space-y-3">
         {PROVIDERS.map((provider) => (
-          <ProviderCard
-            key={provider.id}
-            provider={provider}
-            state={providers[provider.id]}
-            onToggle={(enabled) => void handleToggle(provider.id, enabled)}
-            onApiKeyChange={(value) => handleApiKeyChange(provider.id, value)}
-            onSaveApiKey={() => void handleSaveApiKey(provider.id)}
-            onDismissError={() => handleDismissError(provider.id)}
-          />
+          <div key={provider.id}>
+            <ProviderCard
+              provider={provider}
+              state={providers[provider.id]}
+              onToggle={(enabled) => void handleToggle(provider.id, enabled)}
+              onApiKeyChange={(value) => handleApiKeyChange(provider.id, value)}
+              onSaveApiKey={() => void handleSaveApiKey(provider.id)}
+              onDismissError={() => handleDismissError(provider.id)}
+            />
+            {provider.id === 'odds-api-io' && (
+              <OddsApiIoBookmakerSettings
+                enabled={providers[provider.id].enabled}
+                hasKey={providers[provider.id].hasKey}
+              />
+            )}
+          </div>
         ))}
       </div>
 

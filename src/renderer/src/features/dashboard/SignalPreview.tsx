@@ -69,6 +69,18 @@ function SignalPreview({
 
   const payload = formatSignalPayload(effectiveOpportunity, effectiveProviderMetadata)
   const roiPercent = (effectiveOpportunity.roi * 100).toFixed(1)
+  const isDeepScan = effectiveOpportunity.source === 'deepScan'
+
+  const deepScanMeta = React.useMemo(() => {
+    if (!isDeepScan) return null
+    const timestamp = effectiveOpportunity.foundAt
+    try {
+      const label = new Date(timestamp).toLocaleString()
+      return `${label} • ${effectiveOpportunity.event.name}`
+    } catch {
+      return `${timestamp} • ${effectiveOpportunity.event.name}`
+    }
+  }, [isDeepScan, effectiveOpportunity.foundAt, effectiveOpportunity.event.name])
 
   const handleCopyClick = (): void => {
     if (isCopying) {
@@ -112,7 +124,12 @@ function SignalPreview({
     >
       <div className="mb-2 flex items-center justify-between text-[10px] text-ot-muted">
         <span>
-          {effectiveOpportunity.isCrossProvider ? (
+          {isDeepScan ? (
+            <span className="font-medium text-cyan-300">
+              🔍 Deep Scan Result
+              {deepScanMeta && <span className="ml-1 text-cyan-300/70">({deepScanMeta})</span>}
+            </span>
+          ) : effectiveOpportunity.isCrossProvider ? (
             <span className="text-violet-300 font-medium">
               ⚡ Cross-Provider Arbitrage
               {effectiveOpportunity.mergedFrom && effectiveOpportunity.mergedFrom.length > 1 && (

@@ -3,7 +3,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { createTRPCProxyClient } from '@trpc/client'
 import { ELECTRON_TRPC_CHANNEL, ipcLink } from 'electron-trpc/renderer'
 import type { AppRouter } from '../main/services/router'
-import type { ProviderId } from '../../shared/types'
+import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId } from '../../shared/types'
 
 type CredentialsStorageStatus = {
   isUsingFallbackStorage: boolean
@@ -25,6 +25,25 @@ type CredentialsAPI = {
   getEnabledProviders: () => Promise<ProviderId[]>
   setProviderEnabled: (providerId: ProviderId, enabled: boolean) => Promise<{ providerId: ProviderId; enabled: boolean }>
   getAllProvidersStatus: () => Promise<ProviderStatusInfo[]>
+}
+
+export type OddsApiIoBookmaker = {
+  name: string
+  active: boolean
+}
+
+type OddsApiIoAPI = {
+  getSupportedBookmakers: () => Promise<OddsApiIoBookmaker[]>
+  getSelectedBookmakers: () => Promise<string[]>
+  selectBookmakers: (bookmakers: string[]) => Promise<void>
+  clearSelectedBookmakers: () => Promise<void>
+}
+
+type DeepScanAPI = {
+  startDeepScan: (config: DeepScanConfig) => Promise<void>
+  cancelDeepScan: () => Promise<void>
+  getStatus: () => Promise<DeepScanProgress>
+  getResults: () => Promise<ArbitrageOpportunity[]>
 }
 
 // Electron-TRPC bridge: attach to both preload globalThis and renderer via contextBridge
@@ -85,10 +104,45 @@ const credentialsApi: CredentialsAPI = {
   }
 }
 
+const oddsApiIoApi: OddsApiIoAPI = {
+  async getSupportedBookmakers() {
+    const result = await trpcClient.oddsApiIoGetSupportedBookmakers.query()
+    return result.bookmakers as OddsApiIoBookmaker[]
+  },
+  async getSelectedBookmakers() {
+    const result = await trpcClient.oddsApiIoGetSelectedBookmakers.query()
+    return result.bookmakers as string[]
+  },
+  async selectBookmakers(bookmakers) {
+    await trpcClient.oddsApiIoSelectBookmakers.mutate({ bookmakers })
+  },
+  async clearSelectedBookmakers() {
+    await trpcClient.oddsApiIoClearSelectedBookmakers.mutate()
+  }
+}
+
+const deepScanApi: DeepScanAPI = {
+  async startDeepScan(config) {
+    await trpcClient.deepScanStart.mutate(config)
+  },
+  async cancelDeepScan() {
+    await trpcClient.deepScanCancel.mutate()
+  },
+  async getStatus() {
+    return trpcClient.deepScanStatus.query()
+  },
+  async getResults() {
+    const result = await trpcClient.deepScanResults.query()
+    return result.opportunities
+  }
+}
+
 // ... existing imports
 // Custom APIs for renderer
 const api = {
   credentials: credentialsApi,
+  oddsApiIo: oddsApiIoApi,
+  deepScan: deepScanApi,
   feed: {
     async runManualFetch() {
       await trpcClient.pollAndGetFeedSnapshot.mutate()

@@ -202,6 +202,11 @@ interface ArbitrageOpportunity {
   - Implements `credentials.saveApiKey` by encrypting and storing keys with `safeStorage` and a provider-specific key name (Story 1.2: `saveApiKey` and `getApiKey` in `src/main/services/storage.ts`, exposed via TRPC).
   - Adapters retrieve API keys inside the main process only (never in preload/renderer) via a `credentials.getApiKey(providerId)` helper or equivalent main-process function.
   - Adapters attach API keys to outbound HTTP requests in memory only; keys are not written to disk beyond the secure store.
+  - Odds-API.io bookmaker selection (account-level):
+    - Odds-API.io requires a comma-separated `bookmakers=` query parameter on `/v3/arbitrage-bets`.
+    - The app sources that list from the authenticated userâ€™s selected bookmakers (`GET /v3/bookmakers/selected?apiKey=...`) and includes it on each arb request.
+    - The Settings UI provides management actions for this selection via `/v3/bookmakers/selected/select` and `/v3/bookmakers/selected/clear` (the provider may rate-limit clearing, e.g. once per 12 hours).
+    - Logging must never include full request URLs or query strings so `apiKey` / `bookmakers` cannot leak into logs.
 
 ### Security Invariants
 

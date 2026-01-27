@@ -161,6 +161,14 @@ exports.MARKET_PATTERNS = {
  * Falls back to 'other' group if pattern is not recognized.
  */
 function inferMarketMetadata(marketString) {
+    // Guard against undefined/null input
+    if (!marketString || typeof marketString !== 'string') {
+        return {
+            group: 'other',
+            key: 'unknown',
+            label: 'Unknown'
+        };
+    }
     const normalized = marketString.toLowerCase().trim().replace(/-/g, '_').replace(/ /g, '_');
     // Check for exact match first
     const exactMatch = exports.MARKET_PATTERNS[normalized];

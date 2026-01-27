@@ -3,6 +3,7 @@ import * as React from 'react'
 import ProviderSettings from '../settings/ProviderSettings'
 import FeedPane from './FeedPane'
 import SignalPreview from './SignalPreview'
+import DeepScanPanel from './DeepScanPanel'
 import { SystemErrorBar } from '../../components/ui/SystemErrorBar'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { useDashboardErrorStore } from './stores/dashboardErrorStore'
@@ -108,6 +109,8 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
             </h2>
             <span className="text-[10px] text-ot-muted">Opportunities</span>
           </header>
+
+          <DeepScanPanel />
 
           <div className="flex-1 rounded-md border border-ot-border bg-ot-background p-3 text-[11px] text-ot-muted">
             {feed ?? <FeedPane />}

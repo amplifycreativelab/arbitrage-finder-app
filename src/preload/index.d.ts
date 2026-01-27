@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { ProviderId } from '../../shared/types'
+import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId } from '../../shared/types'
 
 export interface CredentialsStorageStatus {
   isUsingFallbackStorage: boolean
@@ -27,13 +27,33 @@ export interface FeedAPI {
   runManualFetch: () => Promise<void>
 }
 
+export interface DeepScanAPI {
+  startDeepScan: (config: DeepScanConfig) => Promise<void>
+  cancelDeepScan: () => Promise<void>
+  getStatus: () => Promise<DeepScanProgress>
+  getResults: () => Promise<ArbitrageOpportunity[]>
+}
+
+export interface OddsApiIoBookmaker {
+  name: string
+  active: boolean
+}
+
+export interface OddsApiIoAPI {
+  getSupportedBookmakers: () => Promise<OddsApiIoBookmaker[]>
+  getSelectedBookmakers: () => Promise<string[]>
+  selectBookmakers: (bookmakers: string[]) => Promise<void>
+  clearSelectedBookmakers: () => Promise<void>
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
     api: {
       credentials: CredentialsAPI
+      oddsApiIo: OddsApiIoAPI
       feed: FeedAPI
+      deepScan: DeepScanAPI
     }
   }
 }
-

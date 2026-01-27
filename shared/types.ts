@@ -211,6 +211,15 @@ export const MARKET_PATTERNS: Record<string, { group: MarketGroup; baseType: str
  * Falls back to 'other' group if pattern is not recognized.
  */
 export function inferMarketMetadata(marketString: string): MarketMetadata {
+  // Guard against undefined/null input
+  if (!marketString || typeof marketString !== 'string') {
+    return {
+      group: 'other',
+      key: 'unknown',
+      label: 'Unknown'
+    }
+  }
+
   const normalized = marketString.toLowerCase().trim().replace(/-/g, '_').replace(/ /g, '_')
 
   // Check for exact match first
@@ -364,6 +373,8 @@ export interface ArbitrageOpportunity {
   ]
   roi: number
   foundAt: string
+  /** Origin of the opportunity (feed poller vs deep scan) */
+  source?: 'feed' | 'deepScan'
   /** Provider that sourced this opportunity (Story 5.1 multi-provider support) */
   providerId?: ProviderId
   /**
@@ -378,6 +389,34 @@ export interface ArbitrageOpportunity {
    * Story 5.4: Cross-Provider Arbitrage Aggregator.
    */
   isCrossProvider?: boolean
+}
+
+// ============================================================================
+// Deep Scan (Story 7.1)
+// ============================================================================
+
+export type DeepScanStatus = 'idle' | 'scanning' | 'completed' | 'cancelled' | 'error'
+
+export interface DeepScanProgress {
+  status: DeepScanStatus
+  eventsScanned: number
+  eventsTotal: number
+  requestsMade: number
+  opportunitiesFound: number
+  startedAt: string | null
+  elapsedMs: number
+  currentEventName?: string
+  errorMessage?: string
+}
+
+export interface DeepScanConfig {
+  eventIds?: string[] // Specific events to scan
+  leagueId?: string // Scan all events in league
+  sportSlug?: string // Scan all events in sport (use with caution)
+  minRoi?: number // Global minimum ROI threshold (default: 0)
+  marketGroupThresholds?: Record<MarketGroup, number> // Per-group ROI thresholds
+  bookmakers?: string[] // Override bookmaker selection
+  maxConcurrentRequests?: number // Rate limit control (default: 2)
 }
 
 /**

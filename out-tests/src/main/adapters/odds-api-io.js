@@ -5,36 +5,64 @@ exports.normalizeOddsApiIoOpportunity = normalizeOddsApiIoOpportunity;
 const types_1 = require("../../../shared/types");
 const base_1 = require("./base");
 const logger_1 = require("../services/logger");
+const odds_api_io_bookmakers_1 = require("../services/odds-api-io-bookmakers");
 /**
  * Normalizes a raw Odds-API.io opportunity to the standard ArbitrageOpportunity format.
  * Market strings are normalized using inferMarketMetadata for consistent filtering (Story 6.1).
  */
 function normalizeOddsApiIoOpportunity(raw, foundAt = new Date().toISOString()) {
-    // Normalize market keys using the shared market metadata inference (Story 6.1)
-    const normalizedLegs = raw.legs.map((leg) => {
-        const metadata = (0, types_1.inferMarketMetadata)(leg.market);
-        return {
-            ...leg,
-            // Use the canonical key from metadata for consistent filtering
-            market: metadata.key
-        };
-    });
+    // Validate required fields
+    if (!raw || !raw.id || !Array.isArray(raw.legs) || raw.legs.length < 2) {
+        return null;
+    }
+    // Extract market name, with fallback
+    const marketName = raw.market?.name ?? 'h2h';
+    const metadata = (0, types_1.inferMarketMetadata)(marketName);
+    // Build event info from the event object if available
+    // API returns home/away team names, not homeTeam/awayTeam
+    const eventName = raw.event?.name ??
+        (raw.event?.home && raw.event?.away
+            ? `${raw.event.home} vs ${raw.event.away}`
+            : `Event ${raw.eventId}`);
+    const eventDate = raw.event?.date ?? new Date().toISOString();
+    const eventLeague = raw.event?.league ?? '';
+    const sport = raw.event?.sport ?? raw.sport ?? 'soccer';
+    // Normalize legs - map 'side' to 'outcome' and convert odds string to number
+    const normalizedLegs = raw.legs.slice(0, 2).map((leg) => ({
+        bookmaker: leg.bookmaker ?? 'Unknown',
+        market: metadata.key,
+        odds: typeof leg.odds === 'string' ? parseFloat(leg.odds) : (leg.odds ?? 0),
+        outcome: leg.side ?? 'unknown'
+    }));
+    // Validate odds are valid numbers
+    if (!normalizedLegs.every((leg) => Number.isFinite(leg.odds) && leg.odds > 0)) {
+        return null;
+    }
+    // profitMargin from API is a percentage value (e.g., 2.04 means 2.04%)
+    // Internal ROI format is decimal (e.g., 0.0204 for 2.04%), so divide by 100
+    const roi = typeof raw.profitMargin === 'number'
+        ? raw.profitMargin / 100
+        : typeof raw.roi === 'number'
+            ? raw.roi
+            : 0;
     return {
         id: raw.id,
-        sport: raw.sport,
+        sport,
         event: {
-            name: raw.event.name,
-            date: raw.event.date,
-            league: raw.event.league
+            name: eventName,
+            date: eventDate,
+            league: eventLeague
         },
         legs: normalizedLegs,
-        roi: raw.roi,
+        roi,
         foundAt
     };
 }
 const ODDS_API_IO_BASE_URL = 'https://api.odds-api.io';
 const ODDS_API_IO_ARBS_PATH = '/v3/arbitrage-bets';
 const ODDS_API_IO_PROVIDER_ID = 'odds-api-io';
+const SELECTED_BOOKMAKERS_TTL_MS = 5 * 60 * 1000;
+let cachedSelectedBookmakers = null;
 class OddsApiIoAdapter extends base_1.BaseArbitrageAdapter {
     id = ODDS_API_IO_PROVIDER_ID;
     async fetchWithApiKey(apiKey, context) {
@@ -57,8 +85,20 @@ class OddsApiIoAdapter extends base_1.BaseArbitrageAdapter {
             throw error;
         }
         try {
+            let selectedBookmakers = cachedSelectedBookmakers?.bookmakers ?? [];
+            const cacheAgeMs = cachedSelectedBookmakers ? Date.now() - cachedSelectedBookmakers.fetchedAtMs : Infinity;
+            if (!selectedBookmakers.length || cacheAgeMs > SELECTED_BOOKMAKERS_TTL_MS) {
+                selectedBookmakers = await (0, odds_api_io_bookmakers_1.getSelectedBookmakers)(apiKey);
+                cachedSelectedBookmakers = { fetchedAtMs: Date.now(), bookmakers: selectedBookmakers };
+            }
+            if (!selectedBookmakers.length) {
+                throw new Error('No selected bookmakers configured. Select bookmakers in Settings (Odds-API.io bookmaker selection) and try again.');
+            }
             const url = new URL(ODDS_API_IO_ARBS_PATH, ODDS_API_IO_BASE_URL);
             url.searchParams.set('apiKey', apiKey);
+            url.searchParams.set('bookmakers', selectedBookmakers.join(','));
+            url.searchParams.set('includeEventDetails', 'true');
+            url.searchParams.set('limit', '500'); // Max limit to get all available opportunities
             const response = await httpFetch(url.toString(), {
                 method: 'GET',
                 headers: {
@@ -83,10 +123,20 @@ class OddsApiIoAdapter extends base_1.BaseArbitrageAdapter {
                     : Array.isArray(body.bets)
                         ? body.bets
                         : [];
+            (0, logger_1.logInfo)('adapter.debug', {
+                context: 'adapter:odds-api-io',
+                operation: 'fetchOpportunities',
+                providerId: this.id,
+                correlationId,
+                durationMs: null,
+                errorCategory: null,
+                selectedBookmakersCount: selectedBookmakers.length,
+                rawBetsCount: rawBets.length
+            });
             const nowIso = new Date().toISOString();
             const opportunities = rawBets
                 .map((item) => normalizeOddsApiIoOpportunity(item, nowIso))
-                .filter((opportunity) => opportunity.roi >= 0);
+                .filter((opportunity) => opportunity !== null && opportunity.roi >= 0);
             const durationMs = Date.now() - startedAt;
             (0, logger_1.logInfo)('adapter.call', {
                 context: 'adapter:odds-api-io',

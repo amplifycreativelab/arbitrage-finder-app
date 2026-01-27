@@ -1,14 +1,4 @@
-declare global {
-  interface Window {
-    electron: any
-    api: {
-      credentials: any
-      feed: {
-        runManualFetch: () => Promise<void>
-      }
-    }
-  }
-}
+/// <reference path="../../preload/index.d.ts" />
 
 export {}
 

@@ -31,11 +31,13 @@ The **Arbitrage Finder App** is a standalone, web-based desktop application desi
 * **Settings Panel:**
     * Dropdown to select Active Provider (e.g., "Odds-API.io" vs. "The-Odds-API.com").
     * Input fields to securely store API Keys for each provider locally.
-* **Bookmaker Selection:** Users can filter bookmakers based on their region (Focus: Australia, UK, Italy, Romania).
+* **Bookmaker Selection (two layers):**
+    * **Provider account selection (Odds-API.io):** Free plans are limited to 2 bookmakers. Odds-API.io requires a `bookmakers=` parameter on `/v3/arbitrage-bets`, which the app sources from the user’s account “selected bookmakers” list (managed via `/v3/bookmakers/selected/select` and `/v3/bookmakers/selected/clear`).
+    * **UI feed filtering:** Users can filter the displayed opportunities by region and bookmaker in the dashboard to focus on the books they actually use.
 * **Sport Selection:** Initially focus on Soccer and Tennis, with extensibility for others.
 
 ### 4.2 Arbitrage Detection & Normalization
-* **Production Mode (Odds-API.io):** Utilize the `/v3/arbitrage-bets` endpoint to fetch pre-calculated surebets.
+* **Production Mode (Odds-API.io):** Utilize the `/v3/arbitrage-bets` endpoint to fetch pre-calculated surebets (requires `bookmakers=<comma-separated>`).
 * **Test/Dev Mode (The-Odds-API.com):** Fetch raw odds and utilize an internal calculation engine to identify price discrepancies (if the arbitrage endpoint is unavailable/costly) or normalize their specific arbitrage feed.
 * **Data Normalization:** Regardless of the source, all data is converted into a single internal `ArbitrageOpportunity` model before reaching the UI.
 

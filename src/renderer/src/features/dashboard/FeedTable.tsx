@@ -379,6 +379,7 @@ function FeedRow({
 
   // Cross-provider badge (Story 5.4)
   const isCrossProvider = opportunity.isCrossProvider === true
+  const isDeepScan = opportunity.source === 'deepScan'
 
   return (
     <div
@@ -395,6 +396,7 @@ function FeedRow({
       data-provider={opportunity.providerId ?? 'unknown'}
       data-merged={isMerged ? 'true' : 'false'}
       data-cross-provider={isCrossProvider ? 'true' : 'false'}
+      data-deep-scan={isDeepScan ? 'true' : 'false'}
       onClick={onSelect}
       role="option"
       aria-selected={isSelected ? 'true' : 'false'}
@@ -424,8 +426,18 @@ function FeedRow({
           ⚡ Cross-Feed
         </div>
       )}
+      {/* Deep scan badge (Story 7.1) */}
+      {!isCrossProvider && isDeepScan && (
+        <div
+          className="mx-1 rounded-full border border-cyan-400/60 bg-cyan-500/15 px-1.5 py-0.5 text-[8px] font-semibold text-cyan-300"
+          data-testid="feed-row-deep-scan-badge"
+          aria-label="Deep scan result"
+        >
+          🔍 Deep Scan
+        </div>
+      )}
       {/* Merged provider badge (Story 5.2) - only show if not cross-provider */}
-      {!isCrossProvider && isMerged && mergedBadgeLabel && (
+      {!isCrossProvider && !isDeepScan && isMerged && mergedBadgeLabel && (
         <div
           className="mx-1 rounded-full border border-purple-400/40 bg-purple-500/15 px-1.5 py-0.5 text-[8px] font-medium text-purple-300/90"
           data-testid="feed-row-merged-badge"
@@ -435,7 +447,7 @@ function FeedRow({
         </div>
       )}
       {/* Single provider source badge (Story 5.1) - only show if not merged and not cross-provider */}
-      {!isCrossProvider && !isMerged && providerBadge && (
+      {!isCrossProvider && !isDeepScan && !isMerged && providerBadge && (
         <div
           className="mx-1 rounded-full border border-ot-accent/30 bg-ot-accent/10 px-1.5 py-0.5 text-[8px] font-medium text-ot-accent/80"
           data-testid="feed-row-provider-badge"
@@ -462,4 +474,3 @@ function FeedRow({
 }
 
 export default FeedTable
-

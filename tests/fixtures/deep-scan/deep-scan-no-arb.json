@@ -1,0 +1,35 @@
+{
+  "event": {
+    "id": "deep-fixture-2",
+    "name": "No Arb City vs Balanced Town",
+    "date": "2026-02-03T15:00:00Z",
+    "league": "Control League",
+    "sport": "soccer"
+  },
+  "bookmakers": [
+    {
+      "name": "Book-1",
+      "markets": [
+        {
+          "key": "totals",
+          "outcomes": [
+            { "name": "Over 2.5", "odds": 2.0 },
+            { "name": "Under 2.5", "odds": 2.0 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Book-2",
+      "markets": [
+        {
+          "key": "totals",
+          "outcomes": [
+            { "name": "Over 2.5", "odds": 2.0 },
+            { "name": "Under 2.5", "odds": 2.0 }
+          ]
+        }
+      ]
+    }
+  ]
+}

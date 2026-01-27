@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.arbitrageOpportunityListSchema = exports.arbitrageOpportunitySchema = exports.allProvidersStatusResponseSchema = exports.providerStatusInfoSchema = exports.setProviderEnabledResponseSchema = exports.enabledProvidersResponseSchema = exports.setProviderEnabledInputSchema = exports.copySignalToClipboardInputSchema = exports.providerIdParamSchema = exports.setActiveProviderInputSchema = exports.activeProviderSchema = exports.getApiKeyInputSchema = exports.saveApiKeyInputSchema = exports.providerIdSchema = void 0;
+exports.deepScanConfigSchema = exports.deepScanProgressSchema = exports.deepScanStatusSchema = exports.arbitrageOpportunityListSchema = exports.arbitrageOpportunitySchema = exports.allProvidersStatusResponseSchema = exports.providerStatusInfoSchema = exports.setProviderEnabledResponseSchema = exports.enabledProvidersResponseSchema = exports.setProviderEnabledInputSchema = exports.oddsApiIoSelectBookmakersInputSchema = exports.copySignalToClipboardInputSchema = exports.providerIdParamSchema = exports.setActiveProviderInputSchema = exports.activeProviderSchema = exports.getApiKeyInputSchema = exports.saveApiKeyInputSchema = exports.providerIdSchema = void 0;
 const zod_1 = require("zod");
 const types_1 = require("./types");
 exports.providerIdSchema = zod_1.z.enum(types_1.PROVIDER_IDS);
@@ -20,6 +20,12 @@ exports.providerIdParamSchema = zod_1.z.object({
 });
 exports.copySignalToClipboardInputSchema = zod_1.z.object({
     text: zod_1.z.string().min(1)
+});
+// ============================================================
+// Odds-API.io bookmaker management
+// ============================================================
+exports.oddsApiIoSelectBookmakersInputSchema = zod_1.z.object({
+    bookmakers: zod_1.z.array(zod_1.z.string().trim().min(1)).min(1)
 });
 // ============================================================
 // Multi-provider schemas (Story 5.1)
@@ -64,6 +70,7 @@ const arbitrageLegSchema = zod_1.z.object({
     odds: zod_1.z.number().positive(),
     outcome: zod_1.z.string()
 });
+const opportunitySourceSchema = zod_1.z.enum(['feed', 'deepScan']);
 exports.arbitrageOpportunitySchema = zod_1.z
     .object({
     id: zod_1.z.string(),
@@ -76,6 +83,7 @@ exports.arbitrageOpportunitySchema = zod_1.z
     legs: zod_1.z.tuple([arbitrageLegSchema, arbitrageLegSchema]),
     roi: zod_1.z.number().min(0),
     foundAt: zod_1.z.string(),
+    source: opportunitySourceSchema.optional(),
     providerId: exports.providerIdSchema.optional(), // Multi-provider source tracking (Story 5.1)
     mergedFrom: zod_1.z.array(exports.providerIdSchema).optional(), // All source providers after deduplication (Story 5.2)
     isCrossProvider: zod_1.z.boolean().optional() // Cross-provider arbitrage indicator (Story 5.4)
@@ -85,3 +93,34 @@ exports.arbitrageOpportunitySchema = zod_1.z
     path: ['legs']
 });
 exports.arbitrageOpportunityListSchema = zod_1.z.array(exports.arbitrageOpportunitySchema);
+// ============================================================
+// Deep Scan schemas (Story 7.1)
+// ============================================================
+exports.deepScanStatusSchema = zod_1.z.enum([
+    'idle',
+    'scanning',
+    'completed',
+    'cancelled',
+    'error'
+]);
+exports.deepScanProgressSchema = zod_1.z.object({
+    status: exports.deepScanStatusSchema,
+    eventsScanned: zod_1.z.number().int().min(0),
+    eventsTotal: zod_1.z.number().int().min(0),
+    requestsMade: zod_1.z.number().int().min(0),
+    opportunitiesFound: zod_1.z.number().int().min(0),
+    startedAt: zod_1.z.string().nullable(),
+    elapsedMs: zod_1.z.number().int().min(0),
+    currentEventName: zod_1.z.string().optional(),
+    errorMessage: zod_1.z.string().optional()
+});
+const marketGroupSchema = zod_1.z.enum(types_1.MARKET_GROUPS);
+exports.deepScanConfigSchema = zod_1.z.object({
+    eventIds: zod_1.z.array(zod_1.z.string().trim().min(1)).min(1).optional(),
+    leagueId: zod_1.z.string().trim().min(1).optional(),
+    sportSlug: zod_1.z.string().trim().min(1).optional(),
+    minRoi: zod_1.z.number().min(0).optional(),
+    marketGroupThresholds: zod_1.z.record(marketGroupSchema, zod_1.z.number().min(0)).optional(),
+    bookmakers: zod_1.z.array(zod_1.z.string().trim().min(1)).min(1).optional(),
+    maxConcurrentRequests: zod_1.z.number().int().min(1).max(10).optional()
+});

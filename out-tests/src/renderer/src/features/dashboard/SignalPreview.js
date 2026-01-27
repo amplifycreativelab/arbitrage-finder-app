@@ -71,10 +71,23 @@ function SignalPreview({ opportunity, providerMetadata }) {
     }, [opportunity, storeOpportunities, selectedOpportunityId]);
     const effectiveProviderMetadata = providerMetadata ?? storeProviderMetadata ?? null;
     if (!effectiveOpportunity) {
-        return ((0, jsx_runtime_1.jsx)("div", { className: "flex h-full items-center justify-center text-[11px] text-ot-foreground/60", "data-testid": "signal-preview-empty", children: "Select an opportunity from the feed to see its signal preview." }));
+        return ((0, jsx_runtime_1.jsx)("div", { className: "flex h-full items-center justify-center text-[11px] text-ot-muted", "data-testid": "signal-preview-empty", children: "Select an opportunity from the feed to see its signal preview." }));
     }
     const payload = (0, signalPayload_1.formatSignalPayload)(effectiveOpportunity, effectiveProviderMetadata);
     const roiPercent = (effectiveOpportunity.roi * 100).toFixed(1);
+    const isDeepScan = effectiveOpportunity.source === 'deepScan';
+    const deepScanMeta = React.useMemo(() => {
+        if (!isDeepScan)
+            return null;
+        const timestamp = effectiveOpportunity.foundAt;
+        try {
+            const label = new Date(timestamp).toLocaleString();
+            return `${label} • ${effectiveOpportunity.event.name}`;
+        }
+        catch {
+            return `${timestamp} • ${effectiveOpportunity.event.name}`;
+        }
+    }, [isDeepScan, effectiveOpportunity.foundAt, effectiveOpportunity.event.name]);
     const handleCopyClick = () => {
         if (isCopying) {
             return;
@@ -103,7 +116,7 @@ function SignalPreview({ opportunity, providerMetadata }) {
         : copyState === 'error'
             ? 'bg-red-500 text-black hover:bg-red-400'
             : undefined;
-    return ((0, jsx_runtime_1.jsxs)("div", { className: "flex h-full flex-col", "data-testid": "signal-preview", "data-opportunity-id": effectiveOpportunity.id, children: [(0, jsx_runtime_1.jsxs)("div", { className: "mb-2 flex items-center justify-between text-[10px] text-ot-foreground/60", children: [(0, jsx_runtime_1.jsx)("span", { children: effectiveOpportunity.isCrossProvider ? ((0, jsx_runtime_1.jsxs)("span", { className: "text-violet-300 font-medium", children: ["\u26A1 Cross-Provider Arbitrage", effectiveOpportunity.mergedFrom && effectiveOpportunity.mergedFrom.length > 1 && ((0, jsx_runtime_1.jsxs)("span", { className: "text-violet-300/70 ml-1", children: ["(via ", effectiveOpportunity.mergedFrom.join(' + '), ")"] }))] })) : effectiveOpportunity.mergedFrom && effectiveOpportunity.mergedFrom.length > 1 ? ((0, jsx_runtime_1.jsxs)("span", { className: "text-purple-300/90", children: ["\u26A1 Merged from: ", effectiveOpportunity.mergedFrom.join(' + ')] })) : effectiveProviderMetadata ? (`Provider: ${effectiveProviderMetadata.displayName}`) : effectiveOpportunity.providerId ? (`Provider: ${effectiveOpportunity.providerId}`) : ('Provider: (active)') }), (0, jsx_runtime_1.jsxs)("span", { className: "font-semibold text-ot-accent", children: ["ROI ", roiPercent, "%"] })] }), (0, jsx_runtime_1.jsx)("div", { className: "mb-2 flex justify-end", children: (0, jsx_runtime_1.jsx)(button_1.Button, { type: "button", className: (0, utils_1.cn)('px-3 py-1 text-[11px]', buttonClassName), onClick: handleCopyClick, disabled: isCopying, "data-testid": "copy-signal-button", children: buttonLabel }) }), (0, jsx_runtime_1.jsx)("div", { className: "flex-1 overflow-auto rounded-md border border-white/10 bg-black/80 p-3", children: (0, jsx_runtime_1.jsx)("pre", { className: "whitespace-pre-wrap break-words font-mono text-[11px] leading-snug", children: payload }) })] }));
+    return ((0, jsx_runtime_1.jsxs)("div", { className: "flex h-full flex-col", "data-testid": "signal-preview", "data-opportunity-id": effectiveOpportunity.id, children: [(0, jsx_runtime_1.jsxs)("div", { className: "mb-2 flex items-center justify-between text-[10px] text-ot-muted", children: [(0, jsx_runtime_1.jsx)("span", { children: isDeepScan ? ((0, jsx_runtime_1.jsxs)("span", { className: "font-medium text-cyan-300", children: ["\uD83D\uDD0D Deep Scan Result", deepScanMeta && (0, jsx_runtime_1.jsxs)("span", { className: "ml-1 text-cyan-300/70", children: ["(", deepScanMeta, ")"] })] })) : effectiveOpportunity.isCrossProvider ? ((0, jsx_runtime_1.jsxs)("span", { className: "text-violet-300 font-medium", children: ["\u26A1 Cross-Provider Arbitrage", effectiveOpportunity.mergedFrom && effectiveOpportunity.mergedFrom.length > 1 && ((0, jsx_runtime_1.jsxs)("span", { className: "text-violet-300/70 ml-1", children: ["(via ", effectiveOpportunity.mergedFrom.join(' + '), ")"] }))] })) : effectiveOpportunity.mergedFrom && effectiveOpportunity.mergedFrom.length > 1 ? ((0, jsx_runtime_1.jsxs)("span", { className: "text-purple-300/90", children: ["\u26A1 Merged from: ", effectiveOpportunity.mergedFrom.join(' + ')] })) : effectiveProviderMetadata ? (`Provider: ${effectiveProviderMetadata.displayName}`) : effectiveOpportunity.providerId ? (`Provider: ${effectiveOpportunity.providerId}`) : ('Provider: (active)') }), (0, jsx_runtime_1.jsxs)("span", { className: "font-semibold text-ot-accent", children: ["ROI ", roiPercent, "%"] })] }), (0, jsx_runtime_1.jsx)("div", { className: "mb-2 flex justify-end", children: (0, jsx_runtime_1.jsx)(button_1.Button, { type: "button", className: (0, utils_1.cn)('px-3 py-1 text-[11px]', buttonClassName), onClick: handleCopyClick, disabled: isCopying, "data-testid": "copy-signal-button", children: buttonLabel }) }), (0, jsx_runtime_1.jsx)("div", { className: "flex-1 overflow-auto rounded-md border border-ot-border p-3", children: (0, jsx_runtime_1.jsx)("pre", { className: "whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-ot-foreground font-medium", children: payload }) })] }));
 }
 var signalPayload_2 = require("./signalPayload");
 Object.defineProperty(exports, "formatSignalPayload", { enumerable: true, get: function () { return signalPayload_2.formatSignalPayload; } });

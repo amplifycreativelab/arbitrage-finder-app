@@ -83,54 +83,65 @@ export function formatSignalPayload(
   provider: ProviderMetadata | null
 ): string {
   const lines: string[] = []
+  const isDeepScan = opportunity.source === 'deepScan'
 
   const eventDateSource = opportunity.event.date || opportunity.foundAt
   const dateLabel = formatDisplayDate(eventDateSource)
   const timeLabel = formatDisplayTime(eventDateSource)
   const sportLabel = formatSportLabel(opportunity.sport)
 
-  // Cross-provider header takes precedence (Story 5.4)
+  const [firstLeg, secondLeg] = opportunity.legs
+
+  // Event header - clear event identification
+  const eventName = opportunity.event.name
+  const leagueLabel = opportunity.event.league || ''
+
+  lines.push(`${eventName}`)
+  lines.push(`${sportLabel} | ${leagueLabel} | ${dateLabel} ${timeLabel}`.replace(/\|\s*\|/g, '|').trim())
+  lines.push('')
+
+  // Cross-provider indicator or provider name
   if (opportunity.isCrossProvider) {
     const sourceProviders = opportunity.mergedFrom?.join(' + ') ?? 'Multiple Providers'
-    lines.push('⚡ Cross-Provider Arbitrage')
-    lines.push(`Sources: ${sourceProviders}`)
+    lines.push(`⚡ Cross-Provider (${sourceProviders})`)
     lines.push('')
   } else {
     const providerLabel = provider?.displayName ?? provider?.label ?? ''
+    let wroteSourceInfo = false
+
+    if (isDeepScan) {
+      lines.push('Source: Deep Scan')
+      wroteSourceInfo = true
+    }
+
     if (providerLabel) {
-      lines.push(providerLabel)
+      lines.push(`Provider: ${providerLabel}`)
+      wroteSourceInfo = true
+    }
+
+    if (wroteSourceInfo) {
       lines.push('')
     }
   }
 
-  const [firstLeg, secondLeg] = opportunity.legs
-
-  const formatLeg = (leg: ArbitrageOpportunity['legs'][number]): string[] => {
-    const bookmakerLabel = leg.bookmaker
+  // Format legs in clear tabular format: Odds @ Bookmaker | Market → Selection
+  const formatLegLine = (leg: ArbitrageOpportunity['legs'][number]): string => {
     const marketLabel = formatMarketLabel(leg.market)
     const outcomeLabel = formatOutcomeLabel(leg.outcome)
-
-    const leaguePrefix = opportunity.event.league ? `${opportunity.event.league} ` : ''
-
-    return [
-      bookmakerLabel,
-      `${sportLabel} ${dateLabel}`.trim(),
-      `${timeLabel} ${opportunity.event.name}`.trim(),
-      `${leaguePrefix}${marketLabel}: ${outcomeLabel}`.trim(),
-      leg.odds.toFixed(2)
-    ]
+    return `${leg.odds.toFixed(2)} @ ${leg.bookmaker}`
+      + `\n    ${marketLabel} → ${outcomeLabel}`
   }
 
-  lines.push(...formatLeg(firstLeg))
+  lines.push(`Side A:`)
+  lines.push(formatLegLine(firstLeg))
   lines.push('')
-  lines.push('---')
-  lines.push('')
-  lines.push(...formatLeg(secondLeg))
+  lines.push(`Side B:`)
+  lines.push(formatLegLine(secondLeg))
 
-  const roiPercent = (opportunity.roi * 100).toFixed(1)
+  // ROI with clear percentage
+  const roiPercent = (opportunity.roi * 100).toFixed(2)
   lines.push('')
   lines.push(`ROI: ${roiPercent}%`)
 
   return lines.join('\n').trim()
 }
-

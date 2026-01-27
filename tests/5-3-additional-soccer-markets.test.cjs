@@ -297,7 +297,7 @@ test('[P0][5.3-SIGNAL-001] formatSignalPayload displays BTTS market correctly', 
     'Signal payload should include bookmaker names'
   );
   assert.ok(
-    payload.includes('2.5%'),
+    /2\.5(0)?%/.test(payload),
     'Signal payload should include ROI percentage'
   );
 });

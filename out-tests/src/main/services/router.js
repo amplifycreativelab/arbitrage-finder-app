@@ -12,11 +12,55 @@ const odds_api_io_1 = require("../adapters/odds-api-io");
 const the_odds_api_1 = require("../adapters/the-odds-api");
 const calculator_1 = require("./calculator");
 const logger_1 = require("./logger");
+const odds_api_io_bookmakers_1 = require("./odds-api-io-bookmakers");
+const deepScan_1 = require("./deepScan");
 const t = server_1.initTRPC.create();
 (0, poller_1.registerAdapters)([new odds_api_io_1.OddsApiIoAdapter(), new the_odds_api_1.TheOddsApiAdapter()]);
 // Initialize with enabled providers (multi-provider mode)
 const initialEnabledProviders = (0, storage_1.getEnabledProviders)();
 (0, poller_1.notifyEnabledProvidersChanged)(initialEnabledProviders);
+function buildFeedMergeKey(opportunity) {
+    const legsKey = opportunity.legs
+        .map((leg) => `${leg.bookmaker}|${leg.market}|${leg.outcome}`)
+        .sort()
+        .join('|');
+    return `${opportunity.event.name}|${opportunity.event.date}|${opportunity.event.league}|${legsKey}`;
+}
+function mergeDeepScanIntoFeed(feedOpportunities) {
+    const deepScanResults = (0, deepScan_1.getDeepScanResults)();
+    if (deepScanResults.length === 0) {
+        return {
+            merged: feedOpportunities,
+            stats: {
+                feedCount: feedOpportunities.length,
+                deepScanCount: 0,
+                deepScanMergedCount: 0,
+                mergedTotal: feedOpportunities.length
+            }
+        };
+    }
+    const feedKeys = new Set(feedOpportunities.map(buildFeedMergeKey));
+    const deepScanKeys = new Set();
+    const deepScanMerged = [];
+    for (const opportunity of deepScanResults) {
+        const key = buildFeedMergeKey(opportunity);
+        if (feedKeys.has(key) || deepScanKeys.has(key)) {
+            continue;
+        }
+        deepScanKeys.add(key);
+        deepScanMerged.push(opportunity);
+    }
+    const merged = [...feedOpportunities, ...deepScanMerged];
+    return {
+        merged,
+        stats: {
+            feedCount: feedOpportunities.length,
+            deepScanCount: deepScanResults.length,
+            deepScanMergedCount: deepScanMerged.length,
+            mergedTotal: merged.length
+        }
+    };
+}
 exports.appRouter = t.router({
     saveApiKey: t.procedure
         .input(schemas_1.saveApiKeyInputSchema)
@@ -95,6 +139,7 @@ exports.appRouter = t.router({
         }
         // Deduplicate opportunities across providers (Story 5.2)
         const opportunities = (0, calculator_1.deduplicateOpportunities)(rawOpportunities);
+        const { merged, stats: mergeStats } = mergeDeepScanIntoFeed(opportunities);
         // Log deduplication stats for observability (MED-002 fix: parity with pollAndGetFeedSnapshot)
         const stats = (0, calculator_1.getDeduplicationStats)(rawOpportunities.length, opportunities.length);
         if (stats.duplicatesRemoved > 0) {
@@ -107,11 +152,19 @@ exports.appRouter = t.router({
                 ...stats
             });
         }
+        (0, logger_1.logInfo)('feed.merge', {
+            context: 'service:router',
+            operation: 'getFeedSnapshot',
+            correlationId: undefined,
+            durationMs: null,
+            errorCategory: null,
+            ...mergeStats
+        });
         return {
             enabledProviderIds,
             // Legacy field for backward compatibility
             providerId: enabledProviderIds[0] ?? null,
-            opportunities,
+            opportunities: merged,
             fetchedAt: latestFetchedAt,
             status
         };
@@ -138,6 +191,7 @@ exports.appRouter = t.router({
         }
         // Deduplicate opportunities across providers (Story 5.2)
         const opportunities = (0, calculator_1.deduplicateOpportunities)(rawOpportunities);
+        const { merged, stats: mergeStats } = mergeDeepScanIntoFeed(opportunities);
         // Log deduplication stats
         const stats = (0, calculator_1.getDeduplicationStats)(rawOpportunities.length, opportunities.length);
         if (stats.duplicatesRemoved > 0) {
@@ -150,14 +204,41 @@ exports.appRouter = t.router({
                 ...stats
             });
         }
+        (0, logger_1.logInfo)('feed.merge', {
+            context: 'service:router',
+            operation: 'pollAndGetFeedSnapshot',
+            correlationId: undefined,
+            durationMs: null,
+            errorCategory: null,
+            ...mergeStats
+        });
         return {
             enabledProviderIds,
             // Legacy field for backward compatibility
             providerId: enabledProviderIds[0] ?? null,
-            opportunities,
+            opportunities: merged,
             fetchedAt: latestFetchedAt,
             status
         };
+    }),
+    // ============================================================
+    // Deep Scan procedures (Story 7.1)
+    // ============================================================
+    deepScanStart: t.procedure
+        .input(schemas_1.deepScanConfigSchema)
+        .mutation(async ({ input }) => {
+        await (0, deepScan_1.startDeepScan)(input);
+        return { ok: true };
+    }),
+    deepScanCancel: t.procedure.mutation(async () => {
+        (0, deepScan_1.cancelDeepScan)();
+        return { ok: true };
+    }),
+    deepScanStatus: t.procedure.query(async () => {
+        return (0, deepScan_1.getDeepScanProgress)();
+    }),
+    deepScanResults: t.procedure.query(async () => {
+        return { opportunities: (0, deepScan_1.getDeepScanResults)() };
     }),
     // ============================================================
     // Utility procedures
@@ -171,5 +252,38 @@ exports.appRouter = t.router({
     openLogDirectory: t.procedure.mutation(async () => {
         const result = (0, logs_1.openLogDirectory)();
         return result;
+    }),
+    // ============================================================
+    // Odds-API.io bookmaker management
+    // ============================================================
+    oddsApiIoGetSupportedBookmakers: t.procedure.query(async () => {
+        const bookmakers = await (0, odds_api_io_bookmakers_1.getSupportedBookmakers)();
+        return { bookmakers };
+    }),
+    oddsApiIoGetSelectedBookmakers: t.procedure.query(async () => {
+        const apiKey = await (0, credentials_1.getApiKeyForAdapter)('odds-api-io');
+        if (!apiKey) {
+            throw new Error('API key not configured for provider odds-api-io');
+        }
+        const bookmakers = await (0, odds_api_io_bookmakers_1.getSelectedBookmakers)(apiKey);
+        return { bookmakers };
+    }),
+    oddsApiIoSelectBookmakers: t.procedure
+        .input(schemas_1.oddsApiIoSelectBookmakersInputSchema)
+        .mutation(async ({ input }) => {
+        const apiKey = await (0, credentials_1.getApiKeyForAdapter)('odds-api-io');
+        if (!apiKey) {
+            throw new Error('API key not configured for provider odds-api-io');
+        }
+        await (0, odds_api_io_bookmakers_1.selectBookmakers)(apiKey, input.bookmakers);
+        return { ok: true };
+    }),
+    oddsApiIoClearSelectedBookmakers: t.procedure.mutation(async () => {
+        const apiKey = await (0, credentials_1.getApiKeyForAdapter)('odds-api-io');
+        if (!apiKey) {
+            throw new Error('API key not configured for provider odds-api-io');
+        }
+        await (0, odds_api_io_bookmakers_1.clearSelectedBookmakers)(apiKey);
+        return { ok: true };
     })
 });

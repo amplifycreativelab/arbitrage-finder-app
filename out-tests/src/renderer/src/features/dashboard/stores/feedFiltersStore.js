@@ -33,10 +33,17 @@ const defaultState = {
     marketGroups: filters_1.ALL_MARKET_GROUPS,
     bookmakers: [],
     bookmakerSelections: {},
-    minRoi: 0
+    minRoi: 0,
+    deepScanRoiThresholds: {
+        globalMinRoi: 0,
+        marketGroupMinRoi: {}
+    }
 };
 const getRegionKey = (regions) => {
     return regions.slice().sort().join(',');
+};
+const normalizeMinRoi = (minRoi) => {
+    return Number.isFinite(minRoi) && minRoi > 0 ? minRoi : 0;
 };
 exports.useFeedFiltersStore = (0, zustand_1.create)()((0, middleware_1.persist)((set, get) => ({
     ...defaultState,
@@ -77,7 +84,35 @@ exports.useFeedFiltersStore = (0, zustand_1.create)()((0, middleware_1.persist)(
     },
     setMinRoi: (minRoi) => {
         set({
-            minRoi: Number.isFinite(minRoi) && minRoi > 0 ? minRoi : 0
+            minRoi: normalizeMinRoi(minRoi)
+        });
+    },
+    setDeepScanGlobalMinRoi: (minRoi) => {
+        const { deepScanRoiThresholds } = get();
+        set({
+            deepScanRoiThresholds: {
+                ...deepScanRoiThresholds,
+                globalMinRoi: normalizeMinRoi(minRoi)
+            }
+        });
+    },
+    setDeepScanMarketGroupMinRoi: (group, minRoi) => {
+        const { deepScanRoiThresholds } = get();
+        const nextValue = normalizeMinRoi(minRoi);
+        const nextOverrides = {
+            ...deepScanRoiThresholds.marketGroupMinRoi
+        };
+        if (nextValue > 0) {
+            nextOverrides[group] = nextValue;
+        }
+        else {
+            delete nextOverrides[group];
+        }
+        set({
+            deepScanRoiThresholds: {
+                ...deepScanRoiThresholds,
+                marketGroupMinRoi: nextOverrides
+            }
         });
     },
     toggleRegion: (region) => {
@@ -169,6 +204,7 @@ exports.useFeedFiltersStore = (0, zustand_1.create)()((0, middleware_1.persist)(
         marketGroups: state.marketGroups,
         bookmakers: state.bookmakers,
         bookmakerSelections: state.bookmakerSelections,
-        minRoi: state.minRoi
+        minRoi: state.minRoi,
+        deepScanRoiThresholds: state.deepScanRoiThresholds
     })
 }));

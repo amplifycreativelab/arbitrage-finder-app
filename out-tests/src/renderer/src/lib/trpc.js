@@ -20,12 +20,23 @@ function createTestTrpcClient() {
         isProviderConfigured: { query: noopQuery },
         getActiveProvider: { query: noopQuery },
         setActiveProvider: { mutate: noopMutation },
+        getEnabledProviders: { query: noopQuery },
+        setProviderEnabled: { mutate: noopMutation },
+        getAllProvidersStatus: { query: noopQuery },
         getStorageStatus: { query: noopQuery },
         acknowledgeFallbackWarning: { mutate: noopMutation },
         getFeedSnapshot: { query: noopQuery },
         pollAndGetFeedSnapshot: { mutate: noopMutation },
+        deepScanStart: { mutate: noopMutation },
+        deepScanCancel: { mutate: noopMutation },
+        deepScanStatus: { query: noopQuery },
+        deepScanResults: { query: noopQuery },
         copySignalToClipboard: { mutate: noopMutation },
-        openLogDirectory: { mutate: noopMutation }
+        openLogDirectory: { mutate: noopMutation },
+        oddsApiIoGetSupportedBookmakers: { query: noopQuery },
+        oddsApiIoGetSelectedBookmakers: { query: noopQuery },
+        oddsApiIoSelectBookmakers: { mutate: noopMutation },
+        oddsApiIoClearSelectedBookmakers: { mutate: noopMutation }
     };
     return client;
 }

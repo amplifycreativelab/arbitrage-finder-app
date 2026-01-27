@@ -46,6 +46,9 @@ function getUniqueEventMarkets(quotes: MarketQuote[]): Array<{ eventKey: string;
  * - btts: yes vs no
  */
 function getOutcomePairs(market: string): [string, string] {
+  if (!market || typeof market !== 'string') {
+    return ['home', 'away']
+  }
   const bttsVariants = ['btts', 'both-teams-to-score', 'both_teams_to_score']
   if (bttsVariants.some((v) => market.toLowerCase().includes(v))) {
     return ['yes', 'no']

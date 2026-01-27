@@ -5,6 +5,7 @@ const assert = require('node:assert');
 
 const poller = require('../out-tests/src/main/services/poller.js');
 const credentials = require('../out-tests/src/main/credentials.js');
+const oddsApiIoBookmakers = require('../out-tests/src/main/services/odds-api-io-bookmakers.js');
 
 const {
   OddsApiIoAdapter,
@@ -31,6 +32,10 @@ test('[P0][2.4-ADAPTER-HTTP-001] production adapter uses credentials, central sc
     typeof credentials.getApiKeyForAdapter === 'function'
       ? credentials.getApiKeyForAdapter
       : null;
+  const originalGetSelectedBookmakers =
+    typeof oddsApiIoBookmakers.getSelectedBookmakers === 'function'
+      ? oddsApiIoBookmakers.getSelectedBookmakers
+      : null;
   const originalSchedule = poller.scheduleProviderRequest;
   const originalFetch = global.fetch;
 
@@ -50,6 +55,10 @@ test('[P0][2.4-ADAPTER-HTTP-001] production adapter uses credentials, central sc
         );
         return 'test-api-key';
       };
+    }
+
+    if (originalGetSelectedBookmakers) {
+      oddsApiIoBookmakers.getSelectedBookmakers = async () => ['Book-1', 'Book-2'];
     }
 
     poller.scheduleProviderRequest = async (providerId, fn) => {
@@ -133,6 +142,9 @@ test('[P0][2.4-ADAPTER-HTTP-001] production adapter uses credentials, central sc
     if (originalGetApiKeyForAdapter) {
       credentials.getApiKeyForAdapter = originalGetApiKeyForAdapter;
     }
+    if (originalGetSelectedBookmakers) {
+      oddsApiIoBookmakers.getSelectedBookmakers = originalGetSelectedBookmakers;
+    }
     global.fetch = originalFetch;
     poller.__test.resetLimiterState();
   }
@@ -158,11 +170,19 @@ test('[P1][2.4-FILTERS-PIPELINE-001] poller + production adapter + filters honor
     typeof credentials.getApiKeyForAdapter === 'function'
       ? credentials.getApiKeyForAdapter
       : null;
+  const originalGetSelectedBookmakers =
+    typeof oddsApiIoBookmakers.getSelectedBookmakers === 'function'
+      ? oddsApiIoBookmakers.getSelectedBookmakers
+      : null;
   const originalFetch = global.fetch;
 
   try {
     if (originalGetApiKeyForAdapter) {
       credentials.getApiKeyForAdapter = async () => 'test-api-key';
+    }
+
+    if (originalGetSelectedBookmakers) {
+      oddsApiIoBookmakers.getSelectedBookmakers = async () => ['Book-IT-1', 'Book-IT-2'];
     }
 
     const rawBets = [
@@ -259,6 +279,9 @@ test('[P1][2.4-FILTERS-PIPELINE-001] poller + production adapter + filters honor
   } finally {
     if (originalGetApiKeyForAdapter) {
       credentials.getApiKeyForAdapter = originalGetApiKeyForAdapter;
+    }
+    if (originalGetSelectedBookmakers) {
+      oddsApiIoBookmakers.getSelectedBookmakers = originalGetSelectedBookmakers;
     }
     global.fetch = originalFetch;
     poller.__test.resetLimiterState();

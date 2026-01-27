@@ -87,8 +87,13 @@ test('[P1][4.1-SIGNAL-001] formatSignalPayload produces a stable, multi-line pay
 
   assert.strictEqual(
     lines[0],
-    provider.displayName,
-    'Expected first non-empty line to show provider displayName'
+    opportunity.event.name,
+    'Expected first non-empty line to show event name'
+  );
+
+  assert.ok(
+    payload.includes(`Provider: ${provider.displayName}`),
+    'Expected payload to include provider label'
   );
 
   assert.ok(
@@ -102,8 +107,8 @@ test('[P1][4.1-SIGNAL-001] formatSignalPayload produces a stable, multi-line pay
   );
 
   assert.ok(
-    /England Championship .*Rigori:/i.test(payload),
-    'Expected payload to include league and market description line'
+    payload.includes('England Championship') && payload.includes('Rigori'),
+    'Expected payload to include league and market labels'
   );
 
   assert.ok(
@@ -112,7 +117,7 @@ test('[P1][4.1-SIGNAL-001] formatSignalPayload produces a stable, multi-line pay
   );
 
   assert.ok(
-    /ROI:\s*12\.0%/.test(payload),
+    /ROI:\s*12\.0(0)?%/.test(payload),
     'Expected payload to include ROI line formatted as percentage'
   );
 });
@@ -147,7 +152,7 @@ test('[P1][4.1-SIGNAL-002] SignalPreview renders the formatted payload inside a 
   );
 
   assert.ok(
-    html.includes('12.0%'),
+    /ROI[^0-9]*12\.0/.test(html),
     'Expected ROI percentage value to appear in preview header'
   );
 

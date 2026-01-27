@@ -10,6 +10,8 @@ As a User,
 I want to select specific bookmakers within my chosen regions,
 so that I can focus on bookmakers I actually use instead of seeing all available options.
 
+**Note:** This story covers **dashboard-level filtering** of opportunities (derived from current feed data). It is separate from Odds-API.ioâ€™s **account-level** bookmaker selection (the free planâ€™s 2-bookmaker limit managed via `/v3/bookmakers/selected/*`).
+
 ## Acceptance Criteria
 
 1. **Cascading Availability** – When one or more **regions are selected**, a secondary bookmaker filter appears showing only bookmakers available in those regions (sourced from current opportunity data).
