@@ -34,6 +34,8 @@ const defaultState = {
     bookmakers: [],
     bookmakerSelections: {},
     minRoi: 0,
+    continuousDeepScanEnabled: true,
+    continuousDeepScanMaxEventsPerCycle: 50,
     deepScanRoiThresholds: {
         globalMinRoi: 0,
         marketGroupMinRoi: {}
@@ -85,6 +87,17 @@ exports.useFeedFiltersStore = (0, zustand_1.create)()((0, middleware_1.persist)(
     setMinRoi: (minRoi) => {
         set({
             minRoi: normalizeMinRoi(minRoi)
+        });
+    },
+    setContinuousDeepScanEnabled: (enabled) => {
+        set({
+            continuousDeepScanEnabled: Boolean(enabled)
+        });
+    },
+    setContinuousDeepScanMaxEventsPerCycle: (maxEvents) => {
+        const normalized = Number.isFinite(maxEvents) ? Math.max(1, Math.floor(maxEvents)) : 50;
+        set({
+            continuousDeepScanMaxEventsPerCycle: normalized
         });
     },
     setDeepScanGlobalMinRoi: (minRoi) => {
@@ -205,6 +218,8 @@ exports.useFeedFiltersStore = (0, zustand_1.create)()((0, middleware_1.persist)(
         bookmakers: state.bookmakers,
         bookmakerSelections: state.bookmakerSelections,
         minRoi: state.minRoi,
+        continuousDeepScanEnabled: state.continuousDeepScanEnabled,
+        continuousDeepScanMaxEventsPerCycle: state.continuousDeepScanMaxEventsPerCycle,
         deepScanRoiThresholds: state.deepScanRoiThresholds
     })
 }));

@@ -105,12 +105,15 @@ exports.deepScanStatusSchema = zod_1.z.enum([
 ]);
 exports.deepScanProgressSchema = zod_1.z.object({
     status: exports.deepScanStatusSchema,
+    mode: zod_1.z.enum(['manual', 'continuous']),
     eventsScanned: zod_1.z.number().int().min(0),
     eventsTotal: zod_1.z.number().int().min(0),
     requestsMade: zod_1.z.number().int().min(0),
     opportunitiesFound: zod_1.z.number().int().min(0),
     startedAt: zod_1.z.string().nullable(),
     elapsedMs: zod_1.z.number().int().min(0),
+    lastContinuousScanAt: zod_1.z.string().optional(),
+    isContinuousScanActive: zod_1.z.boolean().optional(),
     currentEventName: zod_1.z.string().optional(),
     errorMessage: zod_1.z.string().optional()
 });

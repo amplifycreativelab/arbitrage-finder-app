@@ -20,7 +20,7 @@ const exposeElectronTRPC = () => {
         }
     }
     else {
-        // @ts-ignore
+        // @ts-ignore - electronTRPC is injected on window in non-isolated mode
         window.electronTRPC = handler;
     }
 };
@@ -86,6 +86,22 @@ const deepScanApi = {
     async getResults() {
         const result = await trpcClient.deepScanResults.query();
         return result.opportunities;
+    },
+    async getContinuousEnabled() {
+        const result = await trpcClient.deepScanGetContinuousEnabled.query();
+        return result.enabled;
+    },
+    async setContinuousEnabled(enabled) {
+        await trpcClient.deepScanSetContinuousEnabled.mutate({ enabled: Boolean(enabled) });
+    },
+    async getContinuousStatus() {
+        return trpcClient.deepScanGetContinuousStatus.query();
+    },
+    async setMaxEventsPerCycle(maxEvents) {
+        await trpcClient.deepScanSetMaxEventsPerCycle.mutate({ maxEvents });
+    },
+    async clearCache(reason) {
+        await trpcClient.deepScanClearCache.mutate(reason ? { reason } : undefined);
     }
 };
 // ... existing imports

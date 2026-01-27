@@ -28,10 +28,13 @@ const store = new StoreCtor({
     },
     projectName: 'arbitrage-finder'
 });
-let safeStorageOverride = null;
+let safeStorageOverride = undefined;
 let migrationCompleted = false;
 function getEffectiveSafeStorage() {
-    return safeStorageOverride ?? electron_1.safeStorage;
+    if (safeStorageOverride !== undefined) {
+        return safeStorageOverride;
+    }
+    return electron_1.safeStorage;
 }
 function __setSafeStorageForTests(override) {
     safeStorageOverride = override;

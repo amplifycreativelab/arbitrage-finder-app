@@ -9,6 +9,8 @@ exports.getProviderQuotaStatus = getProviderQuotaStatus;
 exports.scheduleProviderRequest = scheduleProviderRequest;
 exports.registerAdapter = registerAdapter;
 exports.registerAdapters = registerAdapters;
+exports.registerPollCompleteListener = registerPollCompleteListener;
+exports.unregisterPollCompleteListener = unregisterPollCompleteListener;
 exports.notifyEnabledProvidersChanged = notifyEnabledProvidersChanged;
 exports.getEnabledProvidersForPolling = getEnabledProvidersForPolling;
 exports.pollOnceForEnabledProviders = pollOnceForEnabledProviders;
@@ -40,6 +42,7 @@ let currentCorrelationId = null;
 const lastProviderErrorTimestampByProviderId = {};
 const lastProviderErrorCategoryByProviderId = {};
 let lastSystemErrorTimestamp = null;
+const pollCompleteListeners = new Set();
 const BASE_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 15000;
 const JITTER_MS = 300;
@@ -91,7 +94,7 @@ function computeBackoffMs(consecutive429s) {
     const jitter = Math.floor(Math.random() * JITTER_MS);
     return Math.min(MAX_BACKOFF_MS, base + jitter);
 }
-function markErrorForStatus(providerId, category, _error) {
+function markErrorForStatus(providerId, category) {
     const nowIso = new Date().toISOString();
     if (category === 'ProviderError') {
         lastProviderErrorTimestampByProviderId[providerId] = nowIso;
@@ -246,6 +249,15 @@ function registerAdapters(adapters) {
         registerAdapter(adapter);
     }
 }
+function registerPollCompleteListener(listener) {
+    pollCompleteListeners.add(listener);
+    return () => {
+        pollCompleteListeners.delete(listener);
+    };
+}
+function unregisterPollCompleteListener(listener) {
+    pollCompleteListeners.delete(listener);
+}
 // Legacy notifyActiveProviderChanged and getActiveProviderForPolling removed in Story 5.1 cleanup
 // ============================================================
 // Multi-provider polling functions (Story 5.1)
@@ -310,7 +322,7 @@ async function pollOnceForEnabledProviders() {
                 error.statusCode ??
                 error.response?.status;
             const errorCategory = typeof status === 'number' && status >= 400 ? 'ProviderError' : 'SystemError';
-            markErrorForStatus(providerId, errorCategory, error);
+            markErrorForStatus(providerId, errorCategory);
             return { providerId, error, success: false };
         }
     });
@@ -414,6 +426,21 @@ async function pollOnceForEnabledProviders() {
         tickCompletedAt: nowIso,
         errorMessage: errors.length > 0 ? `Errors from ${errors.map((e) => e.providerId).join(', ')}` : undefined
     });
+    for (const listener of pollCompleteListeners) {
+        void Promise.resolve()
+            .then(() => listener({ opportunities: combinedOpportunities, correlationId, tickCompletedAt: nowIso }))
+            .catch((error) => {
+            (0, logger_1.logWarn)('poller.listener.error', {
+                context: 'service:poller',
+                operation: 'pollOnceForEnabledProviders',
+                providerId: undefined,
+                correlationId,
+                durationMs: null,
+                errorCategory: 'SystemError',
+                message: error?.message ?? 'poll complete listener failed'
+            });
+        });
+    }
     return combinedOpportunities;
 }
 function getRegisteredAdapter(providerId) {

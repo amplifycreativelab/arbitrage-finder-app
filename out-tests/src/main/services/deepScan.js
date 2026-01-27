@@ -1,6 +1,16 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.__test = void 0;
+exports.__test = exports.CONTINUOUS_SCAN_MIN_INTERVAL_MS = exports.CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE = exports.SCAN_CACHE_TTL_MS = void 0;
+exports.clearScanCache = clearScanCache;
+exports.shouldScanEvent = shouldScanEvent;
+exports.discoverAllEvents = discoverAllEvents;
+exports.getContinuousDeepScanEnabled = getContinuousDeepScanEnabled;
+exports.setContinuousDeepScanEnabled = setContinuousDeepScanEnabled;
+exports.getContinuousScanMaxEventsPerCycle = getContinuousScanMaxEventsPerCycle;
+exports.setContinuousScanMaxEventsPerCycle = setContinuousScanMaxEventsPerCycle;
+exports.getContinuousScanStatus = getContinuousScanStatus;
+exports.setContinuousScanDefaultThresholds = setContinuousScanDefaultThresholds;
+exports.startContinuousDeepScan = startContinuousDeepScan;
 exports.startDeepScan = startDeepScan;
 exports.cancelDeepScan = cancelDeepScan;
 exports.getDeepScanProgress = getDeepScanProgress;
@@ -17,14 +27,188 @@ const ODDS_API_IO_BASE_URL = 'https://api.odds-api.io';
 const ODDS_API_IO_EVENTS_PATH = '/v3/events';
 const ODDS_API_IO_ODDS_PATH = '/v3/odds';
 const DEEP_SCAN_PROVIDER_ID = 'odds-api-io';
+exports.SCAN_CACHE_TTL_MS = 5 * 60 * 1000;
+exports.CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE = 50;
+exports.CONTINUOUS_SCAN_MIN_INTERVAL_MS = 60_000;
+const CONTINUOUS_SCAN_BATCH_SIZE = 10;
+const HOURLY_REQUEST_LIMIT = 5000;
+const HOURLY_WARN_THRESHOLD = 0.8;
+const HOURLY_THROTTLE_THRESHOLD = 0.9;
 let currentScan = null;
-let currentResults = [];
-let currentAbortController = null;
-let currentCorrelationId = null;
-let scanPromise = null;
+let manualResults = [];
+let continuousResults = [];
+let manualAbortController = null;
+let continuousAbortController = null;
+let manualCorrelationId = null;
+let continuousCorrelationId = null;
+let manualScanPromise = null;
+let continuousScanPromise = null;
+let manualScanInProgress = false;
+let continuousDeepScanEnabled = true;
+let isContinuousScanActive = false;
+let continuousScanQueued = false;
+let lastContinuousScanAt = null;
+let lastContinuousScanStartedAtMs = null;
+let currentScanMode = 'manual';
+let minIntervalTimer = null;
+let lastThresholdConfig = {};
+let continuousScanMaxEventsPerCycle = exports.CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE;
+const scanCache = new Map();
+let timeOffsetMs = 0;
+let hourlyWindowStartedAtMs = null;
+let hourlyRequestsUsed = 0;
+let hourlyWarnLogged = false;
+let dailyStatsKey = null;
+let dailyEventsScanned = 0;
+let dailyOpportunitiesFound = 0;
+let dailyRequestsMade = 0;
 let eventResolverOverride = null;
+let eventsFetcherOverride = null;
 let oddsFetcherOverride = null;
 let bookmakersResolverOverride = null;
+function nowMs() {
+    return Date.now() + timeOffsetMs;
+}
+function nowIso() {
+    return new Date(nowMs()).toISOString();
+}
+function toDailyKey(ms) {
+    const date = new Date(ms);
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+function ensureDailyStats(ms) {
+    const key = toDailyKey(ms);
+    if (dailyStatsKey === key) {
+        return;
+    }
+    dailyStatsKey = key;
+    dailyEventsScanned = 0;
+    dailyOpportunitiesFound = 0;
+    dailyRequestsMade = 0;
+}
+function ensureHourlyWindow(ms) {
+    if (hourlyWindowStartedAtMs === null || ms - hourlyWindowStartedAtMs >= 60 * 60 * 1000) {
+        hourlyWindowStartedAtMs = ms;
+        hourlyRequestsUsed = 0;
+        hourlyWarnLogged = false;
+    }
+}
+function recordContinuousRequest() {
+    const ms = nowMs();
+    ensureHourlyWindow(ms);
+    ensureDailyStats(ms);
+    hourlyRequestsUsed += 1;
+    dailyRequestsMade += 1;
+}
+function recordContinuousRequestWithWarnings(correlationId) {
+    const before = getHourlyQuotaStatus();
+    recordContinuousRequest();
+    const after = getHourlyQuotaStatus();
+    if (!hourlyWarnLogged && after.percentUsed >= HOURLY_WARN_THRESHOLD && before.percentUsed < HOURLY_WARN_THRESHOLD) {
+        hourlyWarnLogged = true;
+        (0, logger_1.logWarn)('continuousScan.quota.warn', {
+            context: 'service:deepScan',
+            operation: 'recordContinuousRequest',
+            providerId: DEEP_SCAN_PROVIDER_ID,
+            correlationId,
+            durationMs: null,
+            errorCategory: null,
+            hourlyRequestsUsed: after.used,
+            hourlyRequestLimit: after.limit,
+            percentUsed: Number((after.percentUsed * 100).toFixed(1))
+        });
+    }
+}
+function recordContinuousEventScanned(count = 1) {
+    const ms = nowMs();
+    ensureDailyStats(ms);
+    dailyEventsScanned += Math.max(0, count);
+}
+function recordContinuousOpportunitiesFound(delta) {
+    const ms = nowMs();
+    ensureDailyStats(ms);
+    if (delta > 0) {
+        dailyOpportunitiesFound += delta;
+    }
+}
+function getHourlyQuotaStatus() {
+    const ms = nowMs();
+    ensureHourlyWindow(ms);
+    const started = hourlyWindowStartedAtMs ?? ms;
+    const percentUsed = HOURLY_REQUEST_LIMIT > 0 ? hourlyRequestsUsed / HOURLY_REQUEST_LIMIT : 0;
+    return {
+        used: hourlyRequestsUsed,
+        limit: HOURLY_REQUEST_LIMIT,
+        percentUsed: percentUsed > 0 ? percentUsed : 0,
+        windowStartedAtMs: started
+    };
+}
+function computeContinuousEventBudget(availableEvents) {
+    const base = Math.max(0, Math.min(continuousScanMaxEventsPerCycle, availableEvents));
+    if (base === 0)
+        return 0;
+    const quota = getHourlyQuotaStatus();
+    const percent = quota.percentUsed;
+    if (percent >= HOURLY_THROTTLE_THRESHOLD) {
+        return Math.min(base, 10);
+    }
+    return base;
+}
+function computeBookmakerHash(bookmakers) {
+    const normalized = bookmakers.map((b) => b.trim()).filter(Boolean).sort();
+    return normalized.join('|');
+}
+function clearScanCache(reason) {
+    scanCache.clear();
+    (0, logger_1.logInfo)('continuousScan.cache.clear', {
+        context: 'service:deepScan',
+        operation: 'clearScanCache',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId: continuousCorrelationId ?? undefined,
+        durationMs: null,
+        errorCategory: null,
+        reason
+    });
+}
+function shouldScanEvent(eventId, bookmakers) {
+    const now = nowMs();
+    const entry = scanCache.get(eventId);
+    const bookmakerHash = computeBookmakerHash(bookmakers);
+    if (!entry) {
+        return true;
+    }
+    const ageMs = now - entry.scannedAt;
+    const isExpired = ageMs >= exports.SCAN_CACHE_TTL_MS;
+    const hashChanged = entry.bookmakerHash !== bookmakerHash;
+    if (isExpired || hashChanged) {
+        scanCache.delete(eventId);
+        return true;
+    }
+    return false;
+}
+function updateScanCache(eventId, bookmakers) {
+    scanCache.set(eventId, {
+        scannedAt: nowMs(),
+        bookmakerHash: computeBookmakerHash(bookmakers)
+    });
+}
+function chunk(items, size) {
+    const safeSize = Math.max(1, size);
+    const result = [];
+    for (let index = 0; index < items.length; index += safeSize) {
+        result.push(items.slice(index, index + safeSize));
+    }
+    return result;
+}
+function clearMinIntervalTimer() {
+    if (minIntervalTimer) {
+        clearTimeout(minIntervalTimer);
+        minIntervalTimer = null;
+    }
+}
 function idleProgress() {
     return {
         status: 'idle',
@@ -33,7 +217,10 @@ function idleProgress() {
         requestsMade: 0,
         opportunitiesFound: 0,
         startedAt: null,
-        elapsedMs: 0
+        elapsedMs: 0,
+        mode: 'manual',
+        lastContinuousScanAt: lastContinuousScanAt ?? undefined,
+        isContinuousScanActive
     };
 }
 function computeElapsedMs(startedAt) {
@@ -42,16 +229,25 @@ function computeElapsedMs(startedAt) {
     const started = new Date(startedAt).getTime();
     if (!Number.isFinite(started))
         return 0;
-    const diff = Date.now() - started;
+    const diff = nowMs() - started;
     return diff > 0 ? diff : 0;
 }
 function updateProgress(patch) {
+    const patchMode = patch.mode;
+    const currentMode = currentScan?.mode;
+    if (manualScanInProgress && patchMode === 'continuous' && currentMode === 'manual') {
+        return;
+    }
     const base = currentScan ?? idleProgress();
     const next = {
         ...base,
         ...patch
     };
     next.elapsedMs = computeElapsedMs(next.startedAt);
+    next.lastContinuousScanAt =
+        lastContinuousScanAt ?? next.lastContinuousScanAt;
+    next.isContinuousScanActive =
+        isContinuousScanActive;
     currentScan = next;
 }
 function ensureScope(config) {
@@ -104,11 +300,15 @@ function getHttpFetch() {
     }
     throw new Error('No fetch implementation available for deep scan');
 }
-async function trackedRequest(fn, correlationId) {
+async function trackedRequest(fn, correlationId, options = {}) {
+    const mode = options.mode ?? 'manual';
     updateProgress({ requestsMade: (currentScan?.requestsMade ?? 0) + 1 });
+    if (mode === 'continuous') {
+        recordContinuousRequestWithWarnings(correlationId);
+    }
     return (0, poller_1.scheduleProviderRequest)(DEEP_SCAN_PROVIDER_ID, () => fn({ correlationId }));
 }
-function extractEvents(payload, config) {
+function extractEvents(payload, defaults = {}) {
     const candidates = Array.isArray(payload)
         ? payload
         : Array.isArray(payload.data)
@@ -135,9 +335,9 @@ function extractEvents(payload, config) {
         const date = typeof rawDate === 'string' && rawDate.trim().length ? rawDate : undefined;
         const rawLeague = item.league ??
             item.event?.league ??
-            config.leagueId;
+            defaults.league;
         const league = typeof rawLeague === 'string' && rawLeague.trim().length ? rawLeague : undefined;
-        const rawSport = item.sport ?? config.sportSlug;
+        const rawSport = item.sport ?? defaults.sport;
         const sport = typeof rawSport === 'string' && rawSport.trim().length ? rawSport : undefined;
         seen.add(id);
         events.push({ id, name, date, league, sport });
@@ -157,14 +357,154 @@ const defaultEventResolver = async ({ config, apiKey, signal, correlationId }) =
     if (config.sportSlug) {
         url.searchParams.set('sport', config.sportSlug);
     }
-    const response = await trackedRequest(async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }), correlationId);
+    const response = await trackedRequest(async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }), correlationId, { mode: currentScanMode });
     if (!response.ok) {
         const message = await response.text().catch(() => `Events request failed with status ${response.status}`);
         throw createHttpError(response.status, message || `Events request failed with status ${response.status}`);
     }
     const body = (await response.json());
-    return extractEvents(body, config);
+    return extractEvents(body, { league: config.leagueId, sport: config.sportSlug });
 };
+const defaultEventsFetcher = async ({ apiKey, signal, correlationId, page }) => {
+    const httpFetch = getHttpFetch();
+    const url = new URL(ODDS_API_IO_EVENTS_PATH, ODDS_API_IO_BASE_URL);
+    url.searchParams.set('apiKey', apiKey);
+    if (typeof page === 'number' && Number.isFinite(page) && page > 0) {
+        url.searchParams.set('page', String(Math.floor(page)));
+    }
+    const response = await trackedRequest(async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }), correlationId, { mode: 'continuous' });
+    if (!response.ok) {
+        const message = await response.text().catch(() => `Events request failed with status ${response.status}`);
+        throw createHttpError(response.status, message || `Events request failed with status ${response.status}`);
+    }
+    return response.json();
+};
+function getEventsFetcher() {
+    return eventsFetcherOverride ?? defaultEventsFetcher;
+}
+function isUpcomingEvent(event, now) {
+    if (!event.date) {
+        return true;
+    }
+    const ms = new Date(event.date).getTime();
+    if (!Number.isFinite(ms)) {
+        return true;
+    }
+    return ms > now;
+}
+function computePriorityTier(event, now) {
+    if (!event.date)
+        return 3;
+    const ms = new Date(event.date).getTime();
+    if (!Number.isFinite(ms))
+        return 3;
+    const diffMs = ms - now;
+    if (diffMs <= 60 * 60 * 1000) {
+        return 0;
+    }
+    const nowKey = toDailyKey(now);
+    const eventKey = toDailyKey(ms);
+    if (eventKey === nowKey) {
+        return 1;
+    }
+    const tomorrowKey = toDailyKey(now + 24 * 60 * 60 * 1000);
+    if (eventKey === tomorrowKey) {
+        return 2;
+    }
+    return 3;
+}
+function sortEventsByPriority(events) {
+    const now = nowMs();
+    return events
+        .slice()
+        .sort((a, b) => {
+        const tierA = computePriorityTier(a, now);
+        const tierB = computePriorityTier(b, now);
+        if (tierA !== tierB) {
+            return tierA - tierB;
+        }
+        const timeA = a.date ? new Date(a.date).getTime() : Number.POSITIVE_INFINITY;
+        const timeB = b.date ? new Date(b.date).getTime() : Number.POSITIVE_INFINITY;
+        if (timeA !== timeB) {
+            return timeA - timeB;
+        }
+        return a.id.localeCompare(b.id);
+    });
+}
+function extractNextPage(payload) {
+    if (!payload || typeof payload !== 'object')
+        return null;
+    const direct = payload.nextPage;
+    if (typeof direct === 'number' && Number.isFinite(direct) && direct > 0) {
+        return Math.floor(direct);
+    }
+    const paginationNext = payload.pagination?.nextPage;
+    if (typeof paginationNext === 'number' && Number.isFinite(paginationNext) && paginationNext > 0) {
+        return Math.floor(paginationNext);
+    }
+    return null;
+}
+async function discoverAllEvents(args) {
+    const { apiKey, signal, correlationId, sports } = args;
+    const fetchEvents = getEventsFetcher();
+    const seen = new Set();
+    const all = [];
+    let page = null;
+    let pageGuard = 0;
+    do {
+        const payload = await fetchEvents({ apiKey, signal, correlationId, page: page ?? undefined });
+        const extracted = extractEvents(payload);
+        for (const event of extracted) {
+            if (seen.has(event.id))
+                continue;
+            seen.add(event.id);
+            all.push(event);
+        }
+        page = extractNextPage(payload);
+        pageGuard += 1;
+    } while (page !== null && pageGuard < 5 && !signal.aborted);
+    const sportsFilter = Array.isArray(sports) && sports.length > 0 ? new Set(sports) : null;
+    const now = nowMs();
+    const upcoming = all.filter((event) => {
+        if (!isUpcomingEvent(event, now))
+            return false;
+        if (!sportsFilter)
+            return true;
+        return event.sport ? sportsFilter.has(event.sport) : true;
+    });
+    const sorted = sortEventsByPriority(upcoming);
+    const sportsCovered = Array.from(new Set(sorted.map((event) => event.sport).filter((value) => Boolean(value))));
+    const datedEvents = sorted.filter((event) => typeof event.date === 'string');
+    const minDate = datedEvents.reduce((min, event) => {
+        if (!event.date)
+            return min;
+        if (!min || event.date < min)
+            return event.date;
+        return min;
+    }, null);
+    const maxDate = datedEvents.reduce((max, event) => {
+        if (!event.date)
+            return max;
+        if (!max || event.date > max)
+            return event.date;
+        return max;
+    }, null);
+    (0, logger_1.logInfo)('continuousScan.discovery', {
+        context: 'service:deepScan',
+        operation: 'discoverAllEvents',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId,
+        durationMs: null,
+        errorCategory: null,
+        eventsDiscovered: sorted.length,
+        sportsCovered,
+        dateRange: {
+            from: minDate,
+            to: maxDate
+        }
+    });
+    return sorted;
+}
 const defaultBookmakersResolver = async ({ config, apiKey }) => {
     if (config.bookmakers?.length) {
         return Array.from(new Set(config.bookmakers.map((b) => b.trim()).filter(Boolean)));
@@ -358,7 +698,7 @@ function buildOpportunitiesFromRawOdds(payload, config, foundAt) {
     for (const bookmaker of payload.bookmakers) {
         for (const market of bookmaker.markets) {
             const baseMetadata = (0, types_1.inferMarketMetadata)(market.key);
-            let baseKey = baseMetadata.key;
+            const baseKey = baseMetadata.key;
             const baseHasLine = baseMetadata.line !== undefined;
             let outcomesMap = marketOutcomeQuotes.get(baseKey);
             if (!outcomesMap) {
@@ -469,6 +809,9 @@ async function fetchOddsWithRetry(fetchOdds, args, options) {
         try {
             if (options.trackAttempts) {
                 updateProgress({ requestsMade: (currentScan?.requestsMade ?? 0) + 1 });
+                if (currentScanMode === 'continuous') {
+                    recordContinuousRequestWithWarnings(args.correlationId);
+                }
             }
             return await fetchOdds(args);
         }
@@ -485,55 +828,92 @@ async function fetchOddsWithRetry(fetchOdds, args, options) {
     }
     throw lastError instanceof Error ? lastError : new Error('Deep scan odds fetch failed');
 }
-async function runScan(config, apiKey, signal, correlationId) {
-    const resolveEvents = eventResolverOverride ?? defaultEventResolver;
-    const resolveBookmakers = bookmakersResolverOverride ?? defaultBookmakersResolver;
+async function runScanForEvents(args) {
+    const { mode, config, apiKey, signal, correlationId, events, bookmakers, discoverySummary } = args;
+    currentScanMode = mode;
     const fetchOdds = oddsFetcherOverride ?? defaultOddsFetcher;
     const trackOddsAttempts = oddsFetcherOverride !== null;
-    const scanStartedAt = Date.now();
-    const bookmakers = await resolveBookmakers({ config, apiKey });
-    const events = await resolveEvents({ config, apiKey, signal, correlationId });
-    updateProgress({ eventsTotal: events.length });
-    let eventErrors = 0;
-    (0, logger_1.logInfo)('deepScan.start', {
+    const scanStartedAtMs = nowMs();
+    const operation = mode === 'continuous' ? 'runContinuousScanCycle' : 'runScan';
+    const startEventName = mode === 'continuous' ? 'continuousScan.cycle.start' : 'deepScan.start';
+    const completeEventName = mode === 'continuous' ? 'continuousScan.cycle.complete' : 'deepScan.complete';
+    const perEventEventName = mode === 'continuous' ? 'continuousScan.event' : 'deepScan.event';
+    if (mode === 'continuous') {
+        continuousResults = [];
+    }
+    else {
+        manualResults = [];
+    }
+    updateProgress({
+        eventsTotal: events.length,
+        eventsScanned: 0,
+        opportunitiesFound: 0,
+        currentEventName: undefined,
+        mode
+    });
+    const quotaStatus = getHourlyQuotaStatus();
+    (0, logger_1.logInfo)(startEventName, {
         context: 'service:deepScan',
-        operation: 'runScan',
+        operation,
         providerId: DEEP_SCAN_PROVIDER_ID,
         correlationId,
         durationMs: null,
         errorCategory: null,
         eventCount: events.length,
         bookmakersCount: bookmakers.length,
-        requestsMade: currentScan?.requestsMade ?? 0
+        requestsMade: currentScan?.requestsMade ?? 0,
+        discoverySummary,
+        quota: {
+            hourlyRequestsUsed: quotaStatus.used,
+            hourlyRequestLimit: quotaStatus.limit,
+            percentUsed: Number((quotaStatus.percentUsed * 100).toFixed(1))
+        }
     });
     if (events.length === 0) {
-        updateProgress({ status: 'completed', currentEventName: undefined });
-        (0, logger_1.logInfo)('deepScan.complete', {
+        if (mode === 'continuous') {
+            lastContinuousScanAt = nowIso();
+        }
+        updateProgress({
+            status: 'completed',
+            currentEventName: undefined,
+            lastContinuousScanAt: lastContinuousScanAt ?? undefined,
+            mode
+        });
+        const quotaStatusAfter = getHourlyQuotaStatus();
+        (0, logger_1.logInfo)(completeEventName, {
             context: 'service:deepScan',
-            operation: 'runScan',
+            operation,
             providerId: DEEP_SCAN_PROVIDER_ID,
             correlationId,
-            durationMs: Date.now() - scanStartedAt,
+            durationMs: nowMs() - scanStartedAtMs,
             errorCategory: null,
             eventsScanned: 0,
             eventsTotal: 0,
             opportunitiesFound: 0,
             eventsFailed: 0,
-            requestsMade: currentScan?.requestsMade ?? 0
+            requestsMade: currentScan?.requestsMade ?? 0,
+            cacheHits: discoverySummary?.cacheHits ?? 0,
+            cacheMisses: discoverySummary?.cacheMisses ?? 0,
+            quota: {
+                hourlyRequestsUsed: quotaStatusAfter.used,
+                hourlyRequestLimit: quotaStatusAfter.limit,
+                percentUsed: Number((quotaStatusAfter.percentUsed * 100).toFixed(1))
+            }
         });
         return;
     }
     const concurrency = Math.max(1, Math.min(10, config.maxConcurrentRequests ?? 2));
-    let nextIndex = 0;
+    let eventErrors = 0;
+    const batches = mode === 'continuous' ? chunk(events, CONTINUOUS_SCAN_BATCH_SIZE) : [events];
     const processEvent = async (event) => {
         if (signal.aborted)
             return;
-        updateProgress({ currentEventName: event.name });
-        const startedAt = Date.now();
+        updateProgress({ currentEventName: event.name, mode });
+        const startedAtMs = nowMs();
         try {
-            const resultsBefore = currentResults.length;
+            const resultsBefore = (mode === 'continuous' ? continuousResults : manualResults).length;
             const result = await fetchOddsWithRetry(fetchOdds, { event, apiKey, bookmakers, signal, correlationId }, { trackAttempts: trackOddsAttempts });
-            const foundAt = new Date().toISOString();
+            const foundAt = nowIso();
             const opportunities = isOpportunityArray(result)
                 ? result
                 : (() => {
@@ -541,17 +921,29 @@ async function runScan(config, apiKey, signal, correlationId) {
                     return payload ? buildOpportunitiesFromRawOdds(payload, config, foundAt) : [];
                 })();
             if (opportunities.length) {
-                currentResults.push(...opportunities);
-                updateProgress({ opportunitiesFound: currentResults.length });
+                if (mode === 'continuous') {
+                    continuousResults.push(...opportunities);
+                    updateProgress({ opportunitiesFound: continuousResults.length, mode });
+                }
+                else {
+                    manualResults.push(...opportunities);
+                    updateProgress({ opportunitiesFound: manualResults.length, mode });
+                }
             }
-            const arbsFound = Math.max(0, currentResults.length - resultsBefore);
-            updateProgress({ eventsScanned: (currentScan?.eventsScanned ?? 0) + 1 });
-            (0, logger_1.logInfo)('deepScan.event', {
+            const resultsAfter = (mode === 'continuous' ? continuousResults : manualResults).length;
+            const arbsFound = Math.max(0, resultsAfter - resultsBefore);
+            updateProgress({ eventsScanned: (currentScan?.eventsScanned ?? 0) + 1, mode });
+            if (mode === 'continuous') {
+                updateScanCache(event.id, bookmakers);
+                recordContinuousEventScanned(1);
+                recordContinuousOpportunitiesFound(arbsFound);
+            }
+            (0, logger_1.logInfo)(perEventEventName, {
                 context: 'service:deepScan',
-                operation: 'runScan',
+                operation,
                 providerId: DEEP_SCAN_PROVIDER_ID,
                 correlationId,
-                durationMs: Date.now() - startedAt,
+                durationMs: nowMs() - startedAtMs,
                 errorCategory: null,
                 eventId: event.id,
                 eventName: event.name,
@@ -562,16 +954,19 @@ async function runScan(config, apiKey, signal, correlationId) {
         }
         catch (error) {
             if (signal.aborted || isAbortError(error)) {
-                updateProgress({ status: 'cancelled', currentEventName: undefined });
+                updateProgress({ status: 'cancelled', currentEventName: undefined, mode });
                 return;
             }
             eventErrors += 1;
-            (0, logger_1.logWarn)('deepScan.event', {
+            if (mode === 'continuous') {
+                recordContinuousEventScanned(1);
+            }
+            (0, logger_1.logWarn)(perEventEventName, {
                 context: 'service:deepScan',
-                operation: 'runScan',
+                operation,
                 providerId: DEEP_SCAN_PROVIDER_ID,
                 correlationId,
-                durationMs: Date.now() - startedAt,
+                durationMs: nowMs() - startedAtMs,
                 errorCategory: 'ProviderError',
                 eventId: event.id,
                 eventName: event.name,
@@ -579,51 +974,400 @@ async function runScan(config, apiKey, signal, correlationId) {
                 arbsFound: 0,
                 message: error?.message ?? 'Deep scan event error'
             });
-            updateProgress({ eventsScanned: (currentScan?.eventsScanned ?? 0) + 1 });
+            updateProgress({ eventsScanned: (currentScan?.eventsScanned ?? 0) + 1, mode });
         }
     };
-    const worker = async () => {
-        while (!signal.aborted) {
-            const index = nextIndex;
-            nextIndex += 1;
-            if (index >= events.length) {
-                return;
+    const scanBatch = async (batchEvents) => {
+        let nextIndex = 0;
+        const worker = async () => {
+            while (!signal.aborted) {
+                const index = nextIndex;
+                nextIndex += 1;
+                if (index >= batchEvents.length) {
+                    return;
+                }
+                await processEvent(batchEvents[index]);
             }
-            await processEvent(events[index]);
-        }
+        };
+        await Promise.all(Array.from({ length: concurrency }, () => worker()));
     };
-    await Promise.all(Array.from({ length: concurrency }, () => worker()));
-    if ((currentScan?.status ?? 'idle') !== 'cancelled') {
-        updateProgress({ status: 'completed', currentEventName: undefined });
+    for (const batch of batches) {
+        if (signal.aborted)
+            break;
+        await scanBatch(batch);
     }
-    (0, logger_1.logInfo)('deepScan.complete', {
+    if ((currentScan?.status ?? 'idle') !== 'cancelled') {
+        updateProgress({ status: 'completed', currentEventName: undefined, mode });
+    }
+    if (mode === 'continuous') {
+        lastContinuousScanAt = nowIso();
+        updateProgress({ lastContinuousScanAt: lastContinuousScanAt ?? undefined, mode });
+    }
+    const quotaStatusAfter = getHourlyQuotaStatus();
+    (0, logger_1.logInfo)(completeEventName, {
         context: 'service:deepScan',
-        operation: 'runScan',
+        operation,
         providerId: DEEP_SCAN_PROVIDER_ID,
         correlationId,
-        durationMs: Date.now() - scanStartedAt,
+        durationMs: nowMs() - scanStartedAtMs,
         errorCategory: null,
         eventsScanned: currentScan?.eventsScanned ?? 0,
         eventsTotal: currentScan?.eventsTotal ?? 0,
-        opportunitiesFound: currentResults.length,
+        opportunitiesFound: mode === 'continuous' ? continuousResults.length : manualResults.length,
         eventsFailed: eventErrors,
-        requestsMade: currentScan?.requestsMade ?? 0
+        requestsMade: currentScan?.requestsMade ?? 0,
+        cacheHits: discoverySummary?.cacheHits ?? 0,
+        cacheMisses: discoverySummary?.cacheMisses ?? 0,
+        quota: {
+            hourlyRequestsUsed: quotaStatusAfter.used,
+            hourlyRequestLimit: quotaStatusAfter.limit,
+            percentUsed: Number((quotaStatusAfter.percentUsed * 100).toFixed(1))
+        }
+    });
+}
+async function runManualScan(config, apiKey, signal, correlationId) {
+    const resolveEvents = eventResolverOverride ?? defaultEventResolver;
+    const resolveBookmakers = bookmakersResolverOverride ?? defaultBookmakersResolver;
+    const bookmakers = await resolveBookmakers({ config, apiKey });
+    const events = await resolveEvents({ config, apiKey, signal, correlationId });
+    await runScanForEvents({
+        mode: 'manual',
+        config,
+        apiKey,
+        signal,
+        correlationId,
+        events,
+        bookmakers
+    });
+}
+function scheduleContinuousStart(waitMs, reason) {
+    const safeWaitMs = Math.max(0, waitMs);
+    clearMinIntervalTimer();
+    minIntervalTimer = setTimeout(() => {
+        minIntervalTimer = null;
+        if (!continuousScanQueued || !continuousDeepScanEnabled || manualScanInProgress) {
+            return;
+        }
+        void startContinuousDeepScan({ reason, force: true });
+    }, safeWaitMs);
+    (0, logger_1.logInfo)('continuousScan.scheduled', {
+        context: 'service:deepScan',
+        operation: 'scheduleContinuousStart',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId: continuousCorrelationId ?? undefined,
+        durationMs: null,
+        errorCategory: null,
+        waitMs: safeWaitMs,
+        reason
+    });
+}
+function cancelContinuousDeepScan(reason) {
+    clearMinIntervalTimer();
+    continuousScanQueued = false;
+    if (continuousAbortController) {
+        continuousAbortController.abort();
+    }
+    isContinuousScanActive = false;
+    updateProgress({ status: 'cancelled', currentEventName: undefined, mode: 'continuous' });
+    (0, logger_1.logInfo)('continuousScan.cancel', {
+        context: 'service:deepScan',
+        operation: 'cancelContinuousDeepScan',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId: continuousCorrelationId ?? undefined,
+        durationMs: null,
+        errorCategory: null,
+        reason
+    });
+}
+function getContinuousDeepScanEnabled() {
+    return continuousDeepScanEnabled;
+}
+function setContinuousDeepScanEnabled(enabled) {
+    const next = Boolean(enabled);
+    continuousDeepScanEnabled = next;
+    if (!next) {
+        cancelContinuousDeepScan('disabled');
+    }
+    else if (continuousScanQueued && !isContinuousScanActive && !manualScanInProgress) {
+        void startContinuousDeepScan({ reason: 'enabled' });
+    }
+    updateProgress({
+        status: currentScan?.status ?? 'idle',
+        mode: currentScan?.mode ?? 'manual',
+        lastContinuousScanAt: lastContinuousScanAt ?? undefined,
+        isContinuousScanActive
+    });
+    (0, logger_1.logInfo)('continuousScan.enabled', {
+        context: 'service:deepScan',
+        operation: 'setContinuousDeepScanEnabled',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId: continuousCorrelationId ?? undefined,
+        durationMs: null,
+        errorCategory: null,
+        enabled: next
+    });
+}
+function normalizeMaxEventsPerCycle(value) {
+    const parsed = Number.isFinite(value) ? Math.floor(value) : Number.NaN;
+    if (!Number.isFinite(parsed) || parsed < 1) {
+        return exports.CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE;
+    }
+    return Math.min(parsed, 500);
+}
+function getContinuousScanMaxEventsPerCycle() {
+    return continuousScanMaxEventsPerCycle;
+}
+function setContinuousScanMaxEventsPerCycle(value) {
+    continuousScanMaxEventsPerCycle = normalizeMaxEventsPerCycle(value);
+    (0, logger_1.logInfo)('continuousScan.maxEvents.set', {
+        context: 'service:deepScan',
+        operation: 'setContinuousScanMaxEventsPerCycle',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId: continuousCorrelationId ?? undefined,
+        durationMs: null,
+        errorCategory: null,
+        maxEventsPerCycle: continuousScanMaxEventsPerCycle
+    });
+}
+function getContinuousScanStatus() {
+    ensureDailyStats(nowMs());
+    return {
+        enabled: continuousDeepScanEnabled,
+        isActive: isContinuousScanActive,
+        lastContinuousScanAt,
+        eventsScannedToday: dailyEventsScanned,
+        opportunitiesFoundToday: dailyOpportunitiesFound,
+        requestsToday: dailyRequestsMade,
+        maxEventsPerCycle: continuousScanMaxEventsPerCycle
+    };
+}
+/**
+ * Set default ROI thresholds for continuous scan.
+ * Called during startup to sync renderer's persisted settings to main process.
+ */
+function setContinuousScanDefaultThresholds(thresholds) {
+    // Only update if lastThresholdConfig is empty (no manual scan has run yet)
+    if (lastThresholdConfig.minRoi === undefined && lastThresholdConfig.marketGroupThresholds === undefined) {
+        lastThresholdConfig = {
+            minRoi: thresholds.minRoi,
+            marketGroupThresholds: thresholds.marketGroupThresholds,
+            maxConcurrentRequests: lastThresholdConfig.maxConcurrentRequests ?? 2
+        };
+    }
+}
+async function runContinuousScanCycle(reason) {
+    if (!continuousDeepScanEnabled || manualScanInProgress) {
+        return;
+    }
+    if (process.env.NODE_ENV === 'test' && eventsFetcherOverride === null) {
+        return;
+    }
+    const apiKey = await (0, credentials_1.getApiKeyForAdapter)(DEEP_SCAN_PROVIDER_ID);
+    if (!apiKey) {
+        (0, logger_1.logWarn)('continuousScan.error', {
+            context: 'service:deepScan',
+            operation: 'runContinuousScanCycle',
+            providerId: DEEP_SCAN_PROVIDER_ID,
+            correlationId: continuousCorrelationId ?? undefined,
+            durationMs: null,
+            errorCategory: 'UserError',
+            message: 'API key not configured for provider odds-api-io'
+        });
+        return;
+    }
+    continuousCorrelationId = (0, logger_1.createCorrelationId)();
+    continuousAbortController = new AbortController();
+    const signal = continuousAbortController.signal;
+    const correlationId = continuousCorrelationId;
+    const startedAt = nowIso();
+    isContinuousScanActive = true;
+    lastContinuousScanStartedAtMs = nowMs();
+    (0, logger_1.logInfo)('continuousScan.trigger', {
+        context: 'service:deepScan',
+        operation: 'runContinuousScanCycle',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId,
+        durationMs: null,
+        errorCategory: null,
+        reason
+    });
+    updateProgress({
+        status: 'scanning',
+        eventsScanned: 0,
+        eventsTotal: 0,
+        requestsMade: 0,
+        opportunitiesFound: 0,
+        startedAt,
+        elapsedMs: 0,
+        mode: 'continuous',
+        lastContinuousScanAt: lastContinuousScanAt ?? undefined,
+        isContinuousScanActive
+    });
+    const config = {
+        minRoi: lastThresholdConfig.minRoi,
+        marketGroupThresholds: lastThresholdConfig.marketGroupThresholds,
+        maxConcurrentRequests: lastThresholdConfig.maxConcurrentRequests ?? 2
+    };
+    try {
+        const resolveBookmakers = bookmakersResolverOverride ?? defaultBookmakersResolver;
+        const bookmakers = await resolveBookmakers({ config, apiKey });
+        const events = await discoverAllEvents({
+            apiKey,
+            signal,
+            correlationId
+        });
+        let cacheHits = 0;
+        let cacheMisses = 0;
+        const eventsToScanRaw = events.filter((event) => {
+            const shouldScan = shouldScanEvent(event.id, bookmakers);
+            if (shouldScan) {
+                cacheMisses += 1;
+            }
+            else {
+                cacheHits += 1;
+            }
+            return shouldScan;
+        });
+        const budget = computeContinuousEventBudget(eventsToScanRaw.length);
+        const eventsToScan = eventsToScanRaw.slice(0, budget);
+        if (eventsToScanRaw.length > eventsToScan.length) {
+            (0, logger_1.logInfo)('continuousScan.throttle', {
+                context: 'service:deepScan',
+                operation: 'runContinuousScanCycle',
+                providerId: DEEP_SCAN_PROVIDER_ID,
+                correlationId,
+                durationMs: null,
+                errorCategory: null,
+                requestedEvents: eventsToScanRaw.length,
+                allowedEvents: eventsToScan.length,
+                budget
+            });
+        }
+        await runScanForEvents({
+            mode: 'continuous',
+            config,
+            apiKey,
+            signal,
+            correlationId,
+            events: eventsToScan,
+            bookmakers,
+            discoverySummary: {
+                eventsDiscovered: events.length,
+                eventsToScan: eventsToScan.length,
+                cacheHits,
+                cacheMisses
+            }
+        });
+    }
+    catch (error) {
+        if (signal.aborted || isAbortError(error)) {
+            updateProgress({ status: 'cancelled', currentEventName: undefined, mode: 'continuous' });
+        }
+        else {
+            updateProgress({
+                status: 'error',
+                errorMessage: error?.message ?? 'Continuous deep scan failed',
+                mode: 'continuous'
+            });
+            (0, logger_1.logWarn)('continuousScan.error', {
+                context: 'service:deepScan',
+                operation: 'runContinuousScanCycle',
+                providerId: DEEP_SCAN_PROVIDER_ID,
+                correlationId,
+                durationMs: null,
+                errorCategory: 'SystemError',
+                message: error?.message ?? 'Continuous deep scan failed'
+            });
+        }
+    }
+    finally {
+        isContinuousScanActive = false;
+        continuousAbortController = null;
+        updateProgress({
+            isContinuousScanActive,
+            lastContinuousScanAt: lastContinuousScanAt ?? undefined,
+            mode: 'continuous'
+        });
+    }
+}
+async function startContinuousDeepScan(args) {
+    const { reason, force } = args;
+    if (!continuousDeepScanEnabled) {
+        return;
+    }
+    if (manualScanInProgress) {
+        continuousScanQueued = true;
+        return;
+    }
+    if (continuousScanPromise) {
+        continuousScanQueued = true;
+        return;
+    }
+    const now = nowMs();
+    if (!force && lastContinuousScanStartedAtMs !== null) {
+        const elapsed = now - lastContinuousScanStartedAtMs;
+        if (elapsed < exports.CONTINUOUS_SCAN_MIN_INTERVAL_MS) {
+            continuousScanQueued = true;
+            const remainingMs = exports.CONTINUOUS_SCAN_MIN_INTERVAL_MS - elapsed;
+            scheduleContinuousStart(remainingMs, 'min-interval-elapsed');
+            return;
+        }
+    }
+    continuousScanQueued = false;
+    clearMinIntervalTimer();
+    continuousScanPromise = runContinuousScanCycle(reason)
+        .catch((error) => {
+        (0, logger_1.logWarn)('continuousScan.error', {
+            context: 'service:deepScan',
+            operation: 'startContinuousDeepScan',
+            providerId: DEEP_SCAN_PROVIDER_ID,
+            correlationId: continuousCorrelationId ?? undefined,
+            durationMs: null,
+            errorCategory: 'SystemError',
+            message: error?.message ?? 'Continuous deep scan failed to start'
+        });
+    })
+        .finally(() => {
+        continuousScanPromise = null;
+        if (continuousScanQueued && continuousDeepScanEnabled && !manualScanInProgress) {
+            const nowAfter = nowMs();
+            if (lastContinuousScanStartedAtMs !== null) {
+                const elapsed = nowAfter - lastContinuousScanStartedAtMs;
+                if (elapsed < exports.CONTINUOUS_SCAN_MIN_INTERVAL_MS) {
+                    const remaining = exports.CONTINUOUS_SCAN_MIN_INTERVAL_MS - elapsed;
+                    scheduleContinuousStart(remaining, 'queued-after-cycle');
+                    return;
+                }
+            }
+            void startContinuousDeepScan({ reason: 'queued-after-cycle', force: true });
+        }
     });
 }
 async function startDeepScan(config) {
     const parsed = schemas_1.deepScanConfigSchema.parse(config);
     ensureScope(parsed);
-    if (currentScan?.status === 'scanning') {
+    const currentMode = currentScan?.mode ?? 'manual';
+    if (currentScan?.status === 'scanning' && currentMode === 'manual') {
         throw new Error('A deep scan is already in progress');
+    }
+    if (isContinuousScanActive || continuousScanPromise) {
+        cancelContinuousDeepScan('manual_override');
     }
     const apiKey = await (0, credentials_1.getApiKeyForAdapter)(DEEP_SCAN_PROVIDER_ID);
     if (!apiKey) {
         throw new Error('API key not configured for provider odds-api-io');
     }
-    currentCorrelationId = (0, logger_1.createCorrelationId)();
-    currentAbortController = new AbortController();
-    currentResults = [];
-    const startedAt = new Date().toISOString();
+    lastThresholdConfig = {
+        minRoi: parsed.minRoi,
+        marketGroupThresholds: parsed.marketGroupThresholds,
+        maxConcurrentRequests: parsed.maxConcurrentRequests
+    };
+    manualCorrelationId = (0, logger_1.createCorrelationId)();
+    manualAbortController = new AbortController();
+    manualResults = [];
+    manualScanInProgress = true;
+    currentScanMode = 'manual';
+    const startedAt = nowIso();
     currentScan = {
         status: 'scanning',
         eventsScanned: 0,
@@ -631,13 +1375,16 @@ async function startDeepScan(config) {
         requestsMade: 0,
         opportunitiesFound: 0,
         startedAt,
-        elapsedMs: 0
+        elapsedMs: 0,
+        mode: 'manual',
+        lastContinuousScanAt: lastContinuousScanAt ?? undefined,
+        isContinuousScanActive
     };
     (0, logger_1.logInfo)('deepScan.start', {
         context: 'service:deepScan',
         operation: 'startDeepScan',
         providerId: DEEP_SCAN_PROVIDER_ID,
-        correlationId: currentCorrelationId,
+        correlationId: manualCorrelationId,
         durationMs: null,
         errorCategory: null,
         configSummary: {
@@ -648,14 +1395,14 @@ async function startDeepScan(config) {
         },
         requestedEventCount: parsed.eventIds?.length ?? null
     });
-    const signal = currentAbortController.signal;
-    const correlationId = currentCorrelationId;
-    scanPromise = runScan(parsed, apiKey, signal, correlationId)
+    const signal = manualAbortController.signal;
+    const correlationId = manualCorrelationId;
+    manualScanPromise = runManualScan(parsed, apiKey, signal, correlationId)
         .catch((error) => {
         if (signal.aborted || isAbortError(error)) {
             return;
         }
-        updateProgress({ status: 'error', errorMessage: error?.message ?? 'Deep scan failed' });
+        updateProgress({ status: 'error', errorMessage: error?.message ?? 'Deep scan failed', mode: 'manual' });
         (0, logger_1.logWarn)('deepScan.error', {
             context: 'service:deepScan',
             operation: 'startDeepScan',
@@ -667,40 +1414,55 @@ async function startDeepScan(config) {
         });
     })
         .finally(() => {
-        currentAbortController = null;
+        manualAbortController = null;
+        manualScanInProgress = false;
+        if (continuousDeepScanEnabled && continuousScanQueued && !isContinuousScanActive) {
+            void startContinuousDeepScan({ reason: 'resume-after-manual', force: true });
+        }
     });
 }
 function cancelDeepScan() {
-    if (!currentAbortController || currentScan?.status !== 'scanning') {
+    const currentMode = currentScan?.mode ?? 'manual';
+    if (manualAbortController && currentScan?.status === 'scanning' && currentMode === 'manual') {
+        manualAbortController.abort();
+        updateProgress({ status: 'cancelled', currentEventName: undefined, mode: 'manual' });
+        (0, logger_1.logInfo)('deepScan.cancel', {
+            context: 'service:deepScan',
+            operation: 'cancelDeepScan',
+            providerId: DEEP_SCAN_PROVIDER_ID,
+            correlationId: manualCorrelationId ?? undefined,
+            durationMs: null,
+            errorCategory: null,
+            eventsCompleted: currentScan?.eventsScanned ?? 0,
+            opportunitiesFound: manualResults.length,
+            requestsMade: currentScan?.requestsMade ?? 0,
+            reason: 'user_cancel'
+        });
         return;
     }
-    currentAbortController.abort();
-    updateProgress({ status: 'cancelled', currentEventName: undefined });
-    (0, logger_1.logInfo)('deepScan.cancel', {
-        context: 'service:deepScan',
-        operation: 'cancelDeepScan',
-        providerId: DEEP_SCAN_PROVIDER_ID,
-        correlationId: currentCorrelationId ?? undefined,
-        durationMs: null,
-        errorCategory: null,
-        eventsCompleted: currentScan?.eventsScanned ?? 0,
-        opportunitiesFound: currentResults.length,
-        requestsMade: currentScan?.requestsMade ?? 0,
-        reason: 'user_cancel'
-    });
+    if (isContinuousScanActive || continuousScanPromise) {
+        cancelContinuousDeepScan('user_cancel');
+    }
 }
 function getDeepScanProgress() {
     const base = currentScan ?? idleProgress();
     if (base.status === 'scanning') {
         return {
             ...base,
-            elapsedMs: computeElapsedMs(base.startedAt)
+            elapsedMs: computeElapsedMs(base.startedAt),
+            lastContinuousScanAt: lastContinuousScanAt ?? base.lastContinuousScanAt,
+            isContinuousScanActive
         };
     }
-    return base;
+    return {
+        ...base,
+        lastContinuousScanAt: lastContinuousScanAt ?? base.lastContinuousScanAt,
+        isContinuousScanActive
+    };
 }
 function getDeepScanResults() {
-    return currentResults.map((opp) => ({
+    const combined = [...manualResults, ...continuousResults];
+    return combined.map((opp) => ({
         ...opp,
         source: 'deepScan'
     }));
@@ -708,16 +1470,43 @@ function getDeepScanResults() {
 exports.__test = {
     resetState() {
         currentScan = null;
-        currentResults = [];
-        currentAbortController = null;
-        currentCorrelationId = null;
-        scanPromise = null;
+        manualResults = [];
+        continuousResults = [];
+        manualAbortController = null;
+        continuousAbortController = null;
+        manualCorrelationId = null;
+        continuousCorrelationId = null;
+        manualScanPromise = null;
+        continuousScanPromise = null;
+        manualScanInProgress = false;
+        continuousDeepScanEnabled = true;
+        isContinuousScanActive = false;
+        continuousScanQueued = false;
+        lastContinuousScanAt = null;
+        lastContinuousScanStartedAtMs = null;
+        currentScanMode = 'manual';
+        clearMinIntervalTimer();
+        lastThresholdConfig = {};
+        continuousScanMaxEventsPerCycle = exports.CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE;
+        scanCache.clear();
+        timeOffsetMs = 0;
+        hourlyWindowStartedAtMs = null;
+        hourlyRequestsUsed = 0;
+        hourlyWarnLogged = false;
+        dailyStatsKey = null;
+        dailyEventsScanned = 0;
+        dailyOpportunitiesFound = 0;
+        dailyRequestsMade = 0;
         eventResolverOverride = null;
+        eventsFetcherOverride = null;
         oddsFetcherOverride = null;
         bookmakersResolverOverride = null;
     },
     setEventResolver(resolver) {
         eventResolverOverride = resolver;
+    },
+    setEventsFetcher(fetcher) {
+        eventsFetcherOverride = fetcher;
     },
     setOddsFetcher(fetcher) {
         oddsFetcherOverride = fetcher;
@@ -726,8 +1515,26 @@ exports.__test = {
         bookmakersResolverOverride = resolver;
     },
     async waitForScanCompletion() {
-        if (!scanPromise)
+        if (!manualScanPromise)
             return;
-        await scanPromise;
+        await manualScanPromise;
+    },
+    async waitForContinuousScanCompletion() {
+        if (!continuousScanPromise)
+            return;
+        await continuousScanPromise;
+    },
+    shouldScanEvent(eventId, bookmakers) {
+        return shouldScanEvent(eventId, bookmakers);
+    },
+    markEventScanned(eventId, bookmakers) {
+        updateScanCache(eventId, bookmakers);
+    },
+    advanceScanCacheClock(deltaMs) {
+        timeOffsetMs += deltaMs;
+    },
+    SCAN_CACHE_TTL_MS: exports.SCAN_CACHE_TTL_MS,
+    getContinuousStatus() {
+        return getContinuousScanStatus();
     }
 };

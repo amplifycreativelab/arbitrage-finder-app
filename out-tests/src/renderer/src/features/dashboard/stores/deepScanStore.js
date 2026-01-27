@@ -6,8 +6,10 @@ const trpc_1 = require("../../../lib/trpc");
 const feedFiltersStore_1 = require("./feedFiltersStore");
 const feedStore_1 = require("./feedStore");
 const POLL_INTERVAL_MS = 1500;
+const DEFAULT_MAX_EVENTS_PER_CYCLE = 50;
 const idleProgress = {
     status: 'idle',
+    mode: 'manual',
     eventsScanned: 0,
     eventsTotal: 0,
     requestsMade: 0,
@@ -17,6 +19,15 @@ const idleProgress = {
 };
 let pollHandle = null;
 let lastStatus = 'idle';
+const idleContinuousStatus = {
+    enabled: true,
+    isActive: false,
+    lastContinuousScanAt: null,
+    eventsScannedToday: 0,
+    opportunitiesFoundToday: 0,
+    requestsToday: 0,
+    maxEventsPerCycle: DEFAULT_MAX_EVENTS_PER_CYCLE
+};
 function clearPolling() {
     if (pollHandle) {
         clearInterval(pollHandle);
@@ -26,10 +37,65 @@ function clearPolling() {
 function triggerFeedRefresh() {
     void feedStore_1.useFeedStore.getState().refreshSnapshot();
 }
+function computeFilterSignature(state) {
+    const regionsKey = (state.regions ?? []).slice().sort().join(',');
+    const bookmakersKey = (state.bookmakers ?? []).slice().sort().join(',');
+    return `${regionsKey}|${bookmakersKey}`;
+}
+let filtersSubscribed = false;
+function ensureFilterCacheInvalidationSubscription() {
+    if (filtersSubscribed)
+        return;
+    filtersSubscribed = true;
+    let previousSignature = computeFilterSignature(feedFiltersStore_1.useFeedFiltersStore.getState());
+    feedFiltersStore_1.useFeedFiltersStore.subscribe((state) => {
+        const nextSignature = computeFilterSignature(state);
+        if (nextSignature === previousSignature) {
+            return;
+        }
+        previousSignature = nextSignature;
+        void trpc_1.trpcClient.deepScanClearCache
+            .mutate({ reason: 'filters_changed' })
+            .catch(() => {
+            // Cache invalidation is best-effort and should not surface to the user.
+        });
+    });
+}
+ensureFilterCacheInvalidationSubscription();
+let startupSyncCompleted = false;
+async function syncPersistedSettingsToMain() {
+    if (startupSyncCompleted)
+        return;
+    startupSyncCompleted = true;
+    const { continuousDeepScanEnabled, continuousDeepScanMaxEventsPerCycle, deepScanRoiThresholds } = feedFiltersStore_1.useFeedFiltersStore.getState();
+    try {
+        await trpc_1.trpcClient.deepScanSetContinuousEnabled.mutate({ enabled: continuousDeepScanEnabled });
+    }
+    catch {
+        // Best-effort sync; ignore errors
+    }
+    try {
+        await trpc_1.trpcClient.deepScanSetMaxEventsPerCycle.mutate({ maxEvents: continuousDeepScanMaxEventsPerCycle });
+    }
+    catch {
+        // Best-effort sync; ignore errors
+    }
+    try {
+        await trpc_1.trpcClient.deepScanSetDefaultThresholds.mutate({
+            minRoi: deepScanRoiThresholds.globalMinRoi,
+            marketGroupThresholds: deepScanRoiThresholds.marketGroupMinRoi
+        });
+    }
+    catch {
+        // Best-effort sync; ignore errors
+    }
+}
 exports.useDeepScanStore = (0, zustand_1.create)((set, get) => ({
     progress: idleProgress,
+    continuousStatus: idleContinuousStatus,
     isDialogOpen: false,
     isStarting: false,
+    isContinuousUpdating: false,
     lastConfig: null,
     setDialogOpen: (open) => {
         set({ isDialogOpen: open });
@@ -118,6 +184,7 @@ exports.useDeepScanStore = (0, zustand_1.create)((set, get) => ({
                     ...status
                 }
             }));
+            await get().refreshContinuousStatus();
             if (previous === 'scanning' && status.status !== 'scanning') {
                 clearPolling();
                 triggerFeedRefresh();
@@ -131,6 +198,71 @@ exports.useDeepScanStore = (0, zustand_1.create)((set, get) => ({
                 progress: {
                     ...state.progress,
                     status: 'error',
+                    errorMessage: message
+                }
+            }));
+        }
+    },
+    refreshContinuousStatus: async () => {
+        set({ isContinuousUpdating: true });
+        try {
+            // Sync persisted settings from renderer to main on first refresh
+            await syncPersistedSettingsToMain();
+            const status = await trpc_1.trpcClient.deepScanGetContinuousStatus.query();
+            set({ continuousStatus: status });
+        }
+        catch (error) {
+            const message = error?.message ?? 'Unable to refresh continuous deep scan status';
+            set((state) => ({
+                progress: {
+                    ...state.progress,
+                    errorMessage: message
+                }
+            }));
+        }
+        finally {
+            set({ isContinuousUpdating: false });
+        }
+    },
+    setContinuousEnabled: async (enabled) => {
+        const normalized = Boolean(enabled);
+        set((state) => ({
+            continuousStatus: {
+                ...state.continuousStatus,
+                enabled: normalized
+            }
+        }));
+        try {
+            await trpc_1.trpcClient.deepScanSetContinuousEnabled.mutate({ enabled: normalized });
+            await get().refreshContinuousStatus();
+        }
+        catch (error) {
+            const message = error?.message ?? 'Unable to update continuous deep scan setting';
+            set((state) => ({
+                progress: {
+                    ...state.progress,
+                    errorMessage: message
+                }
+            }));
+        }
+    },
+    setMaxEventsPerCycle: async (maxEvents) => {
+        const normalized = Number.isFinite(maxEvents) ? Math.max(1, Math.floor(maxEvents)) : DEFAULT_MAX_EVENTS_PER_CYCLE;
+        set((state) => ({
+            continuousStatus: {
+                ...state.continuousStatus,
+                maxEventsPerCycle: normalized
+            }
+        }));
+        try {
+            await trpc_1.trpcClient.deepScanSetMaxEventsPerCycle.mutate({ maxEvents: normalized });
+            await get().refreshContinuousStatus();
+        }
+        catch (error) {
+            const message = error?.message ?? 'Unable to update max events per cycle';
+            set((state) => ({
+                progress: {
+                    ...state.progress,
                     errorMessage: message
                 }
             }));
