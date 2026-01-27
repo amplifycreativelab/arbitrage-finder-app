@@ -14,6 +14,8 @@ const idleProgress = {
     eventsTotal: 0,
     requestsMade: 0,
     opportunitiesFound: 0,
+    marketsScanned: 0,
+    marketGroupsWithArbs: [],
     startedAt: null,
     elapsedMs: 0
 };
@@ -26,7 +28,11 @@ const idleContinuousStatus = {
     eventsScannedToday: 0,
     opportunitiesFoundToday: 0,
     requestsToday: 0,
-    maxEventsPerCycle: DEFAULT_MAX_EVENTS_PER_CYCLE
+    maxEventsPerCycle: DEFAULT_MAX_EVENTS_PER_CYCLE,
+    cacheEntries: 0,
+    cacheTtlMinutes: 5,
+    batchSize: 10,
+    cacheOldestEntryAgeMs: null
 };
 function clearPolling() {
     if (pollHandle) {
@@ -54,9 +60,11 @@ function ensureFilterCacheInvalidationSubscription() {
             return;
         }
         previousSignature = nextSignature;
-        void trpc_1.trpcClient.deepScanClearCache
-            .mutate({ reason: 'filters_changed' })
-            .catch(() => {
+        const clearCacheMutation = trpc_1.trpcClient.deepScanClearCache;
+        if (!clearCacheMutation || typeof clearCacheMutation.mutate !== 'function') {
+            return;
+        }
+        void clearCacheMutation.mutate({ reason: 'filters_changed' }).catch(() => {
             // Cache invalidation is best-effort and should not surface to the user.
         });
     });
@@ -67,7 +75,7 @@ async function syncPersistedSettingsToMain() {
     if (startupSyncCompleted)
         return;
     startupSyncCompleted = true;
-    const { continuousDeepScanEnabled, continuousDeepScanMaxEventsPerCycle, deepScanRoiThresholds } = feedFiltersStore_1.useFeedFiltersStore.getState();
+    const { continuousDeepScanEnabled, continuousDeepScanMaxEventsPerCycle, deepScanCacheTtlMinutes, deepScanBatchSize, deepScanRoiThresholds } = feedFiltersStore_1.useFeedFiltersStore.getState();
     try {
         await trpc_1.trpcClient.deepScanSetContinuousEnabled.mutate({ enabled: continuousDeepScanEnabled });
     }
@@ -76,6 +84,18 @@ async function syncPersistedSettingsToMain() {
     }
     try {
         await trpc_1.trpcClient.deepScanSetMaxEventsPerCycle.mutate({ maxEvents: continuousDeepScanMaxEventsPerCycle });
+    }
+    catch {
+        // Best-effort sync; ignore errors
+    }
+    try {
+        await trpc_1.trpcClient.deepScanSetCacheTtl.mutate({ ttlMinutes: deepScanCacheTtlMinutes });
+    }
+    catch {
+        // Best-effort sync; ignore errors
+    }
+    try {
+        await trpc_1.trpcClient.deepScanSetBatchSize.mutate({ batchSize: deepScanBatchSize });
     }
     catch {
         // Best-effort sync; ignore errors

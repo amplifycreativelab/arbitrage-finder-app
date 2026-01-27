@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.__test = exports.CONTINUOUS_SCAN_MIN_INTERVAL_MS = exports.CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE = exports.SCAN_CACHE_TTL_MS = void 0;
+exports.__test = exports.CONTINUOUS_SCAN_MIN_INTERVAL_MS = exports.CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE = exports.SCAN_CACHE_TTL_MS_DEFAULT = void 0;
 exports.clearScanCache = clearScanCache;
 exports.shouldScanEvent = shouldScanEvent;
 exports.discoverAllEvents = discoverAllEvents;
@@ -8,6 +8,13 @@ exports.getContinuousDeepScanEnabled = getContinuousDeepScanEnabled;
 exports.setContinuousDeepScanEnabled = setContinuousDeepScanEnabled;
 exports.getContinuousScanMaxEventsPerCycle = getContinuousScanMaxEventsPerCycle;
 exports.setContinuousScanMaxEventsPerCycle = setContinuousScanMaxEventsPerCycle;
+exports.getScanCacheTtlMinutes = getScanCacheTtlMinutes;
+exports.setScanCacheTtl = setScanCacheTtl;
+exports.getContinuousScanBatchSize = getContinuousScanBatchSize;
+exports.setContinuousScanBatchSize = setContinuousScanBatchSize;
+exports.getAvailableSports = getAvailableSports;
+exports.getEnabledSportsFilter = getEnabledSportsFilter;
+exports.setEnabledSportsFilter = setEnabledSportsFilter;
 exports.getContinuousScanStatus = getContinuousScanStatus;
 exports.setContinuousScanDefaultThresholds = setContinuousScanDefaultThresholds;
 exports.startContinuousDeepScan = startContinuousDeepScan;
@@ -27,10 +34,12 @@ const ODDS_API_IO_BASE_URL = 'https://api.odds-api.io';
 const ODDS_API_IO_EVENTS_PATH = '/v3/events';
 const ODDS_API_IO_ODDS_PATH = '/v3/odds';
 const DEEP_SCAN_PROVIDER_ID = 'odds-api-io';
-exports.SCAN_CACHE_TTL_MS = 5 * 60 * 1000;
+exports.SCAN_CACHE_TTL_MS_DEFAULT = 5 * 60 * 1000;
 exports.CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE = 50;
 exports.CONTINUOUS_SCAN_MIN_INTERVAL_MS = 60_000;
-const CONTINUOUS_SCAN_BATCH_SIZE = 10;
+const CONTINUOUS_SCAN_BATCH_SIZE_DEFAULT = 10;
+let scanCacheTtlMs = exports.SCAN_CACHE_TTL_MS_DEFAULT;
+let continuousScanBatchSize = CONTINUOUS_SCAN_BATCH_SIZE_DEFAULT;
 const HOURLY_REQUEST_LIMIT = 5000;
 const HOURLY_WARN_THRESHOLD = 0.8;
 const HOURLY_THROTTLE_THRESHOLD = 0.9;
@@ -62,6 +71,8 @@ let dailyStatsKey = null;
 let dailyEventsScanned = 0;
 let dailyOpportunitiesFound = 0;
 let dailyRequestsMade = 0;
+let lastDiscoveredSports = [];
+let enabledSportsFilter = [];
 let eventResolverOverride = null;
 let eventsFetcherOverride = null;
 let oddsFetcherOverride = null;
@@ -181,7 +192,7 @@ function shouldScanEvent(eventId, bookmakers) {
         return true;
     }
     const ageMs = now - entry.scannedAt;
-    const isExpired = ageMs >= exports.SCAN_CACHE_TTL_MS;
+    const isExpired = ageMs >= scanCacheTtlMs;
     const hashChanged = entry.bookmakerHash !== bookmakerHash;
     if (isExpired || hashChanged) {
         scanCache.delete(eventId);
@@ -216,6 +227,8 @@ function idleProgress() {
         eventsTotal: 0,
         requestsMade: 0,
         opportunitiesFound: 0,
+        marketsScanned: 0,
+        marketGroupsWithArbs: [],
         startedAt: null,
         elapsedMs: 0,
         mode: 'manual',
@@ -489,6 +502,8 @@ async function discoverAllEvents(args) {
             return event.date;
         return max;
     }, null);
+    // Track discovered sports for getAvailableSports query
+    lastDiscoveredSports = sportsCovered;
     (0, logger_1.logInfo)('continuousScan.discovery', {
         context: 'service:deepScan',
         operation: 'discoverAllEvents',
@@ -844,10 +859,40 @@ async function runScanForEvents(args) {
     else {
         manualResults = [];
     }
+    let totalMarketsRetrieved = 0;
+    let eventsWithMarkets = 0;
+    const arbMarketKeys = new Set();
+    const arbMarketGroups = new Set();
+    const collectUniqueMarketKeys = (payload) => {
+        const keys = new Set();
+        for (const bookmaker of payload.bookmakers) {
+            for (const market of bookmaker.markets) {
+                const key = typeof market.key === 'string' ? market.key.trim() : '';
+                if (key) {
+                    keys.add(key);
+                }
+            }
+        }
+        return [...keys];
+    };
+    const updateArbTrackingFromOpportunities = (opportunities) => {
+        for (const opportunity of opportunities) {
+            for (const leg of opportunity.legs) {
+                const marketKey = leg.market?.trim();
+                if (!marketKey)
+                    continue;
+                arbMarketKeys.add(marketKey);
+                const metadata = (0, types_1.inferMarketMetadata)(marketKey);
+                arbMarketGroups.add(metadata.group);
+            }
+        }
+    };
     updateProgress({
         eventsTotal: events.length,
         eventsScanned: 0,
         opportunitiesFound: 0,
+        marketsScanned: 0,
+        marketGroupsWithArbs: [],
         currentEventName: undefined,
         mode
     });
@@ -863,6 +908,14 @@ async function runScanForEvents(args) {
         bookmakersCount: bookmakers.length,
         requestsMade: currentScan?.requestsMade ?? 0,
         discoverySummary,
+        cacheStatus: {
+            totalCached: scanCache.size,
+            ttlMinutes: getScanCacheTtlMinutes()
+        },
+        batchConfig: {
+            batchSize: continuousScanBatchSize,
+            maxEventsPerCycle: continuousScanMaxEventsPerCycle
+        },
         quota: {
             hourlyRequestsUsed: quotaStatus.used,
             hourlyRequestLimit: quotaStatus.limit,
@@ -873,6 +926,7 @@ async function runScanForEvents(args) {
         if (mode === 'continuous') {
             lastContinuousScanAt = nowIso();
         }
+        const averageMarketsPerEvent = 0;
         updateProgress({
             status: 'completed',
             currentEventName: undefined,
@@ -894,6 +948,11 @@ async function runScanForEvents(args) {
             requestsMade: currentScan?.requestsMade ?? 0,
             cacheHits: discoverySummary?.cacheHits ?? 0,
             cacheMisses: discoverySummary?.cacheMisses ?? 0,
+            marketStats: {
+                totalMarketsRetrieved,
+                marketsWithArbs: arbMarketKeys.size,
+                averageMarketsPerEvent
+            },
             quota: {
                 hourlyRequestsUsed: quotaStatusAfter.used,
                 hourlyRequestLimit: quotaStatusAfter.limit,
@@ -904,7 +963,7 @@ async function runScanForEvents(args) {
     }
     const concurrency = Math.max(1, Math.min(10, config.maxConcurrentRequests ?? 2));
     let eventErrors = 0;
-    const batches = mode === 'continuous' ? chunk(events, CONTINUOUS_SCAN_BATCH_SIZE) : [events];
+    const batches = mode === 'continuous' ? chunk(events, continuousScanBatchSize) : [events];
     const processEvent = async (event) => {
         if (signal.aborted)
             return;
@@ -914,13 +973,23 @@ async function runScanForEvents(args) {
             const resultsBefore = (mode === 'continuous' ? continuousResults : manualResults).length;
             const result = await fetchOddsWithRetry(fetchOdds, { event, apiKey, bookmakers, signal, correlationId }, { trackAttempts: trackOddsAttempts });
             const foundAt = nowIso();
+            let marketsRetrievedForEvent = 0;
             const opportunities = isOpportunityArray(result)
                 ? result
                 : (() => {
                     const payload = toRawOddsPayload(result, event, config);
-                    return payload ? buildOpportunitiesFromRawOdds(payload, config, foundAt) : [];
+                    if (!payload)
+                        return [];
+                    const uniqueMarketKeys = collectUniqueMarketKeys(payload);
+                    marketsRetrievedForEvent = uniqueMarketKeys.length;
+                    return buildOpportunitiesFromRawOdds(payload, config, foundAt);
                 })();
+            if (marketsRetrievedForEvent > 0) {
+                totalMarketsRetrieved += marketsRetrievedForEvent;
+                eventsWithMarkets += 1;
+            }
             if (opportunities.length) {
+                updateArbTrackingFromOpportunities(opportunities);
                 if (mode === 'continuous') {
                     continuousResults.push(...opportunities);
                     updateProgress({ opportunitiesFound: continuousResults.length, mode });
@@ -932,7 +1001,12 @@ async function runScanForEvents(args) {
             }
             const resultsAfter = (mode === 'continuous' ? continuousResults : manualResults).length;
             const arbsFound = Math.max(0, resultsAfter - resultsBefore);
-            updateProgress({ eventsScanned: (currentScan?.eventsScanned ?? 0) + 1, mode });
+            updateProgress({
+                eventsScanned: (currentScan?.eventsScanned ?? 0) + 1,
+                marketsScanned: (currentScan?.marketsScanned ?? 0) + marketsRetrievedForEvent,
+                marketGroupsWithArbs: [...arbMarketGroups],
+                mode
+            });
             if (mode === 'continuous') {
                 updateScanCache(event.id, bookmakers);
                 recordContinuousEventScanned(1);
@@ -1004,6 +1078,7 @@ async function runScanForEvents(args) {
         updateProgress({ lastContinuousScanAt: lastContinuousScanAt ?? undefined, mode });
     }
     const quotaStatusAfter = getHourlyQuotaStatus();
+    const averageMarketsPerEvent = eventsWithMarkets > 0 ? Number((totalMarketsRetrieved / eventsWithMarkets).toFixed(2)) : 0;
     (0, logger_1.logInfo)(completeEventName, {
         context: 'service:deepScan',
         operation,
@@ -1018,6 +1093,11 @@ async function runScanForEvents(args) {
         requestsMade: currentScan?.requestsMade ?? 0,
         cacheHits: discoverySummary?.cacheHits ?? 0,
         cacheMisses: discoverySummary?.cacheMisses ?? 0,
+        marketStats: {
+            totalMarketsRetrieved,
+            marketsWithArbs: arbMarketKeys.size,
+            averageMarketsPerEvent
+        },
         quota: {
             hourlyRequestsUsed: quotaStatusAfter.used,
             hourlyRequestLimit: quotaStatusAfter.limit,
@@ -1129,8 +1209,76 @@ function setContinuousScanMaxEventsPerCycle(value) {
         maxEventsPerCycle: continuousScanMaxEventsPerCycle
     });
 }
+function getScanCacheTtlMinutes() {
+    return Math.round(scanCacheTtlMs / 60_000);
+}
+function setScanCacheTtl(minutes) {
+    const normalized = Number.isFinite(minutes) ? Math.max(1, Math.min(60, Math.floor(minutes))) : 5;
+    scanCacheTtlMs = normalized * 60_000;
+    (0, logger_1.logInfo)('continuousScan.cacheTtl.set', {
+        context: 'service:deepScan',
+        operation: 'setScanCacheTtl',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId: continuousCorrelationId ?? undefined,
+        durationMs: null,
+        errorCategory: null,
+        cacheTtlMinutes: normalized
+    });
+}
+function getContinuousScanBatchSize() {
+    return continuousScanBatchSize;
+}
+function setContinuousScanBatchSize(size) {
+    const normalized = Number.isFinite(size) ? Math.max(5, Math.min(50, Math.floor(size))) : CONTINUOUS_SCAN_BATCH_SIZE_DEFAULT;
+    continuousScanBatchSize = normalized;
+    (0, logger_1.logInfo)('continuousScan.batchSize.set', {
+        context: 'service:deepScan',
+        operation: 'setContinuousScanBatchSize',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId: continuousCorrelationId ?? undefined,
+        durationMs: null,
+        errorCategory: null,
+        batchSize: normalized
+    });
+}
+function getCacheStats() {
+    const now = nowMs();
+    let oldestAgeMs = null;
+    for (const entry of scanCache.values()) {
+        const age = now - entry.scannedAt;
+        if (oldestAgeMs === null || age > oldestAgeMs) {
+            oldestAgeMs = age;
+        }
+    }
+    return {
+        entries: scanCache.size,
+        oldestAgeMs
+    };
+}
+function getAvailableSports() {
+    return [...lastDiscoveredSports];
+}
+function getEnabledSportsFilter() {
+    return [...enabledSportsFilter];
+}
+function setEnabledSportsFilter(sports) {
+    const normalized = Array.isArray(sports)
+        ? sports.map((s) => s.trim()).filter(Boolean)
+        : [];
+    enabledSportsFilter = normalized;
+    (0, logger_1.logInfo)('continuousScan.sportsFilter.set', {
+        context: 'service:deepScan',
+        operation: 'setEnabledSportsFilter',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId: continuousCorrelationId ?? undefined,
+        durationMs: null,
+        errorCategory: null,
+        enabledSports: normalized.length > 0 ? normalized : 'all'
+    });
+}
 function getContinuousScanStatus() {
     ensureDailyStats(nowMs());
+    const cacheStats = getCacheStats();
     return {
         enabled: continuousDeepScanEnabled,
         isActive: isContinuousScanActive,
@@ -1138,7 +1286,11 @@ function getContinuousScanStatus() {
         eventsScannedToday: dailyEventsScanned,
         opportunitiesFoundToday: dailyOpportunitiesFound,
         requestsToday: dailyRequestsMade,
-        maxEventsPerCycle: continuousScanMaxEventsPerCycle
+        maxEventsPerCycle: continuousScanMaxEventsPerCycle,
+        cacheEntries: cacheStats.entries,
+        cacheTtlMinutes: getScanCacheTtlMinutes(),
+        batchSize: continuousScanBatchSize,
+        cacheOldestEntryAgeMs: cacheStats.oldestAgeMs
     };
 }
 /**
@@ -1197,6 +1349,8 @@ async function runContinuousScanCycle(reason) {
         eventsTotal: 0,
         requestsMade: 0,
         opportunitiesFound: 0,
+        marketsScanned: 0,
+        marketGroupsWithArbs: [],
         startedAt,
         elapsedMs: 0,
         mode: 'continuous',
@@ -1214,7 +1368,8 @@ async function runContinuousScanCycle(reason) {
         const events = await discoverAllEvents({
             apiKey,
             signal,
-            correlationId
+            correlationId,
+            sports: enabledSportsFilter.length > 0 ? enabledSportsFilter : undefined
         });
         let cacheHits = 0;
         let cacheMisses = 0;
@@ -1374,6 +1529,8 @@ async function startDeepScan(config) {
         eventsTotal: 0,
         requestsMade: 0,
         opportunitiesFound: 0,
+        marketsScanned: 0,
+        marketGroupsWithArbs: [],
         startedAt,
         elapsedMs: 0,
         mode: 'manual',
@@ -1488,6 +1645,8 @@ exports.__test = {
         clearMinIntervalTimer();
         lastThresholdConfig = {};
         continuousScanMaxEventsPerCycle = exports.CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE;
+        scanCacheTtlMs = exports.SCAN_CACHE_TTL_MS_DEFAULT;
+        continuousScanBatchSize = CONTINUOUS_SCAN_BATCH_SIZE_DEFAULT;
         scanCache.clear();
         timeOffsetMs = 0;
         hourlyWindowStartedAtMs = null;
@@ -1497,6 +1656,8 @@ exports.__test = {
         dailyEventsScanned = 0;
         dailyOpportunitiesFound = 0;
         dailyRequestsMade = 0;
+        lastDiscoveredSports = [];
+        enabledSportsFilter = [];
         eventResolverOverride = null;
         eventsFetcherOverride = null;
         oddsFetcherOverride = null;
@@ -1533,8 +1694,14 @@ exports.__test = {
     advanceScanCacheClock(deltaMs) {
         timeOffsetMs += deltaMs;
     },
-    SCAN_CACHE_TTL_MS: exports.SCAN_CACHE_TTL_MS,
+    SCAN_CACHE_TTL_MS: exports.SCAN_CACHE_TTL_MS_DEFAULT,
     getContinuousStatus() {
         return getContinuousScanStatus();
+    },
+    getScanCacheTtlMs() {
+        return scanCacheTtlMs;
+    },
+    getContinuousScanBatchSize() {
+        return continuousScanBatchSize;
     }
 };

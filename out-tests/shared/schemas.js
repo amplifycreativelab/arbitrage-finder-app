@@ -110,6 +110,8 @@ exports.deepScanProgressSchema = zod_1.z.object({
     eventsTotal: zod_1.z.number().int().min(0),
     requestsMade: zod_1.z.number().int().min(0),
     opportunitiesFound: zod_1.z.number().int().min(0),
+    marketsScanned: zod_1.z.number().int().min(0).optional(),
+    marketGroupsWithArbs: zod_1.z.array(zod_1.z.string()).optional(),
     startedAt: zod_1.z.string().nullable(),
     elapsedMs: zod_1.z.number().int().min(0),
     lastContinuousScanAt: zod_1.z.string().optional(),

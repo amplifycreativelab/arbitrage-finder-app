@@ -36,6 +36,8 @@ const defaultState = {
     minRoi: 0,
     continuousDeepScanEnabled: true,
     continuousDeepScanMaxEventsPerCycle: 50,
+    deepScanCacheTtlMinutes: 5,
+    deepScanBatchSize: 10,
     deepScanRoiThresholds: {
         globalMinRoi: 0,
         marketGroupMinRoi: {}
@@ -98,6 +100,18 @@ exports.useFeedFiltersStore = (0, zustand_1.create)()((0, middleware_1.persist)(
         const normalized = Number.isFinite(maxEvents) ? Math.max(1, Math.floor(maxEvents)) : 50;
         set({
             continuousDeepScanMaxEventsPerCycle: normalized
+        });
+    },
+    setDeepScanCacheTtlMinutes: (minutes) => {
+        const normalized = Number.isFinite(minutes) ? Math.max(1, Math.min(60, Math.floor(minutes))) : 5;
+        set({
+            deepScanCacheTtlMinutes: normalized
+        });
+    },
+    setDeepScanBatchSize: (size) => {
+        const normalized = Number.isFinite(size) ? Math.max(5, Math.min(50, Math.floor(size))) : 10;
+        set({
+            deepScanBatchSize: normalized
         });
     },
     setDeepScanGlobalMinRoi: (minRoi) => {
@@ -220,6 +234,8 @@ exports.useFeedFiltersStore = (0, zustand_1.create)()((0, middleware_1.persist)(
         minRoi: state.minRoi,
         continuousDeepScanEnabled: state.continuousDeepScanEnabled,
         continuousDeepScanMaxEventsPerCycle: state.continuousDeepScanMaxEventsPerCycle,
+        deepScanCacheTtlMinutes: state.deepScanCacheTtlMinutes,
+        deepScanBatchSize: state.deepScanBatchSize,
         deepScanRoiThresholds: state.deepScanRoiThresholds
     })
 }));

@@ -121,18 +121,50 @@ function formatMinutesAgo(timestamp) {
         return '1h ago';
     return `${hours}h ago`;
 }
-function getContinuousStatusLabel(status) {
+function getContinuousStatusLabel(status, progress) {
     if (!status.enabled) {
         return 'Continuous off';
+    }
+    const isContinuousScanActive = progress.mode === 'continuous' && progress.status === 'scanning';
+    if (isContinuousScanActive) {
+        const eventsTotalSafe = progress.eventsTotal > 0 ? progress.eventsTotal : progress.eventsScanned;
+        const marketsScanned = progress.marketsScanned ?? 0;
+        const arbsFound = progress.opportunitiesFound;
+        return `Scanning: ${progress.eventsScanned}/${eventsTotalSafe} events (${marketsScanned} markets, ${arbsFound} arbs)`;
     }
     if (status.isActive) {
         return 'Scanning...';
     }
-    return `Idle - Last: ${formatMinutesAgo(status.lastContinuousScanAt)}`;
+    const arbsToday = status.opportunitiesFoundToday ?? 0;
+    return `Idle - ${arbsToday} arbs today - Last: ${formatMinutesAgo(status.lastContinuousScanAt)}`;
+}
+function formatCacheExpiryTooltip(status) {
+    const entries = status.cacheEntries ?? 0;
+    const ttl = status.cacheTtlMinutes ?? 5;
+    const oldestAgeMs = status.cacheOldestEntryAgeMs;
+    if (entries === 0) {
+        return `Cache: empty (TTL: ${ttl}m)`;
+    }
+    if (oldestAgeMs === null || oldestAgeMs === undefined) {
+        return `Cache: ${entries} events (TTL: ${ttl}m)`;
+    }
+    const remainingMs = Math.max(0, ttl * 60_000 - oldestAgeMs);
+    const remainingMinutes = Math.ceil(remainingMs / 60_000);
+    return `Cache: ${entries} events (oldest expires in ${remainingMinutes}m)`;
+}
+function getQuotaWarningLevel(requestsToday) {
+    const hourlyLimit = 5000;
+    // Rough estimate: if they're using more than 4000 requests in a day, they might be hitting hourly limits
+    if (requestsToday >= hourlyLimit * 0.9)
+        return 'critical';
+    if (requestsToday >= hourlyLimit * 0.8)
+        return 'warn';
+    return 'none';
 }
 function StatusBar({ stalenessNow, statusSnapshot, fetchedAt }) {
     const status = statusSnapshot;
     const continuousStatus = (0, deepScanStore_1.useDeepScanStore)((state) => state.continuousStatus);
+    const progress = (0, deepScanStore_1.useDeepScanStore)((state) => state.progress);
     const systemStatus = status?.systemStatus ?? 'OK';
     const effectiveStatus = status ?? (fetchedAt ? { systemStatus: 'OK', providers: [], lastUpdatedAt: fetchedAt } : null);
     const providers = React.useMemo(() => {
@@ -156,6 +188,6 @@ function StatusBar({ stalenessNow, statusSnapshot, fetchedAt }) {
         });
     }, [effectiveStatus]);
     const lastUpdatedLabel = formatLastUpdated(effectiveStatus, stalenessNow);
-    return ((0, jsx_runtime_1.jsxs)("section", { className: "mb-2 flex items-center justify-between gap-2 text-[10px]", "aria-label": "System and provider status", children: [(0, jsx_runtime_1.jsxs)("div", { className: "flex items-center gap-2", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-foreground/60", children: "Status" }), (0, jsx_runtime_1.jsxs)("span", { className: `inline-flex items-center gap-2 rounded-full border px-2 py-[2px] ${getSystemStatusClasses(systemStatus)}`, "data-testid": "system-status-chip", "aria-label": getSystemStatusLabel(systemStatus), children: [(0, jsx_runtime_1.jsx)("span", { className: "font-semibold", children: systemStatus }), (0, jsx_runtime_1.jsxs)("span", { className: "text-[9px] opacity-80", children: ["Updated ", lastUpdatedLabel] })] }), (0, jsx_runtime_1.jsxs)("span", { className: `inline-flex items-center gap-2 rounded-full border border-ot-border bg-ot-surface px-2 py-[2px] text-[9px] text-ot-muted ${continuousStatus.isActive ? 'animate-pulse border-ot-accent/60 text-ot-accent' : ''}`, "aria-label": "Continuous deep scan status", children: [(0, jsx_runtime_1.jsx)("span", { className: `h-1.5 w-1.5 rounded-full ${continuousStatus.enabled ? (continuousStatus.isActive ? 'bg-ot-accent' : 'bg-emerald-400') : 'bg-ot-muted/60'}` }), (0, jsx_runtime_1.jsx)("span", { children: getContinuousStatusLabel(continuousStatus) })] })] }), (0, jsx_runtime_1.jsx)("div", { className: "flex flex-wrap items-center justify-end gap-1", "aria-label": "Provider statuses", children: providers.map((provider) => ((0, jsx_runtime_1.jsxs)("span", { className: "inline-flex items-center gap-1 rounded-full border border-ot-border bg-ot-surface px-2 py-[1px] text-[9px] text-ot-muted", children: [(0, jsx_runtime_1.jsx)("span", { className: "font-medium", children: provider.displayName }), (0, jsx_runtime_1.jsx)("span", { className: `rounded-full border px-1 py-[1px] ${getProviderStatusClasses(provider.status)}`, "data-testid": `provider-status-${provider.providerId}`, "aria-label": `${provider.displayName} status ${getProviderStatusLabel(provider.status)}`, children: getProviderStatusLabel(provider.status) })] }, provider.providerId))) })] }));
+    return ((0, jsx_runtime_1.jsxs)("section", { className: "mb-2 flex items-center justify-between gap-2 text-[10px]", "aria-label": "System and provider status", children: [(0, jsx_runtime_1.jsxs)("div", { className: "flex items-center gap-2", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-foreground/60", children: "Status" }), (0, jsx_runtime_1.jsxs)("span", { className: `inline-flex items-center gap-2 rounded-full border px-2 py-[2px] ${getSystemStatusClasses(systemStatus)}`, "data-testid": "system-status-chip", "aria-label": getSystemStatusLabel(systemStatus), children: [(0, jsx_runtime_1.jsx)("span", { className: "font-semibold", children: systemStatus }), (0, jsx_runtime_1.jsxs)("span", { className: "text-[9px] opacity-80", children: ["Updated ", lastUpdatedLabel] })] }), (0, jsx_runtime_1.jsxs)("span", { className: `inline-flex items-center gap-2 rounded-full border border-ot-border bg-ot-surface px-2 py-[2px] text-[9px] text-ot-muted ${continuousStatus.isActive ? 'animate-pulse border-ot-accent/60 text-ot-accent' : ''}`, "aria-label": "Continuous deep scan status", title: formatCacheExpiryTooltip(continuousStatus), children: [(0, jsx_runtime_1.jsx)("span", { className: `h-1.5 w-1.5 rounded-full ${continuousStatus.enabled ? (continuousStatus.isActive ? 'bg-ot-accent' : 'bg-emerald-400') : 'bg-ot-muted/60'}` }), (0, jsx_runtime_1.jsx)("span", { children: getContinuousStatusLabel(continuousStatus, progress) }), getQuotaWarningLevel(continuousStatus.requestsToday ?? 0) === 'warn' && ((0, jsx_runtime_1.jsx)("span", { className: "text-amber-400", title: "High API usage", children: "\u26A0" })), getQuotaWarningLevel(continuousStatus.requestsToday ?? 0) === 'critical' && ((0, jsx_runtime_1.jsx)("span", { className: "text-red-400", title: "Near quota limit", children: "\u26A0" }))] })] }), (0, jsx_runtime_1.jsx)("div", { className: "flex flex-wrap items-center justify-end gap-1", "aria-label": "Provider statuses", children: providers.map((provider) => ((0, jsx_runtime_1.jsxs)("span", { className: "inline-flex items-center gap-1 rounded-full border border-ot-border bg-ot-surface px-2 py-[1px] text-[9px] text-ot-muted", children: [(0, jsx_runtime_1.jsx)("span", { className: "font-medium", children: provider.displayName }), (0, jsx_runtime_1.jsx)("span", { className: `rounded-full border px-1 py-[1px] ${getProviderStatusClasses(provider.status)}`, "data-testid": `provider-status-${provider.providerId}`, "aria-label": `${provider.displayName} status ${getProviderStatusLabel(provider.status)}`, children: getProviderStatusLabel(provider.status) })] }, provider.providerId))) })] }));
 }
 exports.default = StatusBar;

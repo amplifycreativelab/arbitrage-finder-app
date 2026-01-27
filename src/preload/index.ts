@@ -48,6 +48,10 @@ type DeepScanAPI = {
   setContinuousEnabled: (enabled: boolean) => Promise<void>
   getContinuousStatus: () => Promise<DeepScanContinuousStatus>
   setMaxEventsPerCycle: (maxEvents: number) => Promise<void>
+  getCacheTtl: () => Promise<number>
+  setCacheTtl: (ttlMinutes: number) => Promise<void>
+  getBatchSize: () => Promise<number>
+  setBatchSize: (batchSize: number) => Promise<void>
   clearCache: (reason?: string) => Promise<void>
 }
 
@@ -59,6 +63,10 @@ type DeepScanContinuousStatus = {
   opportunitiesFoundToday: number
   requestsToday: number
   maxEventsPerCycle: number
+  cacheEntries: number
+  cacheTtlMinutes: number
+  batchSize: number
+  cacheOldestEntryAgeMs: number | null
 }
 
 // Electron-TRPC bridge: attach to both preload globalThis and renderer via contextBridge
@@ -162,6 +170,20 @@ const deepScanApi: DeepScanAPI = {
   },
   async setMaxEventsPerCycle(maxEvents) {
     await trpcClient.deepScanSetMaxEventsPerCycle.mutate({ maxEvents })
+  },
+  async getCacheTtl() {
+    const result = await trpcClient.deepScanGetCacheTtl.query()
+    return result.ttlMinutes
+  },
+  async setCacheTtl(ttlMinutes) {
+    await trpcClient.deepScanSetCacheTtl.mutate({ ttlMinutes })
+  },
+  async getBatchSize() {
+    const result = await trpcClient.deepScanGetBatchSize.query()
+    return result.batchSize
+  },
+  async setBatchSize(batchSize) {
+    await trpcClient.deepScanSetBatchSize.mutate({ batchSize })
   },
   async clearCache(reason) {
     await trpcClient.deepScanClearCache.mutate(reason ? { reason } : undefined)

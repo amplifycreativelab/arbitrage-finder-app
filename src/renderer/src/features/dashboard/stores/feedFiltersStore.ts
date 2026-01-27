@@ -51,6 +51,8 @@ export interface FeedFiltersState extends DashboardFilterState {
   bookmakerSelections: Record<string, string[]>
   continuousDeepScanEnabled: boolean
   continuousDeepScanMaxEventsPerCycle: number
+  deepScanCacheTtlMinutes: number
+  deepScanBatchSize: number
   deepScanRoiThresholds: {
     globalMinRoi: number
     marketGroupMinRoi: Partial<Record<MarketGroup, number>>
@@ -63,6 +65,8 @@ export interface FeedFiltersState extends DashboardFilterState {
   setMinRoi: (minRoi: number) => void
   setContinuousDeepScanEnabled: (enabled: boolean) => void
   setContinuousDeepScanMaxEventsPerCycle: (maxEvents: number) => void
+  setDeepScanCacheTtlMinutes: (minutes: number) => void
+  setDeepScanBatchSize: (size: number) => void
   setDeepScanGlobalMinRoi: (minRoi: number) => void
   setDeepScanMarketGroupMinRoi: (group: MarketGroup, minRoi: number) => void
   toggleRegion: (region: RegionCode) => void
@@ -83,6 +87,8 @@ const defaultState = {
   minRoi: 0,
   continuousDeepScanEnabled: true,
   continuousDeepScanMaxEventsPerCycle: 50,
+  deepScanCacheTtlMinutes: 5,
+  deepScanBatchSize: 10,
   deepScanRoiThresholds: {
     globalMinRoi: 0,
     marketGroupMinRoi: {}
@@ -150,6 +156,18 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
         const normalized = Number.isFinite(maxEvents) ? Math.max(1, Math.floor(maxEvents)) : 50
         set({
           continuousDeepScanMaxEventsPerCycle: normalized
+        })
+      },
+      setDeepScanCacheTtlMinutes: (minutes: number) => {
+        const normalized = Number.isFinite(minutes) ? Math.max(1, Math.min(60, Math.floor(minutes))) : 5
+        set({
+          deepScanCacheTtlMinutes: normalized
+        })
+      },
+      setDeepScanBatchSize: (size: number) => {
+        const normalized = Number.isFinite(size) ? Math.max(5, Math.min(50, Math.floor(size))) : 10
+        set({
+          deepScanBatchSize: normalized
         })
       },
       setDeepScanGlobalMinRoi: (minRoi: number) => {
@@ -267,6 +285,8 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
         minRoi: state.minRoi,
         continuousDeepScanEnabled: state.continuousDeepScanEnabled,
         continuousDeepScanMaxEventsPerCycle: state.continuousDeepScanMaxEventsPerCycle,
+        deepScanCacheTtlMinutes: state.deepScanCacheTtlMinutes,
+        deepScanBatchSize: state.deepScanBatchSize,
         deepScanRoiThresholds: state.deepScanRoiThresholds
       })
     }

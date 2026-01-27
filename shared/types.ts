@@ -404,6 +404,16 @@ export interface DeepScanProgress {
   eventsTotal: number
   requestsMade: number
   opportunitiesFound: number
+  /**
+   * Total markets scanned across events in the current run.
+   * Optional to preserve backward compatibility with older progress payloads.
+   */
+  marketsScanned?: number
+  /**
+   * Market groups that produced arbitrage opportunities during the current run.
+   * Optional for backward compatibility.
+   */
+  marketGroupsWithArbs?: string[]
   startedAt: string | null
   elapsedMs: number
   lastContinuousScanAt?: string

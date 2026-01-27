@@ -277,6 +277,36 @@ exports.appRouter = t.router({
         (0, deepScan_1.setContinuousScanDefaultThresholds)(input);
         return { ok: true };
     }),
+    deepScanGetCacheTtl: t.procedure.query(() => {
+        return { ttlMinutes: (0, deepScan_1.getScanCacheTtlMinutes)() };
+    }),
+    deepScanSetCacheTtl: t.procedure
+        .input(zod_1.z.object({ ttlMinutes: zod_1.z.number().int().min(1).max(60) }))
+        .mutation(({ input }) => {
+        (0, deepScan_1.setScanCacheTtl)(input.ttlMinutes);
+        return { ok: true, ttlMinutes: (0, deepScan_1.getScanCacheTtlMinutes)() };
+    }),
+    deepScanGetBatchSize: t.procedure.query(() => {
+        return { batchSize: (0, deepScan_1.getContinuousScanBatchSize)() };
+    }),
+    deepScanSetBatchSize: t.procedure
+        .input(zod_1.z.object({ batchSize: zod_1.z.number().int().min(5).max(50) }))
+        .mutation(({ input }) => {
+        (0, deepScan_1.setContinuousScanBatchSize)(input.batchSize);
+        return { ok: true, batchSize: (0, deepScan_1.getContinuousScanBatchSize)() };
+    }),
+    deepScanGetAvailableSports: t.procedure.query(() => {
+        return { sports: (0, deepScan_1.getAvailableSports)() };
+    }),
+    deepScanGetEnabledSportsFilter: t.procedure.query(() => {
+        return { sports: (0, deepScan_1.getEnabledSportsFilter)() };
+    }),
+    deepScanSetEnabledSportsFilter: t.procedure
+        .input(zod_1.z.object({ sports: zod_1.z.array(zod_1.z.string()) }))
+        .mutation(({ input }) => {
+        (0, deepScan_1.setEnabledSportsFilter)(input.sports);
+        return { ok: true, sports: (0, deepScan_1.getEnabledSportsFilter)() };
+    }),
     // ============================================================
     // Utility procedures
     // ============================================================

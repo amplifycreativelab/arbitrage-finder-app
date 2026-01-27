@@ -1,6 +1,11 @@
 import * as React from 'react'
 
-import type { DashboardStatusSnapshot, ProviderStatus, SystemStatus } from '../../../../../shared/types'
+import type {
+  DashboardStatusSnapshot,
+  DeepScanProgress,
+  ProviderStatus,
+  SystemStatus
+} from '../../../../../shared/types'
 import { PROVIDERS } from '../../../../../shared/types'
 import { getStalenessInfo } from './staleness'
 import { useDeepScanStore } from './stores/deepScanStore'
@@ -96,23 +101,65 @@ function formatMinutesAgo(timestamp: string | null): string {
   return `${hours}h ago`
 }
 
-function getContinuousStatusLabel(status: {
+interface ContinuousStatusInfo {
   enabled: boolean
   isActive: boolean
   lastContinuousScanAt: string | null
-}): string {
+  opportunitiesFoundToday?: number
+  cacheEntries?: number
+  cacheTtlMinutes?: number
+  cacheOldestEntryAgeMs?: number | null
+  requestsToday?: number
+}
+
+function getContinuousStatusLabel(status: ContinuousStatusInfo, progress: DeepScanProgress): string {
   if (!status.enabled) {
     return 'Continuous off'
+  }
+  const isContinuousScanActive = progress.mode === 'continuous' && progress.status === 'scanning'
+  if (isContinuousScanActive) {
+    const eventsTotalSafe = progress.eventsTotal > 0 ? progress.eventsTotal : progress.eventsScanned
+    const marketsScanned = progress.marketsScanned ?? 0
+    const arbsFound = progress.opportunitiesFound
+    return `Scanning: ${progress.eventsScanned}/${eventsTotalSafe} events (${marketsScanned} markets, ${arbsFound} arbs)`
   }
   if (status.isActive) {
     return 'Scanning...'
   }
-  return `Idle - Last: ${formatMinutesAgo(status.lastContinuousScanAt)}`
+  const arbsToday = status.opportunitiesFoundToday ?? 0
+  return `Idle - ${arbsToday} arbs today - Last: ${formatMinutesAgo(status.lastContinuousScanAt)}`
+}
+
+function formatCacheExpiryTooltip(status: ContinuousStatusInfo): string {
+  const entries = status.cacheEntries ?? 0
+  const ttl = status.cacheTtlMinutes ?? 5
+  const oldestAgeMs = status.cacheOldestEntryAgeMs
+
+  if (entries === 0) {
+    return `Cache: empty (TTL: ${ttl}m)`
+  }
+
+  if (oldestAgeMs === null || oldestAgeMs === undefined) {
+    return `Cache: ${entries} events (TTL: ${ttl}m)`
+  }
+
+  const remainingMs = Math.max(0, ttl * 60_000 - oldestAgeMs)
+  const remainingMinutes = Math.ceil(remainingMs / 60_000)
+  return `Cache: ${entries} events (oldest expires in ${remainingMinutes}m)`
+}
+
+function getQuotaWarningLevel(requestsToday: number): 'none' | 'warn' | 'critical' {
+  const hourlyLimit = 5000
+  // Rough estimate: if they're using more than 4000 requests in a day, they might be hitting hourly limits
+  if (requestsToday >= hourlyLimit * 0.9) return 'critical'
+  if (requestsToday >= hourlyLimit * 0.8) return 'warn'
+  return 'none'
 }
 
 function StatusBar({ stalenessNow, statusSnapshot, fetchedAt }: StatusBarProps): React.JSX.Element {
   const status = statusSnapshot
   const continuousStatus = useDeepScanStore((state) => state.continuousStatus)
+  const progress = useDeepScanStore((state) => state.progress)
 
   const systemStatus: SystemStatus = status?.systemStatus ?? 'OK'
   const effectiveStatus: DashboardStatusSnapshot | null =
@@ -167,13 +214,20 @@ function StatusBar({ stalenessNow, statusSnapshot, fetchedAt }: StatusBarProps):
             continuousStatus.isActive ? 'animate-pulse border-ot-accent/60 text-ot-accent' : ''
           }`}
           aria-label="Continuous deep scan status"
-        >
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              continuousStatus.enabled ? (continuousStatus.isActive ? 'bg-ot-accent' : 'bg-emerald-400') : 'bg-ot-muted/60'
-            }`}
-          />
-          <span>{getContinuousStatusLabel(continuousStatus)}</span>
+          title={formatCacheExpiryTooltip(continuousStatus)}
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                continuousStatus.enabled ? (continuousStatus.isActive ? 'bg-ot-accent' : 'bg-emerald-400') : 'bg-ot-muted/60'
+              }`}
+            />
+          <span>{getContinuousStatusLabel(continuousStatus, progress)}</span>
+          {getQuotaWarningLevel(continuousStatus.requestsToday ?? 0) === 'warn' && (
+            <span className="text-amber-400" title="High API usage">⚠</span>
+          )}
+          {getQuotaWarningLevel(continuousStatus.requestsToday ?? 0) === 'critical' && (
+            <span className="text-red-400" title="Near quota limit">⚠</span>
+          )}
         </span>
       </div>
 

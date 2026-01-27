@@ -133,6 +133,8 @@ export const deepScanProgressSchema = z.object({
   eventsTotal: z.number().int().min(0),
   requestsMade: z.number().int().min(0),
   opportunitiesFound: z.number().int().min(0),
+  marketsScanned: z.number().int().min(0).optional(),
+  marketGroupsWithArbs: z.array(z.string()).optional(),
   startedAt: z.string().nullable(),
   elapsedMs: z.number().int().min(0),
   lastContinuousScanAt: z.string().optional(),

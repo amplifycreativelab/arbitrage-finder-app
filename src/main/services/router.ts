@@ -44,14 +44,21 @@ import {
 import {
   cancelDeepScan,
   clearScanCache,
+  getAvailableSports,
   getContinuousDeepScanEnabled,
+  getContinuousScanBatchSize,
   getContinuousScanMaxEventsPerCycle,
   getContinuousScanStatus,
   getDeepScanProgress,
   getDeepScanResults,
+  getEnabledSportsFilter,
+  getScanCacheTtlMinutes,
   setContinuousDeepScanEnabled,
+  setContinuousScanBatchSize,
   setContinuousScanDefaultThresholds,
   setContinuousScanMaxEventsPerCycle,
+  setEnabledSportsFilter,
+  setScanCacheTtl,
   startContinuousDeepScan,
   startDeepScan
 } from './deepScan'
@@ -370,6 +377,43 @@ export const appRouter = t.router({
     .mutation(({ input }) => {
       setContinuousScanDefaultThresholds(input)
       return { ok: true }
+    }),
+
+  deepScanGetCacheTtl: t.procedure.query(() => {
+    return { ttlMinutes: getScanCacheTtlMinutes() }
+  }),
+
+  deepScanSetCacheTtl: t.procedure
+    .input(z.object({ ttlMinutes: z.number().int().min(1).max(60) }))
+    .mutation(({ input }) => {
+      setScanCacheTtl(input.ttlMinutes)
+      return { ok: true, ttlMinutes: getScanCacheTtlMinutes() }
+    }),
+
+  deepScanGetBatchSize: t.procedure.query(() => {
+    return { batchSize: getContinuousScanBatchSize() }
+  }),
+
+  deepScanSetBatchSize: t.procedure
+    .input(z.object({ batchSize: z.number().int().min(5).max(50) }))
+    .mutation(({ input }) => {
+      setContinuousScanBatchSize(input.batchSize)
+      return { ok: true, batchSize: getContinuousScanBatchSize() }
+    }),
+
+  deepScanGetAvailableSports: t.procedure.query(() => {
+    return { sports: getAvailableSports() }
+  }),
+
+  deepScanGetEnabledSportsFilter: t.procedure.query(() => {
+    return { sports: getEnabledSportsFilter() }
+  }),
+
+  deepScanSetEnabledSportsFilter: t.procedure
+    .input(z.object({ sports: z.array(z.string()) }))
+    .mutation(({ input }) => {
+      setEnabledSportsFilter(input.sports)
+      return { ok: true, sports: getEnabledSportsFilter() }
     }),
 
   // ============================================================

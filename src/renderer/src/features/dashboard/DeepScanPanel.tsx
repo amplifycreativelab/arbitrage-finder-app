@@ -61,6 +61,10 @@ export function DeepScanPanel(): React.JSX.Element {
   const setContinuousEnabledLocal = useFeedFiltersStore((state) => state.setContinuousDeepScanEnabled)
   const continuousMaxEvents = useFeedFiltersStore((state) => state.continuousDeepScanMaxEventsPerCycle)
   const setContinuousMaxEventsLocal = useFeedFiltersStore((state) => state.setContinuousDeepScanMaxEventsPerCycle)
+  const cacheTtl = useFeedFiltersStore((state) => state.deepScanCacheTtlMinutes)
+  const setCacheTtlLocal = useFeedFiltersStore((state) => state.setDeepScanCacheTtlMinutes)
+  const batchSize = useFeedFiltersStore((state) => state.deepScanBatchSize)
+  const setBatchSizeLocal = useFeedFiltersStore((state) => state.setDeepScanBatchSize)
 
   const [now, setNow] = React.useState(() => Date.now())
 
@@ -79,6 +83,18 @@ export function DeepScanPanel(): React.JSX.Element {
       setContinuousMaxEventsLocal(continuousStatus.maxEventsPerCycle)
     }
   }, [continuousStatus.maxEventsPerCycle, continuousMaxEvents, setContinuousMaxEventsLocal])
+
+  React.useEffect(() => {
+    if (continuousStatus.cacheTtlMinutes !== undefined && continuousStatus.cacheTtlMinutes !== cacheTtl) {
+      setCacheTtlLocal(continuousStatus.cacheTtlMinutes)
+    }
+  }, [continuousStatus.cacheTtlMinutes, cacheTtl, setCacheTtlLocal])
+
+  React.useEffect(() => {
+    if (continuousStatus.batchSize !== undefined && continuousStatus.batchSize !== batchSize) {
+      setBatchSizeLocal(continuousStatus.batchSize)
+    }
+  }, [continuousStatus.batchSize, batchSize, setBatchSizeLocal])
 
   React.useEffect(() => {
     if (progress.status !== 'scanning' || !progress.startedAt) {
@@ -108,6 +124,33 @@ export function DeepScanPanel(): React.JSX.Element {
   const handleMaxEventsChange = (value: number): void => {
     setContinuousMaxEventsLocal(value)
     void setMaxEventsRemote(value)
+  }
+
+  const handleCacheTtlChange = async (value: number): Promise<void> => {
+    setCacheTtlLocal(value)
+    try {
+      await window.api.deepScan.setCacheTtl(value)
+    } catch {
+      // Best-effort sync
+    }
+  }
+
+  const handleBatchSizeChange = async (value: number): Promise<void> => {
+    setBatchSizeLocal(value)
+    try {
+      await window.api.deepScan.setBatchSize(value)
+    } catch {
+      // Best-effort sync
+    }
+  }
+
+  const handleClearCache = async (): Promise<void> => {
+    try {
+      await window.api.deepScan.clearCache('user_request')
+      void refreshStatus()
+    } catch {
+      // Best-effort
+    }
   }
 
   return (
@@ -163,20 +206,52 @@ export function DeepScanPanel(): React.JSX.Element {
             </label>
           </div>
 
-          <div className="mt-2 flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
-            <div>
-              <div className="text-[10px] font-semibold text-ot-foreground">Max Events Per Cycle</div>
-              <div className="text-[9px] text-ot-muted">Advanced guardrail for API quota</div>
+          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
+              <div>
+                <div className="text-[10px] font-semibold text-ot-foreground">Max Events</div>
+                <div className="text-[9px] text-ot-muted">Per cycle</div>
+              </div>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={continuousMaxEvents}
+                onChange={(event) => handleMaxEventsChange(Number(event.target.value))}
+                className="h-7 w-16 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
+                aria-label="Max events per continuous scan cycle"
+              />
             </div>
-            <input
-              type="number"
-              min={1}
-              max={500}
-              value={continuousMaxEvents}
-              onChange={(event) => handleMaxEventsChange(Number(event.target.value))}
-              className="h-7 w-20 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
-              aria-label="Max events per continuous scan cycle"
-            />
+            <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
+              <div>
+                <div className="text-[10px] font-semibold text-ot-foreground">Cache TTL</div>
+                <div className="text-[9px] text-ot-muted">Minutes</div>
+              </div>
+              <input
+                type="number"
+                min={1}
+                max={60}
+                value={cacheTtl}
+                onChange={(event) => void handleCacheTtlChange(Number(event.target.value))}
+                className="h-7 w-16 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
+                aria-label="Cache TTL in minutes"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
+              <div>
+                <div className="text-[10px] font-semibold text-ot-foreground">Batch Size</div>
+                <div className="text-[9px] text-ot-muted">Events/batch</div>
+              </div>
+              <input
+                type="number"
+                min={5}
+                max={50}
+                value={batchSize}
+                onChange={(event) => void handleBatchSizeChange(Number(event.target.value))}
+                className="h-7 w-16 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
+                aria-label="Batch size for continuous scan"
+              />
+            </div>
           </div>
 
           <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-ot-muted sm:grid-cols-4">
@@ -202,7 +277,7 @@ export function DeepScanPanel(): React.JSX.Element {
             </div>
           </div>
 
-          <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-ot-muted sm:grid-cols-4">
+          <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-ot-muted sm:grid-cols-5">
             <div className="rounded border border-ot-border/60 bg-ot-border/10 p-2">
               <div className="text-[9px] uppercase tracking-[0.12em]">Last scan</div>
               <div className="text-[11px] font-semibold text-ot-foreground">
@@ -226,6 +301,22 @@ export function DeepScanPanel(): React.JSX.Element {
               <div className="text-[11px] font-semibold text-ot-foreground">
                 {continuousStatus.requestsToday}
               </div>
+            </div>
+            <div className="flex items-center justify-between rounded border border-ot-border/60 bg-ot-border/10 p-2">
+              <div>
+                <div className="text-[9px] uppercase tracking-[0.12em]">Cache</div>
+                <div className="text-[11px] font-semibold text-ot-foreground">
+                  {continuousStatus.cacheEntries} events
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleClearCache()}
+                className="rounded border border-ot-border bg-ot-surface px-2 py-1 text-[9px] text-ot-muted hover:border-ot-accent hover:text-ot-accent"
+                title="Clear scan cache"
+              >
+                Clear
+              </button>
             </div>
           </div>
 

@@ -100,6 +100,20 @@ const deepScanApi = {
     async setMaxEventsPerCycle(maxEvents) {
         await trpcClient.deepScanSetMaxEventsPerCycle.mutate({ maxEvents });
     },
+    async getCacheTtl() {
+        const result = await trpcClient.deepScanGetCacheTtl.query();
+        return result.ttlMinutes;
+    },
+    async setCacheTtl(ttlMinutes) {
+        await trpcClient.deepScanSetCacheTtl.mutate({ ttlMinutes });
+    },
+    async getBatchSize() {
+        const result = await trpcClient.deepScanGetBatchSize.query();
+        return result.batchSize;
+    },
+    async setBatchSize(batchSize) {
+        await trpcClient.deepScanSetBatchSize.mutate({ batchSize });
+    },
     async clearCache(reason) {
         await trpcClient.deepScanClearCache.mutate(reason ? { reason } : undefined);
     }

@@ -32,10 +32,13 @@ interface ScanCacheEntry {
   bookmakerHash: string
 }
 
-export const SCAN_CACHE_TTL_MS = 5 * 60 * 1000
+export const SCAN_CACHE_TTL_MS_DEFAULT = 5 * 60 * 1000
 export const CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE = 50
 export const CONTINUOUS_SCAN_MIN_INTERVAL_MS = 60_000
-const CONTINUOUS_SCAN_BATCH_SIZE = 10
+const CONTINUOUS_SCAN_BATCH_SIZE_DEFAULT = 10
+
+let scanCacheTtlMs = SCAN_CACHE_TTL_MS_DEFAULT
+let continuousScanBatchSize = CONTINUOUS_SCAN_BATCH_SIZE_DEFAULT
 
 const HOURLY_REQUEST_LIMIT = 5000
 const HOURLY_WARN_THRESHOLD = 0.8
@@ -99,6 +102,9 @@ let dailyStatsKey: string | null = null
 let dailyEventsScanned = 0
 let dailyOpportunitiesFound = 0
 let dailyRequestsMade = 0
+
+let lastDiscoveredSports: string[] = []
+let enabledSportsFilter: string[] = []
 
 let eventResolverOverride: EventResolver | null = null
 let eventsFetcherOverride: EventsFetcher | null = null
@@ -276,7 +282,7 @@ export function shouldScanEvent(eventId: string, bookmakers: string[]): boolean 
   }
 
   const ageMs = now - entry.scannedAt
-  const isExpired = ageMs >= SCAN_CACHE_TTL_MS
+  const isExpired = ageMs >= scanCacheTtlMs
   const hashChanged = entry.bookmakerHash !== bookmakerHash
 
   if (isExpired || hashChanged) {
@@ -317,6 +323,8 @@ function idleProgress(): DeepScanProgress {
     eventsTotal: 0,
     requestsMade: 0,
     opportunitiesFound: 0,
+    marketsScanned: 0,
+    marketGroupsWithArbs: [],
     startedAt: null,
     elapsedMs: 0,
     mode: 'manual',
@@ -646,6 +654,9 @@ export async function discoverAllEvents(args: {
     if (!max || event.date > max) return event.date
     return max
   }, null)
+
+  // Track discovered sports for getAvailableSports query
+  lastDiscoveredSports = sportsCovered
 
   logInfo('continuousScan.discovery', {
     context: 'service:deepScan',
@@ -1069,10 +1080,42 @@ async function runScanForEvents(args: {
     manualResults = []
   }
 
+  let totalMarketsRetrieved = 0
+  let eventsWithMarkets = 0
+  const arbMarketKeys = new Set<string>()
+  const arbMarketGroups = new Set<string>()
+
+  const collectUniqueMarketKeys = (payload: RawOddsPayload): string[] => {
+    const keys = new Set<string>()
+    for (const bookmaker of payload.bookmakers) {
+      for (const market of bookmaker.markets) {
+        const key = typeof market.key === 'string' ? market.key.trim() : ''
+        if (key) {
+          keys.add(key)
+        }
+      }
+    }
+    return [...keys]
+  }
+
+  const updateArbTrackingFromOpportunities = (opportunities: ArbitrageOpportunity[]): void => {
+    for (const opportunity of opportunities) {
+      for (const leg of opportunity.legs) {
+        const marketKey = leg.market?.trim()
+        if (!marketKey) continue
+        arbMarketKeys.add(marketKey)
+        const metadata = inferMarketMetadata(marketKey)
+        arbMarketGroups.add(metadata.group)
+      }
+    }
+  }
+
   updateProgress({
     eventsTotal: events.length,
     eventsScanned: 0,
     opportunitiesFound: 0,
+    marketsScanned: 0,
+    marketGroupsWithArbs: [],
     currentEventName: undefined,
     mode
   } as Partial<DeepScanProgress>)
@@ -1090,6 +1133,14 @@ async function runScanForEvents(args: {
     bookmakersCount: bookmakers.length,
     requestsMade: currentScan?.requestsMade ?? 0,
     discoverySummary,
+    cacheStatus: {
+      totalCached: scanCache.size,
+      ttlMinutes: getScanCacheTtlMinutes()
+    },
+    batchConfig: {
+      batchSize: continuousScanBatchSize,
+      maxEventsPerCycle: continuousScanMaxEventsPerCycle
+    },
     quota: {
       hourlyRequestsUsed: quotaStatus.used,
       hourlyRequestLimit: quotaStatus.limit,
@@ -1101,6 +1152,7 @@ async function runScanForEvents(args: {
     if (mode === 'continuous') {
       lastContinuousScanAt = nowIso()
     }
+    const averageMarketsPerEvent = 0
     updateProgress({
       status: 'completed',
       currentEventName: undefined,
@@ -1122,6 +1174,11 @@ async function runScanForEvents(args: {
       requestsMade: currentScan?.requestsMade ?? 0,
       cacheHits: discoverySummary?.cacheHits ?? 0,
       cacheMisses: discoverySummary?.cacheMisses ?? 0,
+      marketStats: {
+        totalMarketsRetrieved,
+        marketsWithArbs: arbMarketKeys.size,
+        averageMarketsPerEvent
+      },
       quota: {
         hourlyRequestsUsed: quotaStatusAfter.used,
         hourlyRequestLimit: quotaStatusAfter.limit,
@@ -1133,7 +1190,7 @@ async function runScanForEvents(args: {
 
   const concurrency = Math.max(1, Math.min(10, config.maxConcurrentRequests ?? 2))
   let eventErrors = 0
-  const batches = mode === 'continuous' ? chunk(events, CONTINUOUS_SCAN_BATCH_SIZE) : [events]
+  const batches = mode === 'continuous' ? chunk(events, continuousScanBatchSize) : [events]
 
   const processEvent = async (event: DeepScanEvent): Promise<void> => {
     if (signal.aborted) return
@@ -1148,14 +1205,25 @@ async function runScanForEvents(args: {
       )
 
       const foundAt = nowIso()
+      let marketsRetrievedForEvent = 0
       const opportunities = isOpportunityArray(result)
         ? result
         : (() => {
             const payload = toRawOddsPayload(result, event, config)
-            return payload ? buildOpportunitiesFromRawOdds(payload, config, foundAt) : []
+            if (!payload) return []
+            const uniqueMarketKeys = collectUniqueMarketKeys(payload)
+            marketsRetrievedForEvent = uniqueMarketKeys.length
+            return buildOpportunitiesFromRawOdds(payload, config, foundAt)
           })()
 
+      if (marketsRetrievedForEvent > 0) {
+        totalMarketsRetrieved += marketsRetrievedForEvent
+        eventsWithMarkets += 1
+      }
+
       if (opportunities.length) {
+        updateArbTrackingFromOpportunities(opportunities)
+
         if (mode === 'continuous') {
           continuousResults.push(...opportunities)
           updateProgress({ opportunitiesFound: continuousResults.length, mode } as Partial<DeepScanProgress>)
@@ -1168,7 +1236,12 @@ async function runScanForEvents(args: {
       const resultsAfter = (mode === 'continuous' ? continuousResults : manualResults).length
       const arbsFound = Math.max(0, resultsAfter - resultsBefore)
 
-      updateProgress({ eventsScanned: (currentScan?.eventsScanned ?? 0) + 1, mode } as Partial<DeepScanProgress>)
+      updateProgress({
+        eventsScanned: (currentScan?.eventsScanned ?? 0) + 1,
+        marketsScanned: (currentScan?.marketsScanned ?? 0) + marketsRetrievedForEvent,
+        marketGroupsWithArbs: [...arbMarketGroups],
+        mode
+      } as Partial<DeepScanProgress>)
 
       if (mode === 'continuous') {
         updateScanCache(event.id, bookmakers)
@@ -1248,6 +1321,8 @@ async function runScanForEvents(args: {
   }
 
   const quotaStatusAfter = getHourlyQuotaStatus()
+  const averageMarketsPerEvent =
+    eventsWithMarkets > 0 ? Number((totalMarketsRetrieved / eventsWithMarkets).toFixed(2)) : 0
   logInfo(completeEventName, {
     context: 'service:deepScan',
     operation,
@@ -1262,6 +1337,11 @@ async function runScanForEvents(args: {
     requestsMade: currentScan?.requestsMade ?? 0,
     cacheHits: discoverySummary?.cacheHits ?? 0,
     cacheMisses: discoverySummary?.cacheMisses ?? 0,
+    marketStats: {
+      totalMarketsRetrieved,
+      marketsWithArbs: arbMarketKeys.size,
+      averageMarketsPerEvent
+    },
     quota: {
       hourlyRequestsUsed: quotaStatusAfter.used,
       hourlyRequestLimit: quotaStatusAfter.limit,
@@ -1392,6 +1472,83 @@ export function setContinuousScanMaxEventsPerCycle(value: number): void {
   } satisfies StructuredLogBase)
 }
 
+export function getScanCacheTtlMinutes(): number {
+  return Math.round(scanCacheTtlMs / 60_000)
+}
+
+export function setScanCacheTtl(minutes: number): void {
+  const normalized = Number.isFinite(minutes) ? Math.max(1, Math.min(60, Math.floor(minutes))) : 5
+  scanCacheTtlMs = normalized * 60_000
+  logInfo('continuousScan.cacheTtl.set', {
+    context: 'service:deepScan',
+    operation: 'setScanCacheTtl',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId: continuousCorrelationId ?? undefined,
+    durationMs: null,
+    errorCategory: null,
+    cacheTtlMinutes: normalized
+  } satisfies StructuredLogBase)
+}
+
+export function getContinuousScanBatchSize(): number {
+  return continuousScanBatchSize
+}
+
+export function setContinuousScanBatchSize(size: number): void {
+  const normalized = Number.isFinite(size) ? Math.max(5, Math.min(50, Math.floor(size))) : CONTINUOUS_SCAN_BATCH_SIZE_DEFAULT
+  continuousScanBatchSize = normalized
+  logInfo('continuousScan.batchSize.set', {
+    context: 'service:deepScan',
+    operation: 'setContinuousScanBatchSize',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId: continuousCorrelationId ?? undefined,
+    durationMs: null,
+    errorCategory: null,
+    batchSize: normalized
+  } satisfies StructuredLogBase)
+}
+
+function getCacheStats(): { entries: number; oldestAgeMs: number | null } {
+  const now = nowMs()
+  let oldestAgeMs: number | null = null
+
+  for (const entry of scanCache.values()) {
+    const age = now - entry.scannedAt
+    if (oldestAgeMs === null || age > oldestAgeMs) {
+      oldestAgeMs = age
+    }
+  }
+
+  return {
+    entries: scanCache.size,
+    oldestAgeMs
+  }
+}
+
+export function getAvailableSports(): string[] {
+  return [...lastDiscoveredSports]
+}
+
+export function getEnabledSportsFilter(): string[] {
+  return [...enabledSportsFilter]
+}
+
+export function setEnabledSportsFilter(sports: string[]): void {
+  const normalized = Array.isArray(sports)
+    ? sports.map((s) => s.trim()).filter(Boolean)
+    : []
+  enabledSportsFilter = normalized
+  logInfo('continuousScan.sportsFilter.set', {
+    context: 'service:deepScan',
+    operation: 'setEnabledSportsFilter',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId: continuousCorrelationId ?? undefined,
+    durationMs: null,
+    errorCategory: null,
+    enabledSports: normalized.length > 0 ? normalized : 'all'
+  } satisfies StructuredLogBase)
+}
+
 export function getContinuousScanStatus(): {
   enabled: boolean
   isActive: boolean
@@ -1400,8 +1557,13 @@ export function getContinuousScanStatus(): {
   opportunitiesFoundToday: number
   requestsToday: number
   maxEventsPerCycle: number
+  cacheEntries: number
+  cacheTtlMinutes: number
+  batchSize: number
+  cacheOldestEntryAgeMs: number | null
 } {
   ensureDailyStats(nowMs())
+  const cacheStats = getCacheStats()
   return {
     enabled: continuousDeepScanEnabled,
     isActive: isContinuousScanActive,
@@ -1409,7 +1571,11 @@ export function getContinuousScanStatus(): {
     eventsScannedToday: dailyEventsScanned,
     opportunitiesFoundToday: dailyOpportunitiesFound,
     requestsToday: dailyRequestsMade,
-    maxEventsPerCycle: continuousScanMaxEventsPerCycle
+    maxEventsPerCycle: continuousScanMaxEventsPerCycle,
+    cacheEntries: cacheStats.entries,
+    cacheTtlMinutes: getScanCacheTtlMinutes(),
+    batchSize: continuousScanBatchSize,
+    cacheOldestEntryAgeMs: cacheStats.oldestAgeMs
   }
 }
 
@@ -1479,6 +1645,8 @@ async function runContinuousScanCycle(reason: string): Promise<void> {
     eventsTotal: 0,
     requestsMade: 0,
     opportunitiesFound: 0,
+    marketsScanned: 0,
+    marketGroupsWithArbs: [],
     startedAt,
     elapsedMs: 0,
     mode: 'continuous',
@@ -1499,7 +1667,8 @@ async function runContinuousScanCycle(reason: string): Promise<void> {
     const events = await discoverAllEvents({
       apiKey,
       signal,
-      correlationId
+      correlationId,
+      sports: enabledSportsFilter.length > 0 ? enabledSportsFilter : undefined
     })
 
     let cacheHits = 0
@@ -1673,6 +1842,8 @@ export async function startDeepScan(config: DeepScanConfig): Promise<void> {
     eventsTotal: 0,
     requestsMade: 0,
     opportunitiesFound: 0,
+    marketsScanned: 0,
+    marketGroupsWithArbs: [],
     startedAt,
     elapsedMs: 0,
     mode: 'manual',
@@ -1799,6 +1970,8 @@ export const __test = {
     clearMinIntervalTimer()
     lastThresholdConfig = {}
     continuousScanMaxEventsPerCycle = CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE
+    scanCacheTtlMs = SCAN_CACHE_TTL_MS_DEFAULT
+    continuousScanBatchSize = CONTINUOUS_SCAN_BATCH_SIZE_DEFAULT
     scanCache.clear()
     timeOffsetMs = 0
     hourlyWindowStartedAtMs = null
@@ -1808,6 +1981,8 @@ export const __test = {
     dailyEventsScanned = 0
     dailyOpportunitiesFound = 0
     dailyRequestsMade = 0
+    lastDiscoveredSports = []
+    enabledSportsFilter = []
     eventResolverOverride = null
     eventsFetcherOverride = null
     oddsFetcherOverride = null
@@ -1842,8 +2017,14 @@ export const __test = {
   advanceScanCacheClock(deltaMs: number): void {
     timeOffsetMs += deltaMs
   },
-  SCAN_CACHE_TTL_MS,
+  SCAN_CACHE_TTL_MS: SCAN_CACHE_TTL_MS_DEFAULT,
   getContinuousStatus(): ReturnType<typeof getContinuousScanStatus> {
     return getContinuousScanStatus()
+  },
+  getScanCacheTtlMs(): number {
+    return scanCacheTtlMs
+  },
+  getContinuousScanBatchSize(): number {
+    return continuousScanBatchSize
   }
 }

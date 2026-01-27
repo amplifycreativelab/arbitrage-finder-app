@@ -36,6 +36,10 @@ export interface DeepScanAPI {
   setContinuousEnabled: (enabled: boolean) => Promise<void>
   getContinuousStatus: () => Promise<DeepScanContinuousStatus>
   setMaxEventsPerCycle: (maxEvents: number) => Promise<void>
+  getCacheTtl: () => Promise<number>
+  setCacheTtl: (ttlMinutes: number) => Promise<void>
+  getBatchSize: () => Promise<number>
+  setBatchSize: (batchSize: number) => Promise<void>
   clearCache: (reason?: string) => Promise<void>
 }
 
@@ -47,6 +51,10 @@ export interface DeepScanContinuousStatus {
   opportunitiesFoundToday: number
   requestsToday: number
   maxEventsPerCycle: number
+  cacheEntries: number
+  cacheTtlMinutes: number
+  batchSize: number
+  cacheOldestEntryAgeMs: number | null
 }
 
 export interface OddsApiIoBookmaker {

@@ -20,6 +20,8 @@ const idleProgress: DeepScanProgress = {
   eventsTotal: 0,
   requestsMade: 0,
   opportunitiesFound: 0,
+  marketsScanned: 0,
+  marketGroupsWithArbs: [],
   startedAt: null,
   elapsedMs: 0
 }
@@ -35,6 +37,10 @@ interface ContinuousStatusSnapshot {
   opportunitiesFoundToday: number
   requestsToday: number
   maxEventsPerCycle: number
+  cacheEntries: number
+  cacheTtlMinutes: number
+  batchSize: number
+  cacheOldestEntryAgeMs: number | null
 }
 
 const idleContinuousStatus: ContinuousStatusSnapshot = {
@@ -44,7 +50,11 @@ const idleContinuousStatus: ContinuousStatusSnapshot = {
   eventsScannedToday: 0,
   opportunitiesFoundToday: 0,
   requestsToday: 0,
-  maxEventsPerCycle: DEFAULT_MAX_EVENTS_PER_CYCLE
+  maxEventsPerCycle: DEFAULT_MAX_EVENTS_PER_CYCLE,
+  cacheEntries: 0,
+  cacheTtlMinutes: 5,
+  batchSize: 10,
+  cacheOldestEntryAgeMs: null
 }
 
 function clearPolling(): void {
@@ -79,11 +89,14 @@ function ensureFilterCacheInvalidationSubscription(): void {
     }
     previousSignature = nextSignature
 
-    void trpcClient.deepScanClearCache
-      .mutate({ reason: 'filters_changed' })
-      .catch(() => {
-        // Cache invalidation is best-effort and should not surface to the user.
-      })
+    const clearCacheMutation = trpcClient.deepScanClearCache
+    if (!clearCacheMutation || typeof clearCacheMutation.mutate !== 'function') {
+      return
+    }
+
+    void clearCacheMutation.mutate({ reason: 'filters_changed' }).catch(() => {
+      // Cache invalidation is best-effort and should not surface to the user.
+    })
   })
 }
 
@@ -98,6 +111,8 @@ async function syncPersistedSettingsToMain(): Promise<void> {
   const {
     continuousDeepScanEnabled,
     continuousDeepScanMaxEventsPerCycle,
+    deepScanCacheTtlMinutes,
+    deepScanBatchSize,
     deepScanRoiThresholds
   } = useFeedFiltersStore.getState()
 
@@ -109,6 +124,18 @@ async function syncPersistedSettingsToMain(): Promise<void> {
 
   try {
     await trpcClient.deepScanSetMaxEventsPerCycle.mutate({ maxEvents: continuousDeepScanMaxEventsPerCycle })
+  } catch {
+    // Best-effort sync; ignore errors
+  }
+
+  try {
+    await trpcClient.deepScanSetCacheTtl.mutate({ ttlMinutes: deepScanCacheTtlMinutes })
+  } catch {
+    // Best-effort sync; ignore errors
+  }
+
+  try {
+    await trpcClient.deepScanSetBatchSize.mutate({ batchSize: deepScanBatchSize })
   } catch {
     // Best-effort sync; ignore errors
   }
