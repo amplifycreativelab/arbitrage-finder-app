@@ -3,6 +3,7 @@ import * as React from 'react'
 import type { DashboardStatusSnapshot, ProviderStatus, SystemStatus } from '../../../../../shared/types'
 import { PROVIDERS } from '../../../../../shared/types'
 import { getStalenessInfo } from './staleness'
+import { useDeepScanStore } from './stores/deepScanStore'
 
 interface StatusBarProps {
   stalenessNow: number
@@ -81,8 +82,37 @@ function formatLastUpdated(snapshot: DashboardStatusSnapshot | null, stalenessNo
   return info.label || 'Just now'
 }
 
+function formatMinutesAgo(timestamp: string | null): string {
+  if (!timestamp) return 'never'
+  const ms = new Date(timestamp).getTime()
+  if (!Number.isFinite(ms)) return 'unknown'
+  const diffMs = Math.max(0, Date.now() - ms)
+  const diffMinutes = Math.floor(diffMs / 60_000)
+  if (diffMinutes < 1) return 'just now'
+  if (diffMinutes === 1) return '1m ago'
+  if (diffMinutes < 60) return `${diffMinutes}m ago`
+  const hours = Math.floor(diffMinutes / 60)
+  if (hours === 1) return '1h ago'
+  return `${hours}h ago`
+}
+
+function getContinuousStatusLabel(status: {
+  enabled: boolean
+  isActive: boolean
+  lastContinuousScanAt: string | null
+}): string {
+  if (!status.enabled) {
+    return 'Continuous off'
+  }
+  if (status.isActive) {
+    return 'Scanning...'
+  }
+  return `Idle - Last: ${formatMinutesAgo(status.lastContinuousScanAt)}`
+}
+
 function StatusBar({ stalenessNow, statusSnapshot, fetchedAt }: StatusBarProps): React.JSX.Element {
   const status = statusSnapshot
+  const continuousStatus = useDeepScanStore((state) => state.continuousStatus)
 
   const systemStatus: SystemStatus = status?.systemStatus ?? 'OK'
   const effectiveStatus: DashboardStatusSnapshot | null =
@@ -131,6 +161,19 @@ function StatusBar({ stalenessNow, statusSnapshot, fetchedAt }: StatusBarProps):
         >
           <span className="font-semibold">{systemStatus}</span>
           <span className="text-[9px] opacity-80">Updated {lastUpdatedLabel}</span>
+        </span>
+        <span
+          className={`inline-flex items-center gap-2 rounded-full border border-ot-border bg-ot-surface px-2 py-[2px] text-[9px] text-ot-muted ${
+            continuousStatus.isActive ? 'animate-pulse border-ot-accent/60 text-ot-accent' : ''
+          }`}
+          aria-label="Continuous deep scan status"
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              continuousStatus.enabled ? (continuousStatus.isActive ? 'bg-ot-accent' : 'bg-emerald-400') : 'bg-ot-muted/60'
+            }`}
+          />
+          <span>{getContinuousStatusLabel(continuousStatus)}</span>
         </span>
       </div>
 

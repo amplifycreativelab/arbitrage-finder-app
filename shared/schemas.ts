@@ -128,12 +128,15 @@ export const deepScanStatusSchema = z.enum([
 
 export const deepScanProgressSchema = z.object({
   status: deepScanStatusSchema,
+  mode: z.enum(['manual', 'continuous']),
   eventsScanned: z.number().int().min(0),
   eventsTotal: z.number().int().min(0),
   requestsMade: z.number().int().min(0),
   opportunitiesFound: z.number().int().min(0),
   startedAt: z.string().nullable(),
   elapsedMs: z.number().int().min(0),
+  lastContinuousScanAt: z.string().optional(),
+  isContinuousScanActive: z.boolean().optional(),
   currentEventName: z.string().optional(),
   errorMessage: z.string().optional()
 })

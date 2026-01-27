@@ -32,6 +32,21 @@ export interface DeepScanAPI {
   cancelDeepScan: () => Promise<void>
   getStatus: () => Promise<DeepScanProgress>
   getResults: () => Promise<ArbitrageOpportunity[]>
+  getContinuousEnabled: () => Promise<boolean>
+  setContinuousEnabled: (enabled: boolean) => Promise<void>
+  getContinuousStatus: () => Promise<DeepScanContinuousStatus>
+  setMaxEventsPerCycle: (maxEvents: number) => Promise<void>
+  clearCache: (reason?: string) => Promise<void>
+}
+
+export interface DeepScanContinuousStatus {
+  enabled: boolean
+  isActive: boolean
+  lastContinuousScanAt: string | null
+  eventsScannedToday: number
+  opportunitiesFoundToday: number
+  requestsToday: number
+  maxEventsPerCycle: number
 }
 
 export interface OddsApiIoBookmaker {

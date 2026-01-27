@@ -11,9 +11,11 @@ import { useFeedFiltersStore } from './feedFiltersStore'
 import { useFeedStore } from './feedStore'
 
 const POLL_INTERVAL_MS = 1500
+const DEFAULT_MAX_EVENTS_PER_CYCLE = 50
 
 const idleProgress: DeepScanProgress = {
   status: 'idle',
+  mode: 'manual',
   eventsScanned: 0,
   eventsTotal: 0,
   requestsMade: 0,
@@ -24,6 +26,26 @@ const idleProgress: DeepScanProgress = {
 
 let pollHandle: ReturnType<typeof setInterval> | null = null
 let lastStatus: DeepScanStatus = 'idle'
+
+interface ContinuousStatusSnapshot {
+  enabled: boolean
+  isActive: boolean
+  lastContinuousScanAt: string | null
+  eventsScannedToday: number
+  opportunitiesFoundToday: number
+  requestsToday: number
+  maxEventsPerCycle: number
+}
+
+const idleContinuousStatus: ContinuousStatusSnapshot = {
+  enabled: true,
+  isActive: false,
+  lastContinuousScanAt: null,
+  eventsScannedToday: 0,
+  opportunitiesFoundToday: 0,
+  requestsToday: 0,
+  maxEventsPerCycle: DEFAULT_MAX_EVENTS_PER_CYCLE
+}
 
 function clearPolling(): void {
   if (pollHandle) {
@@ -36,21 +58,93 @@ function triggerFeedRefresh(): void {
   void useFeedStore.getState().refreshSnapshot()
 }
 
+function computeFilterSignature(state: { regions?: string[]; bookmakers?: string[] }): string {
+  const regionsKey = (state.regions ?? []).slice().sort().join(',')
+  const bookmakersKey = (state.bookmakers ?? []).slice().sort().join(',')
+  return `${regionsKey}|${bookmakersKey}`
+}
+
+let filtersSubscribed = false
+
+function ensureFilterCacheInvalidationSubscription(): void {
+  if (filtersSubscribed) return
+  filtersSubscribed = true
+
+  let previousSignature = computeFilterSignature(useFeedFiltersStore.getState())
+
+  useFeedFiltersStore.subscribe((state) => {
+    const nextSignature = computeFilterSignature(state)
+    if (nextSignature === previousSignature) {
+      return
+    }
+    previousSignature = nextSignature
+
+    void trpcClient.deepScanClearCache
+      .mutate({ reason: 'filters_changed' })
+      .catch(() => {
+        // Cache invalidation is best-effort and should not surface to the user.
+      })
+  })
+}
+
+ensureFilterCacheInvalidationSubscription()
+
+let startupSyncCompleted = false
+
+async function syncPersistedSettingsToMain(): Promise<void> {
+  if (startupSyncCompleted) return
+  startupSyncCompleted = true
+
+  const {
+    continuousDeepScanEnabled,
+    continuousDeepScanMaxEventsPerCycle,
+    deepScanRoiThresholds
+  } = useFeedFiltersStore.getState()
+
+  try {
+    await trpcClient.deepScanSetContinuousEnabled.mutate({ enabled: continuousDeepScanEnabled })
+  } catch {
+    // Best-effort sync; ignore errors
+  }
+
+  try {
+    await trpcClient.deepScanSetMaxEventsPerCycle.mutate({ maxEvents: continuousDeepScanMaxEventsPerCycle })
+  } catch {
+    // Best-effort sync; ignore errors
+  }
+
+  try {
+    await trpcClient.deepScanSetDefaultThresholds.mutate({
+      minRoi: deepScanRoiThresholds.globalMinRoi,
+      marketGroupThresholds: deepScanRoiThresholds.marketGroupMinRoi
+    })
+  } catch {
+    // Best-effort sync; ignore errors
+  }
+}
+
 interface DeepScanState {
   progress: DeepScanProgress
+  continuousStatus: ContinuousStatusSnapshot
   isDialogOpen: boolean
   isStarting: boolean
+  isContinuousUpdating: boolean
   lastConfig: DeepScanConfig | null
   setDialogOpen: (open: boolean) => void
   startScan: (config: DeepScanConfig) => Promise<void>
   cancelScan: () => Promise<void>
   refreshStatus: () => Promise<void>
+  refreshContinuousStatus: () => Promise<void>
+  setContinuousEnabled: (enabled: boolean) => Promise<void>
+  setMaxEventsPerCycle: (maxEvents: number) => Promise<void>
 }
 
 export const useDeepScanStore = create<DeepScanState>((set, get) => ({
   progress: idleProgress,
+  continuousStatus: idleContinuousStatus,
   isDialogOpen: false,
   isStarting: false,
+  isContinuousUpdating: false,
   lastConfig: null,
   setDialogOpen: (open) => {
     set({ isDialogOpen: open })
@@ -145,6 +239,8 @@ export const useDeepScanStore = create<DeepScanState>((set, get) => ({
         }
       }))
 
+      await get().refreshContinuousStatus()
+
       if (previous === 'scanning' && status.status !== 'scanning') {
         clearPolling()
         triggerFeedRefresh()
@@ -157,6 +253,71 @@ export const useDeepScanStore = create<DeepScanState>((set, get) => ({
         progress: {
           ...state.progress,
           status: 'error',
+          errorMessage: message
+        }
+      }))
+    }
+  },
+  refreshContinuousStatus: async () => {
+    set({ isContinuousUpdating: true })
+    try {
+      // Sync persisted settings from renderer to main on first refresh
+      await syncPersistedSettingsToMain()
+
+      const status = await trpcClient.deepScanGetContinuousStatus.query()
+      set({ continuousStatus: status })
+    } catch (error) {
+      const message = (error as Error)?.message ?? 'Unable to refresh continuous deep scan status'
+      set((state) => ({
+        progress: {
+          ...state.progress,
+          errorMessage: message
+        }
+      }))
+    } finally {
+      set({ isContinuousUpdating: false })
+    }
+  },
+  setContinuousEnabled: async (enabled) => {
+    const normalized = Boolean(enabled)
+
+    set((state) => ({
+      continuousStatus: {
+        ...state.continuousStatus,
+        enabled: normalized
+      }
+    }))
+
+    try {
+      await trpcClient.deepScanSetContinuousEnabled.mutate({ enabled: normalized })
+      await get().refreshContinuousStatus()
+    } catch (error) {
+      const message = (error as Error)?.message ?? 'Unable to update continuous deep scan setting'
+      set((state) => ({
+        progress: {
+          ...state.progress,
+          errorMessage: message
+        }
+      }))
+    }
+  },
+  setMaxEventsPerCycle: async (maxEvents) => {
+    const normalized = Number.isFinite(maxEvents) ? Math.max(1, Math.floor(maxEvents)) : DEFAULT_MAX_EVENTS_PER_CYCLE
+    set((state) => ({
+      continuousStatus: {
+        ...state.continuousStatus,
+        maxEventsPerCycle: normalized
+      }
+    }))
+
+    try {
+      await trpcClient.deepScanSetMaxEventsPerCycle.mutate({ maxEvents: normalized })
+      await get().refreshContinuousStatus()
+    } catch (error) {
+      const message = (error as Error)?.message ?? 'Unable to update max events per cycle'
+      set((state) => ({
+        progress: {
+          ...state.progress,
           errorMessage: message
         }
       }))

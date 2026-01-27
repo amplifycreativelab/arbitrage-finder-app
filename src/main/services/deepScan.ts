@@ -19,7 +19,7 @@ const ODDS_API_IO_EVENTS_PATH = '/v3/events'
 const ODDS_API_IO_ODDS_PATH = '/v3/odds'
 const DEEP_SCAN_PROVIDER_ID: ProviderId = 'odds-api-io'
 
-interface DeepScanEvent {
+export interface DeepScanEvent {
   id: string
   name: string
   date?: string
@@ -27,12 +27,33 @@ interface DeepScanEvent {
   sport?: string
 }
 
+interface ScanCacheEntry {
+  scannedAt: number
+  bookmakerHash: string
+}
+
+export const SCAN_CACHE_TTL_MS = 5 * 60 * 1000
+export const CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE = 50
+export const CONTINUOUS_SCAN_MIN_INTERVAL_MS = 60_000
+const CONTINUOUS_SCAN_BATCH_SIZE = 10
+
+const HOURLY_REQUEST_LIMIT = 5000
+const HOURLY_WARN_THRESHOLD = 0.8
+const HOURLY_THROTTLE_THRESHOLD = 0.9
+
 type EventResolver = (args: {
   config: DeepScanConfig
   apiKey: string
   signal: AbortSignal
   correlationId: string
 }) => Promise<DeepScanEvent[]>
+
+type EventsFetcher = (args: {
+  apiKey: string
+  signal: AbortSignal
+  correlationId: string
+  page?: number
+}) => Promise<unknown>
 
 type OddsFetcher = (args: {
   event: DeepScanEvent
@@ -45,12 +66,42 @@ type OddsFetcher = (args: {
 type BookmakersResolver = (args: { config: DeepScanConfig; apiKey: string }) => Promise<string[]>
 
 let currentScan: DeepScanProgress | null = null
-let currentResults: ArbitrageOpportunity[] = []
-let currentAbortController: AbortController | null = null
-let currentCorrelationId: string | null = null
-let scanPromise: Promise<void> | null = null
+let manualResults: ArbitrageOpportunity[] = []
+let continuousResults: ArbitrageOpportunity[] = []
+let manualAbortController: AbortController | null = null
+let continuousAbortController: AbortController | null = null
+let manualCorrelationId: string | null = null
+let continuousCorrelationId: string | null = null
+let manualScanPromise: Promise<void> | null = null
+let continuousScanPromise: Promise<void> | null = null
+
+let manualScanInProgress = false
+let continuousDeepScanEnabled = true
+let isContinuousScanActive = false
+let continuousScanQueued = false
+let lastContinuousScanAt: string | null = null
+let lastContinuousScanStartedAtMs: number | null = null
+let currentScanMode: 'manual' | 'continuous' = 'manual'
+let minIntervalTimer: ReturnType<typeof setTimeout> | null = null
+
+let lastThresholdConfig: Pick<DeepScanConfig, 'minRoi' | 'marketGroupThresholds' | 'maxConcurrentRequests'> = {}
+let continuousScanMaxEventsPerCycle = CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE
+
+const scanCache = new Map<string, ScanCacheEntry>()
+
+let timeOffsetMs = 0
+
+let hourlyWindowStartedAtMs: number | null = null
+let hourlyRequestsUsed = 0
+let hourlyWarnLogged = false
+
+let dailyStatsKey: string | null = null
+let dailyEventsScanned = 0
+let dailyOpportunitiesFound = 0
+let dailyRequestsMade = 0
 
 let eventResolverOverride: EventResolver | null = null
+let eventsFetcherOverride: EventsFetcher | null = null
 let oddsFetcherOverride: OddsFetcher | null = null
 let bookmakersResolverOverride: BookmakersResolver | null = null
 
@@ -88,6 +139,177 @@ interface Quote {
   odds: number
 }
 
+function nowMs(): number {
+  return Date.now() + timeOffsetMs
+}
+
+function nowIso(): string {
+  return new Date(nowMs()).toISOString()
+}
+
+function toDailyKey(ms: number): string {
+  const date = new Date(ms)
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function ensureDailyStats(ms: number): void {
+  const key = toDailyKey(ms)
+  if (dailyStatsKey === key) {
+    return
+  }
+  dailyStatsKey = key
+  dailyEventsScanned = 0
+  dailyOpportunitiesFound = 0
+  dailyRequestsMade = 0
+}
+
+function ensureHourlyWindow(ms: number): void {
+  if (hourlyWindowStartedAtMs === null || ms - hourlyWindowStartedAtMs >= 60 * 60 * 1000) {
+    hourlyWindowStartedAtMs = ms
+    hourlyRequestsUsed = 0
+    hourlyWarnLogged = false
+  }
+}
+
+function recordContinuousRequest(): void {
+  const ms = nowMs()
+  ensureHourlyWindow(ms)
+  ensureDailyStats(ms)
+  hourlyRequestsUsed += 1
+  dailyRequestsMade += 1
+}
+
+function recordContinuousRequestWithWarnings(correlationId: string): void {
+  const before = getHourlyQuotaStatus()
+  recordContinuousRequest()
+  const after = getHourlyQuotaStatus()
+  if (!hourlyWarnLogged && after.percentUsed >= HOURLY_WARN_THRESHOLD && before.percentUsed < HOURLY_WARN_THRESHOLD) {
+    hourlyWarnLogged = true
+    logWarn('continuousScan.quota.warn', {
+      context: 'service:deepScan',
+      operation: 'recordContinuousRequest',
+      providerId: DEEP_SCAN_PROVIDER_ID,
+      correlationId,
+      durationMs: null,
+      errorCategory: null,
+      hourlyRequestsUsed: after.used,
+      hourlyRequestLimit: after.limit,
+      percentUsed: Number((after.percentUsed * 100).toFixed(1))
+    } satisfies StructuredLogBase)
+  }
+}
+
+function recordContinuousEventScanned(count = 1): void {
+  const ms = nowMs()
+  ensureDailyStats(ms)
+  dailyEventsScanned += Math.max(0, count)
+}
+
+function recordContinuousOpportunitiesFound(delta: number): void {
+  const ms = nowMs()
+  ensureDailyStats(ms)
+  if (delta > 0) {
+    dailyOpportunitiesFound += delta
+  }
+}
+
+function getHourlyQuotaStatus(): {
+  used: number
+  limit: number
+  percentUsed: number
+  windowStartedAtMs: number
+} {
+  const ms = nowMs()
+  ensureHourlyWindow(ms)
+  const started = hourlyWindowStartedAtMs ?? ms
+  const percentUsed = HOURLY_REQUEST_LIMIT > 0 ? hourlyRequestsUsed / HOURLY_REQUEST_LIMIT : 0
+  return {
+    used: hourlyRequestsUsed,
+    limit: HOURLY_REQUEST_LIMIT,
+    percentUsed: percentUsed > 0 ? percentUsed : 0,
+    windowStartedAtMs: started
+  }
+}
+
+function computeContinuousEventBudget(availableEvents: number): number {
+  const base = Math.max(0, Math.min(continuousScanMaxEventsPerCycle, availableEvents))
+  if (base === 0) return 0
+
+  const quota = getHourlyQuotaStatus()
+  const percent = quota.percentUsed
+
+  if (percent >= HOURLY_THROTTLE_THRESHOLD) {
+    return Math.min(base, 10)
+  }
+
+  return base
+}
+
+function computeBookmakerHash(bookmakers: string[]): string {
+  const normalized = bookmakers.map((b) => b.trim()).filter(Boolean).sort()
+  return normalized.join('|')
+}
+
+export function clearScanCache(reason: string): void {
+  scanCache.clear()
+  logInfo('continuousScan.cache.clear', {
+    context: 'service:deepScan',
+    operation: 'clearScanCache',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId: continuousCorrelationId ?? undefined,
+    durationMs: null,
+    errorCategory: null,
+    reason
+  } satisfies StructuredLogBase)
+}
+
+export function shouldScanEvent(eventId: string, bookmakers: string[]): boolean {
+  const now = nowMs()
+  const entry = scanCache.get(eventId)
+  const bookmakerHash = computeBookmakerHash(bookmakers)
+
+  if (!entry) {
+    return true
+  }
+
+  const ageMs = now - entry.scannedAt
+  const isExpired = ageMs >= SCAN_CACHE_TTL_MS
+  const hashChanged = entry.bookmakerHash !== bookmakerHash
+
+  if (isExpired || hashChanged) {
+    scanCache.delete(eventId)
+    return true
+  }
+
+  return false
+}
+
+function updateScanCache(eventId: string, bookmakers: string[]): void {
+  scanCache.set(eventId, {
+    scannedAt: nowMs(),
+    bookmakerHash: computeBookmakerHash(bookmakers)
+  })
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const safeSize = Math.max(1, size)
+  const result: T[][] = []
+  for (let index = 0; index < items.length; index += safeSize) {
+    result.push(items.slice(index, index + safeSize))
+  }
+  return result
+}
+
+function clearMinIntervalTimer(): void {
+  if (minIntervalTimer) {
+    clearTimeout(minIntervalTimer)
+    minIntervalTimer = null
+  }
+}
+
 function idleProgress(): DeepScanProgress {
   return {
     status: 'idle',
@@ -96,19 +318,28 @@ function idleProgress(): DeepScanProgress {
     requestsMade: 0,
     opportunitiesFound: 0,
     startedAt: null,
-    elapsedMs: 0
-  }
+    elapsedMs: 0,
+    mode: 'manual',
+    lastContinuousScanAt: lastContinuousScanAt ?? undefined,
+    isContinuousScanActive
+  } as DeepScanProgress
 }
 
 function computeElapsedMs(startedAt: string | null): number {
   if (!startedAt) return 0
   const started = new Date(startedAt).getTime()
   if (!Number.isFinite(started)) return 0
-  const diff = Date.now() - started
+  const diff = nowMs() - started
   return diff > 0 ? diff : 0
 }
 
 function updateProgress(patch: Partial<DeepScanProgress>): void {
+  const patchMode = (patch as { mode?: 'manual' | 'continuous' }).mode
+  const currentMode = (currentScan as { mode?: 'manual' | 'continuous' } | null)?.mode
+  if (manualScanInProgress && patchMode === 'continuous' && currentMode === 'manual') {
+    return
+  }
+
   const base = currentScan ?? idleProgress()
   const next: DeepScanProgress = {
     ...base,
@@ -116,6 +347,10 @@ function updateProgress(patch: Partial<DeepScanProgress>): void {
   }
 
   next.elapsedMs = computeElapsedMs(next.startedAt)
+  ;(next as DeepScanProgress & { lastContinuousScanAt?: string; isContinuousScanActive?: boolean }).lastContinuousScanAt =
+    lastContinuousScanAt ?? (next as { lastContinuousScanAt?: string }).lastContinuousScanAt
+  ;(next as DeepScanProgress & { isContinuousScanActive?: boolean }).isContinuousScanActive =
+    isContinuousScanActive
   currentScan = next
 }
 
@@ -154,7 +389,7 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
       signal.removeEventListener('abort', onAbort)
       resolve()
     }, ms)
-    const onAbort = () => {
+    const onAbort = (): void => {
       clearTimeout(timer)
       reject(new Error('aborted'))
     }
@@ -176,13 +411,24 @@ function getHttpFetch(): typeof fetch {
 
 async function trackedRequest<T>(
   fn: (context: { correlationId: string }) => Promise<T>,
-  correlationId: string
+  correlationId: string,
+  options: { mode?: 'manual' | 'continuous' } = {}
 ): Promise<T> {
+  const mode = options.mode ?? 'manual'
+
   updateProgress({ requestsMade: (currentScan?.requestsMade ?? 0) + 1 })
+
+  if (mode === 'continuous') {
+    recordContinuousRequestWithWarnings(correlationId)
+  }
+
   return scheduleProviderRequest(DEEP_SCAN_PROVIDER_ID, () => fn({ correlationId }))
 }
 
-function extractEvents(payload: unknown, config: DeepScanConfig): DeepScanEvent[] {
+function extractEvents(
+  payload: unknown,
+  defaults: { league?: string; sport?: string } = {}
+): DeepScanEvent[] {
   const candidates: unknown[] = Array.isArray(payload)
     ? payload
     : Array.isArray((payload as { data?: unknown[] }).data)
@@ -212,9 +458,9 @@ function extractEvents(payload: unknown, config: DeepScanConfig): DeepScanEvent[
     const rawLeague =
       (item as { league?: unknown }).league ??
       (item as { event?: { league?: unknown } }).event?.league ??
-      config.leagueId
+      defaults.league
     const league = typeof rawLeague === 'string' && rawLeague.trim().length ? rawLeague : undefined
-    const rawSport = (item as { sport?: unknown }).sport ?? config.sportSlug
+    const rawSport = (item as { sport?: unknown }).sport ?? defaults.sport
     const sport = typeof rawSport === 'string' && rawSport.trim().length ? rawSport : undefined
     seen.add(id)
     events.push({ id, name, date, league, sport })
@@ -241,7 +487,8 @@ const defaultEventResolver: EventResolver = async ({ config, apiKey, signal, cor
 
   const response = await trackedRequest(
     async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }),
-    correlationId
+    correlationId,
+    { mode: currentScanMode }
   )
 
   if (!response.ok) {
@@ -250,7 +497,172 @@ const defaultEventResolver: EventResolver = async ({ config, apiKey, signal, cor
   }
 
   const body = (await response.json()) as unknown
-  return extractEvents(body, config)
+  return extractEvents(body, { league: config.leagueId, sport: config.sportSlug })
+}
+
+const defaultEventsFetcher: EventsFetcher = async ({ apiKey, signal, correlationId, page }) => {
+  const httpFetch = getHttpFetch()
+  const url = new URL(ODDS_API_IO_EVENTS_PATH, ODDS_API_IO_BASE_URL)
+  url.searchParams.set('apiKey', apiKey)
+  if (typeof page === 'number' && Number.isFinite(page) && page > 0) {
+    url.searchParams.set('page', String(Math.floor(page)))
+  }
+
+  const response = await trackedRequest(
+    async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }),
+    correlationId,
+    { mode: 'continuous' }
+  )
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => `Events request failed with status ${response.status}`)
+    throw createHttpError(response.status, message || `Events request failed with status ${response.status}`)
+  }
+
+  return response.json()
+}
+
+function getEventsFetcher(): EventsFetcher {
+  return eventsFetcherOverride ?? defaultEventsFetcher
+}
+
+function isUpcomingEvent(event: DeepScanEvent, now: number): boolean {
+  if (!event.date) {
+    return true
+  }
+  const ms = new Date(event.date).getTime()
+  if (!Number.isFinite(ms)) {
+    return true
+  }
+  return ms > now
+}
+
+function computePriorityTier(event: DeepScanEvent, now: number): number {
+  if (!event.date) return 3
+  const ms = new Date(event.date).getTime()
+  if (!Number.isFinite(ms)) return 3
+
+  const diffMs = ms - now
+  if (diffMs <= 60 * 60 * 1000) {
+    return 0
+  }
+
+  const nowKey = toDailyKey(now)
+  const eventKey = toDailyKey(ms)
+  if (eventKey === nowKey) {
+    return 1
+  }
+
+  const tomorrowKey = toDailyKey(now + 24 * 60 * 60 * 1000)
+  if (eventKey === tomorrowKey) {
+    return 2
+  }
+
+  return 3
+}
+
+function sortEventsByPriority(events: DeepScanEvent[]): DeepScanEvent[] {
+  const now = nowMs()
+  return events
+    .slice()
+    .sort((a, b) => {
+      const tierA = computePriorityTier(a, now)
+      const tierB = computePriorityTier(b, now)
+      if (tierA !== tierB) {
+        return tierA - tierB
+      }
+
+      const timeA = a.date ? new Date(a.date).getTime() : Number.POSITIVE_INFINITY
+      const timeB = b.date ? new Date(b.date).getTime() : Number.POSITIVE_INFINITY
+      if (timeA !== timeB) {
+        return timeA - timeB
+      }
+
+      return a.id.localeCompare(b.id)
+    })
+}
+
+function extractNextPage(payload: unknown): number | null {
+  if (!payload || typeof payload !== 'object') return null
+  const direct = (payload as { nextPage?: unknown }).nextPage
+  if (typeof direct === 'number' && Number.isFinite(direct) && direct > 0) {
+    return Math.floor(direct)
+  }
+  const paginationNext = (payload as { pagination?: { nextPage?: unknown } }).pagination?.nextPage
+  if (typeof paginationNext === 'number' && Number.isFinite(paginationNext) && paginationNext > 0) {
+    return Math.floor(paginationNext)
+  }
+  return null
+}
+
+export async function discoverAllEvents(args: {
+  apiKey: string
+  signal: AbortSignal
+  correlationId: string
+  sports?: string[]
+}): Promise<DeepScanEvent[]> {
+  const { apiKey, signal, correlationId, sports } = args
+  const fetchEvents = getEventsFetcher()
+
+  const seen = new Set<string>()
+  const all: DeepScanEvent[] = []
+
+  let page: number | null = null
+  let pageGuard = 0
+
+  do {
+    const payload = await fetchEvents({ apiKey, signal, correlationId, page: page ?? undefined })
+    const extracted = extractEvents(payload)
+    for (const event of extracted) {
+      if (seen.has(event.id)) continue
+      seen.add(event.id)
+      all.push(event)
+    }
+    page = extractNextPage(payload)
+    pageGuard += 1
+  } while (page !== null && pageGuard < 5 && !signal.aborted)
+
+  const sportsFilter = Array.isArray(sports) && sports.length > 0 ? new Set(sports) : null
+  const now = nowMs()
+  const upcoming = all.filter((event) => {
+    if (!isUpcomingEvent(event, now)) return false
+    if (!sportsFilter) return true
+    return event.sport ? sportsFilter.has(event.sport) : true
+  })
+
+  const sorted = sortEventsByPriority(upcoming)
+
+  const sportsCovered = Array.from(
+    new Set(sorted.map((event) => event.sport).filter((value): value is string => Boolean(value)))
+  )
+  const datedEvents = sorted.filter((event) => typeof event.date === 'string')
+  const minDate = datedEvents.reduce<string | null>((min, event) => {
+    if (!event.date) return min
+    if (!min || event.date < min) return event.date
+    return min
+  }, null)
+  const maxDate = datedEvents.reduce<string | null>((max, event) => {
+    if (!event.date) return max
+    if (!max || event.date > max) return event.date
+    return max
+  }, null)
+
+  logInfo('continuousScan.discovery', {
+    context: 'service:deepScan',
+    operation: 'discoverAllEvents',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId,
+    durationMs: null,
+    errorCategory: null,
+    eventsDiscovered: sorted.length,
+    sportsCovered,
+    dateRange: {
+      from: minDate,
+      to: maxDate
+    }
+  } satisfies StructuredLogBase)
+
+  return sorted
 }
 
 const defaultBookmakersResolver: BookmakersResolver = async ({ config, apiKey }) => {
@@ -470,7 +882,7 @@ function buildOpportunitiesFromRawOdds(
     for (const market of bookmaker.markets) {
       const baseMetadata = inferMarketMetadata(market.key)
 
-      let baseKey = baseMetadata.key
+      const baseKey = baseMetadata.key
       const baseHasLine = baseMetadata.line !== undefined
 
       let outcomesMap = marketOutcomeQuotes.get(baseKey)
@@ -603,6 +1015,9 @@ async function fetchOddsWithRetry(
     try {
       if (options.trackAttempts) {
         updateProgress({ requestsMade: (currentScan?.requestsMade ?? 0) + 1 })
+        if (currentScanMode === 'continuous') {
+          recordContinuousRequestWithWarnings(args.correlationId)
+        }
       }
       return await fetchOdds(args)
     } catch (error) {
@@ -620,65 +1035,119 @@ async function fetchOddsWithRetry(
   throw lastError instanceof Error ? lastError : new Error('Deep scan odds fetch failed')
 }
 
-async function runScan(config: DeepScanConfig, apiKey: string, signal: AbortSignal, correlationId: string): Promise<void> {
-  const resolveEvents = eventResolverOverride ?? defaultEventResolver
-  const resolveBookmakers = bookmakersResolverOverride ?? defaultBookmakersResolver
+async function runScanForEvents(args: {
+  mode: 'manual' | 'continuous'
+  config: DeepScanConfig
+  apiKey: string
+  signal: AbortSignal
+  correlationId: string
+  events: DeepScanEvent[]
+  bookmakers: string[]
+  discoverySummary?: {
+    eventsDiscovered: number
+    eventsToScan: number
+    cacheHits: number
+    cacheMisses: number
+  }
+}): Promise<void> {
+  const { mode, config, apiKey, signal, correlationId, events, bookmakers, discoverySummary } = args
+
+  currentScanMode = mode
+
   const fetchOdds = oddsFetcherOverride ?? defaultOddsFetcher
   const trackOddsAttempts = oddsFetcherOverride !== null
 
-  const scanStartedAt = Date.now()
-  const bookmakers = await resolveBookmakers({ config, apiKey })
+  const scanStartedAtMs = nowMs()
+  const operation = mode === 'continuous' ? 'runContinuousScanCycle' : 'runScan'
+  const startEventName = mode === 'continuous' ? 'continuousScan.cycle.start' : 'deepScan.start'
+  const completeEventName = mode === 'continuous' ? 'continuousScan.cycle.complete' : 'deepScan.complete'
+  const perEventEventName = mode === 'continuous' ? 'continuousScan.event' : 'deepScan.event'
 
-  const events = await resolveEvents({ config, apiKey, signal, correlationId })
-  updateProgress({ eventsTotal: events.length })
-  let eventErrors = 0
+  if (mode === 'continuous') {
+    continuousResults = []
+  } else {
+    manualResults = []
+  }
 
-  logInfo('deepScan.start', {
+  updateProgress({
+    eventsTotal: events.length,
+    eventsScanned: 0,
+    opportunitiesFound: 0,
+    currentEventName: undefined,
+    mode
+  } as Partial<DeepScanProgress>)
+
+  const quotaStatus = getHourlyQuotaStatus()
+
+  logInfo(startEventName, {
     context: 'service:deepScan',
-    operation: 'runScan',
+    operation,
     providerId: DEEP_SCAN_PROVIDER_ID,
     correlationId,
     durationMs: null,
     errorCategory: null,
     eventCount: events.length,
     bookmakersCount: bookmakers.length,
-    requestsMade: currentScan?.requestsMade ?? 0
+    requestsMade: currentScan?.requestsMade ?? 0,
+    discoverySummary,
+    quota: {
+      hourlyRequestsUsed: quotaStatus.used,
+      hourlyRequestLimit: quotaStatus.limit,
+      percentUsed: Number((quotaStatus.percentUsed * 100).toFixed(1))
+    }
   } satisfies StructuredLogBase)
 
   if (events.length === 0) {
-    updateProgress({ status: 'completed', currentEventName: undefined })
-    logInfo('deepScan.complete', {
+    if (mode === 'continuous') {
+      lastContinuousScanAt = nowIso()
+    }
+    updateProgress({
+      status: 'completed',
+      currentEventName: undefined,
+      lastContinuousScanAt: lastContinuousScanAt ?? undefined,
+      mode
+    } as Partial<DeepScanProgress>)
+    const quotaStatusAfter = getHourlyQuotaStatus()
+    logInfo(completeEventName, {
       context: 'service:deepScan',
-      operation: 'runScan',
+      operation,
       providerId: DEEP_SCAN_PROVIDER_ID,
       correlationId,
-      durationMs: Date.now() - scanStartedAt,
+      durationMs: nowMs() - scanStartedAtMs,
       errorCategory: null,
       eventsScanned: 0,
       eventsTotal: 0,
       opportunitiesFound: 0,
       eventsFailed: 0,
-      requestsMade: currentScan?.requestsMade ?? 0
+      requestsMade: currentScan?.requestsMade ?? 0,
+      cacheHits: discoverySummary?.cacheHits ?? 0,
+      cacheMisses: discoverySummary?.cacheMisses ?? 0,
+      quota: {
+        hourlyRequestsUsed: quotaStatusAfter.used,
+        hourlyRequestLimit: quotaStatusAfter.limit,
+        percentUsed: Number((quotaStatusAfter.percentUsed * 100).toFixed(1))
+      }
     } satisfies StructuredLogBase)
     return
   }
 
   const concurrency = Math.max(1, Math.min(10, config.maxConcurrentRequests ?? 2))
-  let nextIndex = 0
+  let eventErrors = 0
+  const batches = mode === 'continuous' ? chunk(events, CONTINUOUS_SCAN_BATCH_SIZE) : [events]
 
   const processEvent = async (event: DeepScanEvent): Promise<void> => {
     if (signal.aborted) return
-    updateProgress({ currentEventName: event.name })
-    const startedAt = Date.now()
+    updateProgress({ currentEventName: event.name, mode } as Partial<DeepScanProgress>)
+    const startedAtMs = nowMs()
     try {
-      const resultsBefore = currentResults.length
+      const resultsBefore = (mode === 'continuous' ? continuousResults : manualResults).length
       const result = await fetchOddsWithRetry(
         fetchOdds,
         { event, apiKey, bookmakers, signal, correlationId },
         { trackAttempts: trackOddsAttempts }
       )
 
-      const foundAt = new Date().toISOString()
+      const foundAt = nowIso()
       const opportunities = isOpportunityArray(result)
         ? result
         : (() => {
@@ -687,20 +1156,32 @@ async function runScan(config: DeepScanConfig, apiKey: string, signal: AbortSign
           })()
 
       if (opportunities.length) {
-        currentResults.push(...opportunities)
-        updateProgress({ opportunitiesFound: currentResults.length })
+        if (mode === 'continuous') {
+          continuousResults.push(...opportunities)
+          updateProgress({ opportunitiesFound: continuousResults.length, mode } as Partial<DeepScanProgress>)
+        } else {
+          manualResults.push(...opportunities)
+          updateProgress({ opportunitiesFound: manualResults.length, mode } as Partial<DeepScanProgress>)
+        }
       }
 
-      const arbsFound = Math.max(0, currentResults.length - resultsBefore)
+      const resultsAfter = (mode === 'continuous' ? continuousResults : manualResults).length
+      const arbsFound = Math.max(0, resultsAfter - resultsBefore)
 
-      updateProgress({ eventsScanned: (currentScan?.eventsScanned ?? 0) + 1 })
+      updateProgress({ eventsScanned: (currentScan?.eventsScanned ?? 0) + 1, mode } as Partial<DeepScanProgress>)
 
-      logInfo('deepScan.event', {
+      if (mode === 'continuous') {
+        updateScanCache(event.id, bookmakers)
+        recordContinuousEventScanned(1)
+        recordContinuousOpportunitiesFound(arbsFound)
+      }
+
+      logInfo(perEventEventName, {
         context: 'service:deepScan',
-        operation: 'runScan',
+        operation,
         providerId: DEEP_SCAN_PROVIDER_ID,
         correlationId,
-        durationMs: Date.now() - startedAt,
+        durationMs: nowMs() - startedAtMs,
         errorCategory: null,
         eventId: event.id,
         eventName: event.name,
@@ -710,18 +1191,22 @@ async function runScan(config: DeepScanConfig, apiKey: string, signal: AbortSign
       } satisfies StructuredLogBase)
     } catch (error) {
       if (signal.aborted || isAbortError(error)) {
-        updateProgress({ status: 'cancelled', currentEventName: undefined })
+        updateProgress({ status: 'cancelled', currentEventName: undefined, mode } as Partial<DeepScanProgress>)
         return
       }
 
       eventErrors += 1
 
-      logWarn('deepScan.event', {
+      if (mode === 'continuous') {
+        recordContinuousEventScanned(1)
+      }
+
+      logWarn(perEventEventName, {
         context: 'service:deepScan',
-        operation: 'runScan',
+        operation,
         providerId: DEEP_SCAN_PROVIDER_ID,
         correlationId,
-        durationMs: Date.now() - startedAt,
+        durationMs: nowMs() - startedAtMs,
         errorCategory: 'ProviderError',
         eventId: event.id,
         eventName: event.name,
@@ -729,48 +1214,439 @@ async function runScan(config: DeepScanConfig, apiKey: string, signal: AbortSign
         arbsFound: 0,
         message: (error as Error)?.message ?? 'Deep scan event error'
       } satisfies StructuredLogBase)
-      updateProgress({ eventsScanned: (currentScan?.eventsScanned ?? 0) + 1 })
+      updateProgress({ eventsScanned: (currentScan?.eventsScanned ?? 0) + 1, mode } as Partial<DeepScanProgress>)
     }
   }
 
-  const worker = async (): Promise<void> => {
-    while (!signal.aborted) {
-      const index = nextIndex
-      nextIndex += 1
-      if (index >= events.length) {
-        return
+  const scanBatch = async (batchEvents: DeepScanEvent[]): Promise<void> => {
+    let nextIndex = 0
+    const worker = async (): Promise<void> => {
+      while (!signal.aborted) {
+        const index = nextIndex
+        nextIndex += 1
+        if (index >= batchEvents.length) {
+          return
+        }
+        await processEvent(batchEvents[index])
       }
-      await processEvent(events[index])
     }
+    await Promise.all(Array.from({ length: concurrency }, () => worker()))
   }
 
-  await Promise.all(Array.from({ length: concurrency }, () => worker()))
+  for (const batch of batches) {
+    if (signal.aborted) break
+    await scanBatch(batch)
+  }
 
   if ((currentScan?.status ?? 'idle') !== 'cancelled') {
-    updateProgress({ status: 'completed', currentEventName: undefined })
+    updateProgress({ status: 'completed', currentEventName: undefined, mode } as Partial<DeepScanProgress>)
   }
 
-  logInfo('deepScan.complete', {
+  if (mode === 'continuous') {
+    lastContinuousScanAt = nowIso()
+    updateProgress({ lastContinuousScanAt: lastContinuousScanAt ?? undefined, mode } as Partial<DeepScanProgress>)
+  }
+
+  const quotaStatusAfter = getHourlyQuotaStatus()
+  logInfo(completeEventName, {
     context: 'service:deepScan',
-    operation: 'runScan',
+    operation,
     providerId: DEEP_SCAN_PROVIDER_ID,
     correlationId,
-    durationMs: Date.now() - scanStartedAt,
+    durationMs: nowMs() - scanStartedAtMs,
     errorCategory: null,
     eventsScanned: currentScan?.eventsScanned ?? 0,
     eventsTotal: currentScan?.eventsTotal ?? 0,
-    opportunitiesFound: currentResults.length,
+    opportunitiesFound: mode === 'continuous' ? continuousResults.length : manualResults.length,
     eventsFailed: eventErrors,
-    requestsMade: currentScan?.requestsMade ?? 0
+    requestsMade: currentScan?.requestsMade ?? 0,
+    cacheHits: discoverySummary?.cacheHits ?? 0,
+    cacheMisses: discoverySummary?.cacheMisses ?? 0,
+    quota: {
+      hourlyRequestsUsed: quotaStatusAfter.used,
+      hourlyRequestLimit: quotaStatusAfter.limit,
+      percentUsed: Number((quotaStatusAfter.percentUsed * 100).toFixed(1))
+    }
   } satisfies StructuredLogBase)
+}
+
+async function runManualScan(
+  config: DeepScanConfig,
+  apiKey: string,
+  signal: AbortSignal,
+  correlationId: string
+): Promise<void> {
+  const resolveEvents = eventResolverOverride ?? defaultEventResolver
+  const resolveBookmakers = bookmakersResolverOverride ?? defaultBookmakersResolver
+
+  const bookmakers = await resolveBookmakers({ config, apiKey })
+  const events = await resolveEvents({ config, apiKey, signal, correlationId })
+
+  await runScanForEvents({
+    mode: 'manual',
+    config,
+    apiKey,
+    signal,
+    correlationId,
+    events,
+    bookmakers
+  })
+}
+
+function scheduleContinuousStart(waitMs: number, reason: string): void {
+  const safeWaitMs = Math.max(0, waitMs)
+  clearMinIntervalTimer()
+  minIntervalTimer = setTimeout(() => {
+    minIntervalTimer = null
+    if (!continuousScanQueued || !continuousDeepScanEnabled || manualScanInProgress) {
+      return
+    }
+    void startContinuousDeepScan({ reason, force: true })
+  }, safeWaitMs)
+
+  logInfo('continuousScan.scheduled', {
+    context: 'service:deepScan',
+    operation: 'scheduleContinuousStart',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId: continuousCorrelationId ?? undefined,
+    durationMs: null,
+    errorCategory: null,
+    waitMs: safeWaitMs,
+    reason
+  } satisfies StructuredLogBase)
+}
+
+function cancelContinuousDeepScan(reason: string): void {
+  clearMinIntervalTimer()
+  continuousScanQueued = false
+  if (continuousAbortController) {
+    continuousAbortController.abort()
+  }
+  isContinuousScanActive = false
+  updateProgress({ status: 'cancelled', currentEventName: undefined, mode: 'continuous' } as Partial<DeepScanProgress>)
+  logInfo('continuousScan.cancel', {
+    context: 'service:deepScan',
+    operation: 'cancelContinuousDeepScan',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId: continuousCorrelationId ?? undefined,
+    durationMs: null,
+    errorCategory: null,
+    reason
+  } satisfies StructuredLogBase)
+}
+
+export function getContinuousDeepScanEnabled(): boolean {
+  return continuousDeepScanEnabled
+}
+
+export function setContinuousDeepScanEnabled(enabled: boolean): void {
+  const next = Boolean(enabled)
+  continuousDeepScanEnabled = next
+
+  if (!next) {
+    cancelContinuousDeepScan('disabled')
+  } else if (continuousScanQueued && !isContinuousScanActive && !manualScanInProgress) {
+    void startContinuousDeepScan({ reason: 'enabled' })
+  }
+
+  updateProgress({
+    status: currentScan?.status ?? 'idle',
+    mode: (currentScan as { mode?: 'manual' | 'continuous' })?.mode ?? 'manual',
+    lastContinuousScanAt: lastContinuousScanAt ?? undefined,
+    isContinuousScanActive
+  } as Partial<DeepScanProgress>)
+
+  logInfo('continuousScan.enabled', {
+    context: 'service:deepScan',
+    operation: 'setContinuousDeepScanEnabled',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId: continuousCorrelationId ?? undefined,
+    durationMs: null,
+    errorCategory: null,
+    enabled: next
+  } satisfies StructuredLogBase)
+}
+
+function normalizeMaxEventsPerCycle(value: number): number {
+  const parsed = Number.isFinite(value) ? Math.floor(value) : Number.NaN
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE
+  }
+  return Math.min(parsed, 500)
+}
+
+export function getContinuousScanMaxEventsPerCycle(): number {
+  return continuousScanMaxEventsPerCycle
+}
+
+export function setContinuousScanMaxEventsPerCycle(value: number): void {
+  continuousScanMaxEventsPerCycle = normalizeMaxEventsPerCycle(value)
+  logInfo('continuousScan.maxEvents.set', {
+    context: 'service:deepScan',
+    operation: 'setContinuousScanMaxEventsPerCycle',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId: continuousCorrelationId ?? undefined,
+    durationMs: null,
+    errorCategory: null,
+    maxEventsPerCycle: continuousScanMaxEventsPerCycle
+  } satisfies StructuredLogBase)
+}
+
+export function getContinuousScanStatus(): {
+  enabled: boolean
+  isActive: boolean
+  lastContinuousScanAt: string | null
+  eventsScannedToday: number
+  opportunitiesFoundToday: number
+  requestsToday: number
+  maxEventsPerCycle: number
+} {
+  ensureDailyStats(nowMs())
+  return {
+    enabled: continuousDeepScanEnabled,
+    isActive: isContinuousScanActive,
+    lastContinuousScanAt,
+    eventsScannedToday: dailyEventsScanned,
+    opportunitiesFoundToday: dailyOpportunitiesFound,
+    requestsToday: dailyRequestsMade,
+    maxEventsPerCycle: continuousScanMaxEventsPerCycle
+  }
+}
+
+/**
+ * Set default ROI thresholds for continuous scan.
+ * Called during startup to sync renderer's persisted settings to main process.
+ */
+export function setContinuousScanDefaultThresholds(thresholds: {
+  minRoi?: number
+  marketGroupThresholds?: Record<string, number>
+}): void {
+  // Only update if lastThresholdConfig is empty (no manual scan has run yet)
+  if (lastThresholdConfig.minRoi === undefined && lastThresholdConfig.marketGroupThresholds === undefined) {
+    lastThresholdConfig = {
+      minRoi: thresholds.minRoi,
+      marketGroupThresholds: thresholds.marketGroupThresholds as Record<MarketGroup, number> | undefined,
+      maxConcurrentRequests: lastThresholdConfig.maxConcurrentRequests ?? 2
+    }
+  }
+}
+
+async function runContinuousScanCycle(reason: string): Promise<void> {
+  if (!continuousDeepScanEnabled || manualScanInProgress) {
+    return
+  }
+
+  if (process.env.NODE_ENV === 'test' && eventsFetcherOverride === null) {
+    return
+  }
+
+  const apiKey = await getApiKeyForAdapter(DEEP_SCAN_PROVIDER_ID)
+  if (!apiKey) {
+    logWarn('continuousScan.error', {
+      context: 'service:deepScan',
+      operation: 'runContinuousScanCycle',
+      providerId: DEEP_SCAN_PROVIDER_ID,
+      correlationId: continuousCorrelationId ?? undefined,
+      durationMs: null,
+      errorCategory: 'UserError',
+      message: 'API key not configured for provider odds-api-io'
+    } satisfies StructuredLogBase)
+    return
+  }
+
+  continuousCorrelationId = createCorrelationId()
+  continuousAbortController = new AbortController()
+  const signal = continuousAbortController.signal
+  const correlationId = continuousCorrelationId
+
+  const startedAt = nowIso()
+  isContinuousScanActive = true
+  lastContinuousScanStartedAtMs = nowMs()
+
+  logInfo('continuousScan.trigger', {
+    context: 'service:deepScan',
+    operation: 'runContinuousScanCycle',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId,
+    durationMs: null,
+    errorCategory: null,
+    reason
+  } satisfies StructuredLogBase)
+
+  updateProgress({
+    status: 'scanning',
+    eventsScanned: 0,
+    eventsTotal: 0,
+    requestsMade: 0,
+    opportunitiesFound: 0,
+    startedAt,
+    elapsedMs: 0,
+    mode: 'continuous',
+    lastContinuousScanAt: lastContinuousScanAt ?? undefined,
+    isContinuousScanActive
+  } as DeepScanProgress)
+
+  const config: DeepScanConfig = {
+    minRoi: lastThresholdConfig.minRoi,
+    marketGroupThresholds: lastThresholdConfig.marketGroupThresholds,
+    maxConcurrentRequests: lastThresholdConfig.maxConcurrentRequests ?? 2
+  }
+
+  try {
+    const resolveBookmakers = bookmakersResolverOverride ?? defaultBookmakersResolver
+    const bookmakers = await resolveBookmakers({ config, apiKey })
+
+    const events = await discoverAllEvents({
+      apiKey,
+      signal,
+      correlationId
+    })
+
+    let cacheHits = 0
+    let cacheMisses = 0
+    const eventsToScanRaw = events.filter((event) => {
+      const shouldScan = shouldScanEvent(event.id, bookmakers)
+      if (shouldScan) {
+        cacheMisses += 1
+      } else {
+        cacheHits += 1
+      }
+      return shouldScan
+    })
+
+    const budget = computeContinuousEventBudget(eventsToScanRaw.length)
+    const eventsToScan = eventsToScanRaw.slice(0, budget)
+
+    if (eventsToScanRaw.length > eventsToScan.length) {
+      logInfo('continuousScan.throttle', {
+        context: 'service:deepScan',
+        operation: 'runContinuousScanCycle',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId,
+        durationMs: null,
+        errorCategory: null,
+        requestedEvents: eventsToScanRaw.length,
+        allowedEvents: eventsToScan.length,
+        budget
+      } satisfies StructuredLogBase)
+    }
+
+    await runScanForEvents({
+      mode: 'continuous',
+      config,
+      apiKey,
+      signal,
+      correlationId,
+      events: eventsToScan,
+      bookmakers,
+      discoverySummary: {
+        eventsDiscovered: events.length,
+        eventsToScan: eventsToScan.length,
+        cacheHits,
+        cacheMisses
+      }
+    })
+  } catch (error) {
+    if (signal.aborted || isAbortError(error)) {
+      updateProgress({ status: 'cancelled', currentEventName: undefined, mode: 'continuous' } as Partial<DeepScanProgress>)
+    } else {
+      updateProgress({
+        status: 'error',
+        errorMessage: (error as Error)?.message ?? 'Continuous deep scan failed',
+        mode: 'continuous'
+      } as Partial<DeepScanProgress>)
+
+      logWarn('continuousScan.error', {
+        context: 'service:deepScan',
+        operation: 'runContinuousScanCycle',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId,
+        durationMs: null,
+        errorCategory: 'SystemError',
+        message: (error as Error)?.message ?? 'Continuous deep scan failed'
+      } satisfies StructuredLogBase)
+    }
+  } finally {
+    isContinuousScanActive = false
+    continuousAbortController = null
+    updateProgress({
+      isContinuousScanActive,
+      lastContinuousScanAt: lastContinuousScanAt ?? undefined,
+      mode: 'continuous'
+    } as Partial<DeepScanProgress>)
+  }
+}
+
+export async function startContinuousDeepScan(args: { reason: string; force?: boolean }): Promise<void> {
+  const { reason, force } = args
+
+  if (!continuousDeepScanEnabled) {
+    return
+  }
+  if (manualScanInProgress) {
+    continuousScanQueued = true
+    return
+  }
+  if (continuousScanPromise) {
+    continuousScanQueued = true
+    return
+  }
+
+  const now = nowMs()
+  if (!force && lastContinuousScanStartedAtMs !== null) {
+    const elapsed = now - lastContinuousScanStartedAtMs
+    if (elapsed < CONTINUOUS_SCAN_MIN_INTERVAL_MS) {
+      continuousScanQueued = true
+      const remainingMs = CONTINUOUS_SCAN_MIN_INTERVAL_MS - elapsed
+      scheduleContinuousStart(remainingMs, 'min-interval-elapsed')
+      return
+    }
+  }
+
+  continuousScanQueued = false
+  clearMinIntervalTimer()
+
+  continuousScanPromise = runContinuousScanCycle(reason)
+    .catch((error) => {
+      logWarn('continuousScan.error', {
+        context: 'service:deepScan',
+        operation: 'startContinuousDeepScan',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId: continuousCorrelationId ?? undefined,
+        durationMs: null,
+        errorCategory: 'SystemError',
+        message: (error as Error)?.message ?? 'Continuous deep scan failed to start'
+      } satisfies StructuredLogBase)
+    })
+    .finally(() => {
+      continuousScanPromise = null
+
+      if (continuousScanQueued && continuousDeepScanEnabled && !manualScanInProgress) {
+        const nowAfter = nowMs()
+        if (lastContinuousScanStartedAtMs !== null) {
+          const elapsed = nowAfter - lastContinuousScanStartedAtMs
+          if (elapsed < CONTINUOUS_SCAN_MIN_INTERVAL_MS) {
+            const remaining = CONTINUOUS_SCAN_MIN_INTERVAL_MS - elapsed
+            scheduleContinuousStart(remaining, 'queued-after-cycle')
+            return
+          }
+        }
+        void startContinuousDeepScan({ reason: 'queued-after-cycle', force: true })
+      }
+    })
 }
 
 export async function startDeepScan(config: DeepScanConfig): Promise<void> {
   const parsed = deepScanConfigSchema.parse(config)
   ensureScope(parsed)
 
-  if (currentScan?.status === 'scanning') {
+  const currentMode = (currentScan as { mode?: 'manual' | 'continuous' } | null)?.mode ?? 'manual'
+  if (currentScan?.status === 'scanning' && currentMode === 'manual') {
     throw new Error('A deep scan is already in progress')
+  }
+
+  if (isContinuousScanActive || continuousScanPromise) {
+    cancelContinuousDeepScan('manual_override')
   }
 
   const apiKey = await getApiKeyForAdapter(DEEP_SCAN_PROVIDER_ID)
@@ -778,11 +1654,19 @@ export async function startDeepScan(config: DeepScanConfig): Promise<void> {
     throw new Error('API key not configured for provider odds-api-io')
   }
 
-  currentCorrelationId = createCorrelationId()
-  currentAbortController = new AbortController()
-  currentResults = []
+  lastThresholdConfig = {
+    minRoi: parsed.minRoi,
+    marketGroupThresholds: parsed.marketGroupThresholds,
+    maxConcurrentRequests: parsed.maxConcurrentRequests
+  }
 
-  const startedAt = new Date().toISOString()
+  manualCorrelationId = createCorrelationId()
+  manualAbortController = new AbortController()
+  manualResults = []
+  manualScanInProgress = true
+  currentScanMode = 'manual'
+
+  const startedAt = nowIso()
   currentScan = {
     status: 'scanning',
     eventsScanned: 0,
@@ -790,14 +1674,17 @@ export async function startDeepScan(config: DeepScanConfig): Promise<void> {
     requestsMade: 0,
     opportunitiesFound: 0,
     startedAt,
-    elapsedMs: 0
-  }
+    elapsedMs: 0,
+    mode: 'manual',
+    lastContinuousScanAt: lastContinuousScanAt ?? undefined,
+    isContinuousScanActive
+  } as DeepScanProgress
 
   logInfo('deepScan.start', {
     context: 'service:deepScan',
     operation: 'startDeepScan',
     providerId: DEEP_SCAN_PROVIDER_ID,
-    correlationId: currentCorrelationId,
+    correlationId: manualCorrelationId,
     durationMs: null,
     errorCategory: null,
     configSummary: {
@@ -809,16 +1696,16 @@ export async function startDeepScan(config: DeepScanConfig): Promise<void> {
     requestedEventCount: parsed.eventIds?.length ?? null
   } satisfies StructuredLogBase)
 
-  const signal = currentAbortController.signal
-  const correlationId = currentCorrelationId
+  const signal = manualAbortController.signal
+  const correlationId = manualCorrelationId
 
-  scanPromise = runScan(parsed, apiKey, signal, correlationId)
+  manualScanPromise = runManualScan(parsed, apiKey, signal, correlationId)
     .catch((error) => {
       if (signal.aborted || isAbortError(error)) {
         return
       }
 
-      updateProgress({ status: 'error', errorMessage: (error as Error)?.message ?? 'Deep scan failed' })
+      updateProgress({ status: 'error', errorMessage: (error as Error)?.message ?? 'Deep scan failed', mode: 'manual' } as Partial<DeepScanProgress>)
 
       logWarn('deepScan.error', {
         context: 'service:deepScan',
@@ -831,30 +1718,39 @@ export async function startDeepScan(config: DeepScanConfig): Promise<void> {
       } satisfies StructuredLogBase)
     })
     .finally(() => {
-      currentAbortController = null
+      manualAbortController = null
+      manualScanInProgress = false
+      if (continuousDeepScanEnabled && continuousScanQueued && !isContinuousScanActive) {
+        void startContinuousDeepScan({ reason: 'resume-after-manual', force: true })
+      }
     })
 }
 
 export function cancelDeepScan(): void {
-  if (!currentAbortController || currentScan?.status !== 'scanning') {
+  const currentMode = (currentScan as { mode?: 'manual' | 'continuous' } | null)?.mode ?? 'manual'
+
+  if (manualAbortController && currentScan?.status === 'scanning' && currentMode === 'manual') {
+    manualAbortController.abort()
+    updateProgress({ status: 'cancelled', currentEventName: undefined, mode: 'manual' } as Partial<DeepScanProgress>)
+
+    logInfo('deepScan.cancel', {
+      context: 'service:deepScan',
+      operation: 'cancelDeepScan',
+      providerId: DEEP_SCAN_PROVIDER_ID,
+      correlationId: manualCorrelationId ?? undefined,
+      durationMs: null,
+      errorCategory: null,
+      eventsCompleted: currentScan?.eventsScanned ?? 0,
+      opportunitiesFound: manualResults.length,
+      requestsMade: currentScan?.requestsMade ?? 0,
+      reason: 'user_cancel'
+    } satisfies StructuredLogBase)
     return
   }
 
-  currentAbortController.abort()
-  updateProgress({ status: 'cancelled', currentEventName: undefined })
-
-  logInfo('deepScan.cancel', {
-    context: 'service:deepScan',
-    operation: 'cancelDeepScan',
-    providerId: DEEP_SCAN_PROVIDER_ID,
-    correlationId: currentCorrelationId ?? undefined,
-    durationMs: null,
-    errorCategory: null,
-    eventsCompleted: currentScan?.eventsScanned ?? 0,
-    opportunitiesFound: currentResults.length,
-    requestsMade: currentScan?.requestsMade ?? 0,
-    reason: 'user_cancel'
-  } satisfies StructuredLogBase)
+  if (isContinuousScanActive || continuousScanPromise) {
+    cancelContinuousDeepScan('user_cancel')
+  }
 }
 
 export function getDeepScanProgress(): DeepScanProgress {
@@ -862,14 +1758,21 @@ export function getDeepScanProgress(): DeepScanProgress {
   if (base.status === 'scanning') {
     return {
       ...base,
-      elapsedMs: computeElapsedMs(base.startedAt)
+      elapsedMs: computeElapsedMs(base.startedAt),
+      lastContinuousScanAt: lastContinuousScanAt ?? (base as { lastContinuousScanAt?: string }).lastContinuousScanAt,
+      isContinuousScanActive
     }
   }
-  return base
+  return {
+    ...base,
+    lastContinuousScanAt: lastContinuousScanAt ?? (base as { lastContinuousScanAt?: string }).lastContinuousScanAt,
+    isContinuousScanActive
+  } as DeepScanProgress
 }
 
 export function getDeepScanResults(): ArbitrageOpportunity[] {
-  return currentResults.map((opp) => ({
+  const combined = [...manualResults, ...continuousResults]
+  return combined.map((opp) => ({
     ...opp,
     source: 'deepScan'
   }))
@@ -878,16 +1781,43 @@ export function getDeepScanResults(): ArbitrageOpportunity[] {
 export const __test = {
   resetState(): void {
     currentScan = null
-    currentResults = []
-    currentAbortController = null
-    currentCorrelationId = null
-    scanPromise = null
+    manualResults = []
+    continuousResults = []
+    manualAbortController = null
+    continuousAbortController = null
+    manualCorrelationId = null
+    continuousCorrelationId = null
+    manualScanPromise = null
+    continuousScanPromise = null
+    manualScanInProgress = false
+    continuousDeepScanEnabled = true
+    isContinuousScanActive = false
+    continuousScanQueued = false
+    lastContinuousScanAt = null
+    lastContinuousScanStartedAtMs = null
+    currentScanMode = 'manual'
+    clearMinIntervalTimer()
+    lastThresholdConfig = {}
+    continuousScanMaxEventsPerCycle = CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE
+    scanCache.clear()
+    timeOffsetMs = 0
+    hourlyWindowStartedAtMs = null
+    hourlyRequestsUsed = 0
+    hourlyWarnLogged = false
+    dailyStatsKey = null
+    dailyEventsScanned = 0
+    dailyOpportunitiesFound = 0
+    dailyRequestsMade = 0
     eventResolverOverride = null
+    eventsFetcherOverride = null
     oddsFetcherOverride = null
     bookmakersResolverOverride = null
   },
   setEventResolver(resolver: EventResolver | null): void {
     eventResolverOverride = resolver
+  },
+  setEventsFetcher(fetcher: EventsFetcher | null): void {
+    eventsFetcherOverride = fetcher
   },
   setOddsFetcher(fetcher: OddsFetcher | null): void {
     oddsFetcherOverride = fetcher
@@ -896,7 +1826,24 @@ export const __test = {
     bookmakersResolverOverride = resolver
   },
   async waitForScanCompletion(): Promise<void> {
-    if (!scanPromise) return
-    await scanPromise
+    if (!manualScanPromise) return
+    await manualScanPromise
+  },
+  async waitForContinuousScanCompletion(): Promise<void> {
+    if (!continuousScanPromise) return
+    await continuousScanPromise
+  },
+  shouldScanEvent(eventId: string, bookmakers: string[]): boolean {
+    return shouldScanEvent(eventId, bookmakers)
+  },
+  markEventScanned(eventId: string, bookmakers: string[]): void {
+    updateScanCache(eventId, bookmakers)
+  },
+  advanceScanCacheClock(deltaMs: number): void {
+    timeOffsetMs += deltaMs
+  },
+  SCAN_CACHE_TTL_MS,
+  getContinuousStatus(): ReturnType<typeof getContinuousScanStatus> {
+    return getContinuousScanStatus()
   }
 }

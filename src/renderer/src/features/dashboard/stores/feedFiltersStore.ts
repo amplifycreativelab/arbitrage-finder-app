@@ -49,6 +49,8 @@ const storage = createJSONStorage(() => getStorage())
 
 export interface FeedFiltersState extends DashboardFilterState {
   bookmakerSelections: Record<string, string[]>
+  continuousDeepScanEnabled: boolean
+  continuousDeepScanMaxEventsPerCycle: number
   deepScanRoiThresholds: {
     globalMinRoi: number
     marketGroupMinRoi: Partial<Record<MarketGroup, number>>
@@ -59,6 +61,8 @@ export interface FeedFiltersState extends DashboardFilterState {
   setMarketGroups: (marketGroups: MarketGroup[]) => void
   setBookmakers: (bookmakers: string[]) => void
   setMinRoi: (minRoi: number) => void
+  setContinuousDeepScanEnabled: (enabled: boolean) => void
+  setContinuousDeepScanMaxEventsPerCycle: (maxEvents: number) => void
   setDeepScanGlobalMinRoi: (minRoi: number) => void
   setDeepScanMarketGroupMinRoi: (group: MarketGroup, minRoi: number) => void
   toggleRegion: (region: RegionCode) => void
@@ -77,6 +81,8 @@ const defaultState = {
   bookmakers: [],
   bookmakerSelections: {},
   minRoi: 0,
+  continuousDeepScanEnabled: true,
+  continuousDeepScanMaxEventsPerCycle: 50,
   deepScanRoiThresholds: {
     globalMinRoi: 0,
     marketGroupMinRoi: {}
@@ -133,6 +139,17 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
       setMinRoi: (minRoi: number) => {
         set({
           minRoi: normalizeMinRoi(minRoi)
+        })
+      },
+      setContinuousDeepScanEnabled: (enabled: boolean) => {
+        set({
+          continuousDeepScanEnabled: Boolean(enabled)
+        })
+      },
+      setContinuousDeepScanMaxEventsPerCycle: (maxEvents: number) => {
+        const normalized = Number.isFinite(maxEvents) ? Math.max(1, Math.floor(maxEvents)) : 50
+        set({
+          continuousDeepScanMaxEventsPerCycle: normalized
         })
       },
       setDeepScanGlobalMinRoi: (minRoi: number) => {
@@ -248,6 +265,8 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
         bookmakers: state.bookmakers,
         bookmakerSelections: state.bookmakerSelections,
         minRoi: state.minRoi,
+        continuousDeepScanEnabled: state.continuousDeepScanEnabled,
+        continuousDeepScanMaxEventsPerCycle: state.continuousDeepScanMaxEventsPerCycle,
         deepScanRoiThresholds: state.deepScanRoiThresholds
       })
     }

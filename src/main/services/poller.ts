@@ -56,6 +56,13 @@ const lastProviderErrorCategoryByProviderId: Partial<
   Record<ProviderId, StructuredLogBase['errorCategory'] | null>
 > = {}
 let lastSystemErrorTimestamp: string | null = null
+type PollCompleteListener = (context: {
+  opportunities: ArbitrageOpportunity[]
+  correlationId: string
+  tickCompletedAt: string
+}) => void | Promise<void>
+
+const pollCompleteListeners = new Set<PollCompleteListener>()
 
 const BASE_BACKOFF_MS = 1000
 const MAX_BACKOFF_MS = 15000
@@ -120,8 +127,7 @@ function computeBackoffMs(consecutive429s: number): number {
 
 function markErrorForStatus(
   providerId: ProviderId,
-  category: StructuredLogBase['errorCategory'] | null,
-  _error: unknown
+  category: StructuredLogBase['errorCategory'] | null
 ): void {
   const nowIso = new Date().toISOString()
 
@@ -324,6 +330,17 @@ export function registerAdapters(adapters: ArbitrageAdapter[]): void {
   }
 }
 
+export function registerPollCompleteListener(listener: PollCompleteListener): () => void {
+  pollCompleteListeners.add(listener)
+  return () => {
+    pollCompleteListeners.delete(listener)
+  }
+}
+
+export function unregisterPollCompleteListener(listener: PollCompleteListener): void {
+  pollCompleteListeners.delete(listener)
+}
+
 // Legacy notifyActiveProviderChanged and getActiveProviderForPolling removed in Story 5.1 cleanup
 
 // ============================================================
@@ -406,7 +423,7 @@ export async function pollOnceForEnabledProviders(): Promise<ArbitrageOpportunit
       const errorCategory: StructuredLogBase['errorCategory'] =
         typeof status === 'number' && status >= 400 ? 'ProviderError' : 'SystemError'
 
-      markErrorForStatus(providerId, errorCategory, error)
+      markErrorForStatus(providerId, errorCategory)
 
       return { providerId, error, success: false }
     }
@@ -521,6 +538,22 @@ export async function pollOnceForEnabledProviders(): Promise<ArbitrageOpportunit
     tickCompletedAt: nowIso,
     errorMessage: errors.length > 0 ? `Errors from ${errors.map((e) => e.providerId).join(', ')}` : undefined
   } satisfies StructuredLogBase)
+
+  for (const listener of pollCompleteListeners) {
+    void Promise.resolve()
+      .then(() => listener({ opportunities: combinedOpportunities, correlationId, tickCompletedAt: nowIso }))
+      .catch((error) => {
+        logWarn('poller.listener.error', {
+          context: 'service:poller',
+          operation: 'pollOnceForEnabledProviders',
+          providerId: undefined,
+          correlationId,
+          durationMs: null,
+          errorCategory: 'SystemError',
+          message: (error as Error)?.message ?? 'poll complete listener failed'
+        } satisfies StructuredLogBase)
+      })
+  }
 
   return combinedOpportunities
 }

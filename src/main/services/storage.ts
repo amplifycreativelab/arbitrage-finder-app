@@ -16,23 +16,25 @@ type StorageStore = {
   set: <K extends keyof StorageSchema>(key: K, value: StorageSchema[K]) => void
 }
 
-const StoreCtor = (ElectronStore as any).default ?? (ElectronStore as any)
+const StoreCtor = (ElectronStore as unknown as { default?: unknown }).default ?? ElectronStore
+type StoreConstructor = new (options?: Record<string, unknown>) => ElectronStore
 
-const store = new (StoreCtor as new (options?: any) => ElectronStore)(
-  {
-    name: 'credentials',
-    defaults: {
-      providerSecrets: {}
-    },
-    projectName: 'arbitrage-finder'
-  } as any
-) as unknown as StorageStore
+const store = new (StoreCtor as StoreConstructor)({
+  name: 'credentials',
+  defaults: {
+    providerSecrets: {}
+  },
+  projectName: 'arbitrage-finder'
+} as Record<string, unknown>) as unknown as StorageStore
 
-let safeStorageOverride: typeof safeStorage | null = null
+let safeStorageOverride: typeof safeStorage | null | undefined = undefined
 let migrationCompleted = false
 
 function getEffectiveSafeStorage(): typeof safeStorage | null {
-  return safeStorageOverride ?? safeStorage
+  if (safeStorageOverride !== undefined) {
+    return safeStorageOverride
+  }
+  return safeStorage
 }
 
 export function __setSafeStorageForTests(override: typeof safeStorage | null): void {
@@ -263,4 +265,3 @@ export async function getApiKey(providerId: string): Promise<string | null> {
 
   return null
 }
-

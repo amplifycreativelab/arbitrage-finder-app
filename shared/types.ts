@@ -399,12 +399,15 @@ export type DeepScanStatus = 'idle' | 'scanning' | 'completed' | 'cancelled' | '
 
 export interface DeepScanProgress {
   status: DeepScanStatus
+  mode: 'manual' | 'continuous'
   eventsScanned: number
   eventsTotal: number
   requestsMade: number
   opportunitiesFound: number
   startedAt: string | null
   elapsedMs: number
+  lastContinuousScanAt?: string
+  isContinuousScanActive?: boolean
   currentEventName?: string
   errorMessage?: string
 }

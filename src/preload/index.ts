@@ -44,6 +44,21 @@ type DeepScanAPI = {
   cancelDeepScan: () => Promise<void>
   getStatus: () => Promise<DeepScanProgress>
   getResults: () => Promise<ArbitrageOpportunity[]>
+  getContinuousEnabled: () => Promise<boolean>
+  setContinuousEnabled: (enabled: boolean) => Promise<void>
+  getContinuousStatus: () => Promise<DeepScanContinuousStatus>
+  setMaxEventsPerCycle: (maxEvents: number) => Promise<void>
+  clearCache: (reason?: string) => Promise<void>
+}
+
+type DeepScanContinuousStatus = {
+  enabled: boolean
+  isActive: boolean
+  lastContinuousScanAt: string | null
+  eventsScannedToday: number
+  opportunitiesFoundToday: number
+  requestsToday: number
+  maxEventsPerCycle: number
 }
 
 // Electron-TRPC bridge: attach to both preload globalThis and renderer via contextBridge
@@ -63,7 +78,7 @@ const exposeElectronTRPC = (): void => {
       // no-op if already exposed
     }
   } else {
-    // @ts-ignore
+    // @ts-ignore - electronTRPC is injected on window in non-isolated mode
     window.electronTRPC = handler
   }
 }
@@ -134,6 +149,22 @@ const deepScanApi: DeepScanAPI = {
   async getResults() {
     const result = await trpcClient.deepScanResults.query()
     return result.opportunities
+  },
+  async getContinuousEnabled() {
+    const result = await trpcClient.deepScanGetContinuousEnabled.query()
+    return result.enabled
+  },
+  async setContinuousEnabled(enabled) {
+    await trpcClient.deepScanSetContinuousEnabled.mutate({ enabled: Boolean(enabled) })
+  },
+  async getContinuousStatus() {
+    return trpcClient.deepScanGetContinuousStatus.query()
+  },
+  async setMaxEventsPerCycle(maxEvents) {
+    await trpcClient.deepScanSetMaxEventsPerCycle.mutate({ maxEvents })
+  },
+  async clearCache(reason) {
+    await trpcClient.deepScanClearCache.mutate(reason ? { reason } : undefined)
   }
 }
 

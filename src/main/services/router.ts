@@ -1,4 +1,5 @@
 import { initTRPC } from '@trpc/server'
+import { z } from 'zod'
 import {
   getEnabledProviders,
   toggleProvider,
@@ -17,7 +18,8 @@ import {
   getLatestSnapshotForProvider,
   notifyEnabledProvidersChanged,
   pollOnceForEnabledProviders,
-  registerAdapters
+  registerAdapters,
+  registerPollCompleteListener
 } from './poller'
 import type { ArbitrageOpportunity, ProviderId } from '../../../shared/types'
 import {
@@ -41,8 +43,16 @@ import {
 } from './odds-api-io-bookmakers'
 import {
   cancelDeepScan,
+  clearScanCache,
+  getContinuousDeepScanEnabled,
+  getContinuousScanMaxEventsPerCycle,
+  getContinuousScanStatus,
   getDeepScanProgress,
   getDeepScanResults,
+  setContinuousDeepScanEnabled,
+  setContinuousScanDefaultThresholds,
+  setContinuousScanMaxEventsPerCycle,
+  startContinuousDeepScan,
   startDeepScan
 } from './deepScan'
 
@@ -53,6 +63,10 @@ registerAdapters([new OddsApiIoAdapter(), new TheOddsApiAdapter()])
 // Initialize with enabled providers (multi-provider mode)
 const initialEnabledProviders = getEnabledProviders()
 notifyEnabledProvidersChanged(initialEnabledProviders)
+
+registerPollCompleteListener(() => {
+  void startContinuousDeepScan({ reason: 'poll-complete' })
+})
 
 function buildFeedMergeKey(opportunity: ArbitrageOpportunity): string {
   const legsKey = opportunity.legs
@@ -319,6 +333,45 @@ export const appRouter = t.router({
     return { opportunities: getDeepScanResults() }
   }),
 
+  deepScanGetContinuousEnabled: t.procedure.query(() => {
+    return { enabled: getContinuousDeepScanEnabled() }
+  }),
+
+  deepScanSetContinuousEnabled: t.procedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(({ input }) => {
+      setContinuousDeepScanEnabled(input.enabled)
+      return { ok: true }
+    }),
+
+  deepScanSetMaxEventsPerCycle: t.procedure
+    .input(z.object({ maxEvents: z.number().int().min(1).max(500) }))
+    .mutation(({ input }) => {
+      setContinuousScanMaxEventsPerCycle(input.maxEvents)
+      return { ok: true, maxEvents: getContinuousScanMaxEventsPerCycle() }
+    }),
+
+  deepScanGetContinuousStatus: t.procedure.query(() => {
+    return getContinuousScanStatus()
+  }),
+
+  deepScanClearCache: t.procedure
+    .input(z.object({ reason: z.string().trim().min(1) }).optional())
+    .mutation(({ input }) => {
+      clearScanCache(input?.reason ?? 'renderer_settings_change')
+      return { ok: true }
+    }),
+
+  deepScanSetDefaultThresholds: t.procedure
+    .input(z.object({
+      minRoi: z.number().min(0).optional(),
+      marketGroupThresholds: z.record(z.string(), z.number().min(0)).optional()
+    }))
+    .mutation(({ input }) => {
+      setContinuousScanDefaultThresholds(input)
+      return { ok: true }
+    }),
+
   // ============================================================
   // Utility procedures
   // ============================================================
@@ -360,6 +413,7 @@ export const appRouter = t.router({
         throw new Error('API key not configured for provider odds-api-io')
       }
       await selectBookmakers(apiKey, input.bookmakers)
+      clearScanCache('bookmakers_changed')
       return { ok: true }
     }),
 
@@ -369,6 +423,7 @@ export const appRouter = t.router({
       throw new Error('API key not configured for provider odds-api-io')
     }
     await clearSelectedBookmakers(apiKey)
+    clearScanCache('bookmakers_cleared')
     return { ok: true }
   })
 })

@@ -84,6 +84,7 @@ test.afterEach(async () => {
 test('[P1][7.1-SCHEMA-001] deepScanProgress schema accepts expected shape', () => {
   const sample = {
     status: 'scanning',
+    mode: 'manual',
     eventsScanned: 2,
     eventsTotal: 10,
     requestsMade: 5,
