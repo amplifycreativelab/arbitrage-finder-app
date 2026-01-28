@@ -418,11 +418,14 @@ N/A
 ### Completion Notes List
 
 - All 9 tasks completed successfully
-- 35 tests added covering TTL, batch size, sports filtering, cache stats, market stats logging, and progress metrics
+- 36 tests added covering TTL, batch size, sports filtering, cache stats, market stats logging, progress metrics, and sport-required event discovery
 - Renderer TRPC test stub now includes all deep scan procedures and the cache invalidation subscription is guarded in non-Electron environments
 - Continuous scan completion logs now include `marketStats` and progress tracks `marketsScanned` plus `marketGroupsWithArbs`
 - Status bar now shows live scan progress metrics during continuous scans
 - Added 2 tests for market stats logging and progress metrics in `tests/7-3-automatic-event-discovery.test.cjs`
+- Fixed a runtime crash path where the `/events` endpoint now requires a `sport` parameter by fetching per-sport and defaulting to `soccer`
+- Added odds payload diagnostics logs with drop reasons and small samples to verify bookmaker odds coverage during continuous scans.
+- Updated DeepScanPanel numeric inputs to accept typing and commit on blur/Enter for batch size/TTL/max events.
 - Full test suite passes when run sequentially to avoid shared-store races (`node --test --test-concurrency=1 <expanded file list>` -> 346 pass, 0 fail, 1 skipped)
 - Code review fixes applied for critical and high-severity findings
 - TypeScript compilation passes with no errors (`npm run pretest`)
@@ -437,7 +440,7 @@ N/A
 ### File List
 
 **Modified:**
-- `src/main/services/deepScan.ts` - Added configurable TTL, batch size, sports filtering, cache stats
+- `src/main/services/deepScan.ts` - Added configurable TTL, batch size, sports filtering, cache stats; now fetches events per-sport with a default sport
 - `src/main/services/router.ts` - Added TRPC procedures for TTL, batch size, sports filtering
 - `src/renderer/src/features/dashboard/stores/feedFiltersStore.ts` - Added TTL and batch size settings
 - `src/renderer/src/features/dashboard/stores/deepScanStore.ts` - Extended sync to include new settings
@@ -448,6 +451,7 @@ N/A
 - `shared/schemas.ts` - Extended `deepScanProgressSchema` with market metrics
 - `out-tests/shared/schemas.js` - Compiled schema updates
 - `out-tests/src/main/services/deepScan.js` - Compiled deep scan updates
+- `out-tests/shared/types.js` - Compiled shared type updates
 - `out-tests/src/main/services/router.js` - Compiled router updates
 - `out-tests/src/preload/index.js` - Compiled preload updates
 - `out-tests/src/renderer/src/features/dashboard/DeepScanPanel.js` - Compiled panel updates
@@ -461,4 +465,4 @@ N/A
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` - Story status synced to in-progress
 
 **Created:**
-- `tests/7-3-automatic-event-discovery.test.cjs` - 35 tests for Story 7.3
+- `tests/7-3-automatic-event-discovery.test.cjs` - 36 tests for Story 7.3

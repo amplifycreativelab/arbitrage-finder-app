@@ -1,0 +1,43 @@
+{
+  "event": {
+    "id": "fixture-corners-001",
+    "name": "Team A vs Team B",
+    "date": "2026-02-01T15:00:00Z",
+    "league": "Premier League",
+    "sport": "soccer"
+  },
+  "bookmakers": [
+    {
+      "name": "Bookmaker1",
+      "markets": [
+        {
+          "key": "corners_totals",
+          "outcomes": [
+            { "name": "Over 9.5", "odds": 2.15 },
+            { "name": "Under 9.5", "odds": 1.75 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Bookmaker2",
+      "markets": [
+        {
+          "key": "corners_totals",
+          "outcomes": [
+            { "name": "Over 9.5", "odds": 1.85 },
+            { "name": "Under 9.5", "odds": 2.05 }
+          ]
+        }
+      ]
+    }
+  ],
+  "_expectedArbitrage": {
+    "marketKey": "corners_totals_9.5",
+    "group": "corners",
+    "leg1": { "bookmaker": "Bookmaker1", "outcome": "over_9.5", "odds": 2.15 },
+    "leg2": { "bookmaker": "Bookmaker2", "outcome": "under_9.5", "odds": 2.05 },
+    "implied": 0.952,
+    "roiPositive": true
+  }
+}

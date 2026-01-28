@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deepScanConfigSchema = exports.deepScanProgressSchema = exports.deepScanStatusSchema = exports.arbitrageOpportunityListSchema = exports.arbitrageOpportunitySchema = exports.allProvidersStatusResponseSchema = exports.providerStatusInfoSchema = exports.setProviderEnabledResponseSchema = exports.enabledProvidersResponseSchema = exports.setProviderEnabledInputSchema = exports.oddsApiIoSelectBookmakersInputSchema = exports.copySignalToClipboardInputSchema = exports.providerIdParamSchema = exports.setActiveProviderInputSchema = exports.activeProviderSchema = exports.getApiKeyInputSchema = exports.saveApiKeyInputSchema = exports.providerIdSchema = void 0;
+exports.deepScanConfigSchema = exports.deepScanProgressSchema = exports.deepScanScopeSchema = exports.scanHistoryEntrySchema = exports.deepScanQuotaStatusSchema = exports.deepScanStatusSchema = exports.arbitrageOpportunityListSchema = exports.arbitrageOpportunitySchema = exports.allProvidersStatusResponseSchema = exports.providerStatusInfoSchema = exports.setProviderEnabledResponseSchema = exports.enabledProvidersResponseSchema = exports.setProviderEnabledInputSchema = exports.oddsApiIoSelectBookmakersInputSchema = exports.copySignalToClipboardInputSchema = exports.providerIdParamSchema = exports.setActiveProviderInputSchema = exports.activeProviderSchema = exports.getApiKeyInputSchema = exports.saveApiKeyInputSchema = exports.providerIdSchema = void 0;
 const zod_1 = require("zod");
 const types_1 = require("./types");
 exports.providerIdSchema = zod_1.z.enum(types_1.PROVIDER_IDS);
@@ -68,7 +68,8 @@ const arbitrageLegSchema = zod_1.z.object({
     bookmaker: zod_1.z.string(),
     market: zod_1.z.string(),
     odds: zod_1.z.number().positive(),
-    outcome: zod_1.z.string()
+    outcome: zod_1.z.string(),
+    impliedProbability: zod_1.z.number().min(0).max(100).optional() // Story 7.5: (1/odds)*100
 });
 const opportunitySourceSchema = zod_1.z.enum(['feed', 'deepScan']);
 exports.arbitrageOpportunitySchema = zod_1.z
@@ -103,6 +104,22 @@ exports.deepScanStatusSchema = zod_1.z.enum([
     'cancelled',
     'error'
 ]);
+exports.deepScanQuotaStatusSchema = zod_1.z.object({
+    hourlyUsed: zod_1.z.number().int().min(0),
+    hourlyLimit: zod_1.z.number().int().min(0),
+    percentUsed: zod_1.z.number().min(0).max(1),
+    isThrottled: zod_1.z.boolean(),
+    throttleResumeAt: zod_1.z.string().optional()
+});
+exports.scanHistoryEntrySchema = zod_1.z.object({
+    startedAt: zod_1.z.string(),
+    completedAt: zod_1.z.string(),
+    eventsScanned: zod_1.z.number().int().min(0),
+    opportunitiesFound: zod_1.z.number().int().min(0),
+    durationMs: zod_1.z.number().int().min(0),
+    mode: zod_1.z.enum(['manual', 'continuous'])
+});
+exports.deepScanScopeSchema = zod_1.z.enum(['all-sports', 'selected-sports', 'selected-leagues']);
 exports.deepScanProgressSchema = zod_1.z.object({
     status: exports.deepScanStatusSchema,
     mode: zod_1.z.enum(['manual', 'continuous']),
@@ -116,8 +133,10 @@ exports.deepScanProgressSchema = zod_1.z.object({
     elapsedMs: zod_1.z.number().int().min(0),
     lastContinuousScanAt: zod_1.z.string().optional(),
     isContinuousScanActive: zod_1.z.boolean().optional(),
+    isPaused: zod_1.z.boolean().optional(),
     currentEventName: zod_1.z.string().optional(),
-    errorMessage: zod_1.z.string().optional()
+    errorMessage: zod_1.z.string().optional(),
+    quotaStatus: exports.deepScanQuotaStatusSchema.optional()
 });
 const marketGroupSchema = zod_1.z.enum(types_1.MARKET_GROUPS);
 exports.deepScanConfigSchema = zod_1.z.object({

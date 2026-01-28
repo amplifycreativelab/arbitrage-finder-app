@@ -294,6 +294,29 @@ test('[P1][7.3-SPORTS-006] TRPC deepScanSetEnabledSportsFilter updates the filte
   assert.deepStrictEqual(filter, ['tennis']);
 });
 
+test('[P1][7.3-SPORTS-007] discoverAllEvents normalizes sport slugs for the events fetcher', async () => {
+  const seenSports = [];
+  deepScan.__test.setEventsFetcher(async ({ sport }) => {
+    seenSports.push(sport);
+    if (!sport) {
+      throw new Error('Sport is required');
+    }
+    return { events: [] };
+  });
+
+  await deepScan.discoverAllEvents({
+    apiKey: 'test-key',
+    signal: new AbortController().signal,
+    correlationId: 'sports-required-test',
+    sports: ['soccer']
+  });
+
+  assert.ok(seenSports.length >= 1, 'events fetcher should be called at least once');
+  assert.ok(seenSports.every(Boolean), 'every events fetch should include a sport parameter');
+  assert.ok(seenSports.includes('football'), 'soccer should be normalized to football');
+  assert.ok(!seenSports.includes('soccer'), 'soccer slug should not be passed through');
+});
+
 // ============================================================
 // Task 8: Cache Stats in Continuous Status
 // ============================================================

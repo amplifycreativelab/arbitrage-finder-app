@@ -11,6 +11,7 @@ exports.logInfo = logInfo;
 exports.logWarn = logWarn;
 exports.logError = logError;
 exports.logHeartbeat = logHeartbeat;
+exports.logDebug = logDebug;
 const electron_log_1 = __importDefault(require("electron-log"));
 const REDACTED = '***REDACTED***';
 function secret(value) {
@@ -100,4 +101,16 @@ function logError(event, base) {
 }
 function logHeartbeat(base) {
     logInfo('poller.heartbeat', base);
+}
+/**
+ * Debug-level logging - only outputs if DEBUG_LOGGING env var is set.
+ * Used for tracing unknown markets without polluting production logs (Story 7.4 Task 5.1).
+ */
+function logDebug(event, base) {
+    // Only log debug messages if explicitly enabled
+    if (process.env.DEBUG_LOGGING !== 'true') {
+        return;
+    }
+    const payload = buildPayload('info', base);
+    backend.info(`[DEBUG] ${event}`, payload);
 }

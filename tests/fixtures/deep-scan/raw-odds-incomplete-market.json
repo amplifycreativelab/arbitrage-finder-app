@@ -1,0 +1,35 @@
+{
+  "event": {
+    "id": "fixture-incomplete-001",
+    "name": "Team A vs Team B",
+    "date": "2026-02-01T15:00:00Z",
+    "league": "Test League",
+    "sport": "soccer"
+  },
+  "bookmakers": [
+    {
+      "name": "Bookmaker1",
+      "markets": [
+        {
+          "key": "btts",
+          "outcomes": [
+            { "name": "Yes", "odds": 2.10 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Bookmaker2",
+      "markets": [
+        {
+          "key": "btts",
+          "outcomes": [
+            { "name": "Yes", "odds": 2.05 }
+          ]
+        }
+      ]
+    }
+  ],
+  "_description": "Edge case: Market has only one outcome (missing No). Cannot build two-leg arbitrage.",
+  "_expectedArbitrage": null
+}

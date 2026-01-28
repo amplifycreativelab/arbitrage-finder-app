@@ -1,6 +1,6 @@
 # Story 7.4: Comprehensive Market Normalization
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -36,8 +36,8 @@ so that Continuous Deep Scan can find arbitrage across every market type the API
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Extend MARKET_PATTERNS registry for comprehensive coverage** (AC: #1, #3)
-  - [ ] 1.1 Add missing Goals/Scoring patterns to `MARKET_PATTERNS` in `shared/types.ts`:
+- [x] **Task 1: Extend MARKET_PATTERNS registry for comprehensive coverage** (AC: #1, #3)
+  - [x] 1.1 Add missing Goals/Scoring patterns to `MARKET_PATTERNS` in `shared/types.ts`:
     ```typescript
     // Goal in 1H/2H binaries
     goal_in_1h: { group: 'goals', baseType: 'goal_occurrence_1h' },
@@ -50,7 +50,7 @@ so that Continuous Deep Scan can find arbitrage across every market type the API
     home_clean_sheet: { group: 'goals', baseType: 'clean_sheet' },
     away_clean_sheet: { group: 'goals', baseType: 'clean_sheet' },
     ```
-  - [ ] 1.2 Add comprehensive Corners patterns:
+  - [x] 1.2 Add comprehensive Corners patterns:
     ```typescript
     match_corners: { group: 'corners', baseType: 'corners_totals' },
     match_corners_over: { group: 'corners', baseType: 'corners_over' },
@@ -61,7 +61,7 @@ so that Continuous Deep Scan can find arbitrage across every market type the API
     corners_2h: { group: 'corners', baseType: 'corners_2h' },
     corner_match_bet: { group: 'corners', baseType: 'corners_winner' },
     ```
-  - [ ] 1.3 Add comprehensive Cards patterns:
+  - [x] 1.3 Add comprehensive Cards patterns:
     ```typescript
     match_cards: { group: 'cards', baseType: 'cards_totals' },
     match_bookings: { group: 'cards', baseType: 'cards_totals' },
@@ -72,7 +72,7 @@ so that Continuous Deep Scan can find arbitrage across every market type the API
     any_player_red: { group: 'cards', baseType: 'red_card' },
     red_card_shown: { group: 'cards', baseType: 'red_card' },
     ```
-  - [ ] 1.4 Add comprehensive Shots patterns:
+  - [x] 1.4 Add comprehensive Shots patterns:
     ```typescript
     match_shots: { group: 'shots', baseType: 'shots_totals' },
     total_shots: { group: 'shots', baseType: 'shots_totals' },
@@ -81,7 +81,7 @@ so that Continuous Deep Scan can find arbitrage across every market type the API
     sot_under: { group: 'shots', baseType: 'shots_on_target_under' },
     shots_on_target_total: { group: 'shots', baseType: 'shots_on_target' },
     ```
-  - [ ] 1.5 Add comprehensive Other/Props patterns:
+  - [x] 1.5 Add comprehensive Other/Props patterns:
     ```typescript
     offside_totals: { group: 'other', baseType: 'offsides' },
     total_offsides: { group: 'other', baseType: 'offsides' },
@@ -94,22 +94,22 @@ so that Continuous Deep Scan can find arbitrage across every market type the API
     goal_kick_totals: { group: 'other', baseType: 'goal_kicks' },
     ```
 
-- [ ] **Task 2: Enhance inferMarketMetadata for complex market parsing** (AC: #1, #2, #3)
-  - [ ] 2.1 Add period detection from market key suffix in `inferMarketMetadata()`:
+- [x] **Task 2: Enhance inferMarketMetadata for complex market parsing** (AC: #1, #2, #3)
+  - [x] 2.1 Add period detection from market key suffix in `inferMarketMetadata()`:
     - Check for `_1h`, `_2h`, `_ft`, `first_half_`, `second_half_` patterns
     - Set `period` field on returned `MarketMetadata`
-  - [ ] 2.2 Add line extraction from market key in `inferMarketMetadata()`:
+  - [x] 2.2 Add line extraction from market key in `inferMarketMetadata()`:
     - Extract numeric values from patterns like `over_2.5`, `under_9.5`, `handicap_-1.5`
     - Set `line` field on returned `MarketMetadata`
-  - [ ] 2.3 Add side detection (home/away/match) in `inferMarketMetadata()`:
+  - [x] 2.3 Add side detection (home/away/match) in `inferMarketMetadata()`:
     - Check for `home_`, `away_`, `team1_`, `team2_` prefixes
     - Set `side` field on returned `MarketMetadata`
-  - [ ] 2.4 Improve prefix matching to handle compound patterns:
+  - [x] 2.4 Improve prefix matching to handle compound patterns:
     ```typescript
     // Handle patterns like "corners_totals_over_9.5_ft"
     // First try exact match, then progressively shorter prefixes
     ```
-  - [ ] 2.5 Add fuzzy matching for common abbreviations and variants:
+  - [x] 2.5 Add fuzzy matching for common abbreviations and variants:
     ```typescript
     const ALIAS_MAP: Record<string, string> = {
       'btts': 'both_teams_to_score',
@@ -121,11 +121,11 @@ so that Continuous Deep Scan can find arbitrage across every market type the API
     }
     ```
 
-- [ ] **Task 3: Enhance buildOpportunitiesFromRawOdds for comprehensive markets** (AC: #1, #5)
-  - [ ] 3.1 Update `buildOpportunitiesFromRawOdds()` in `deepScan.ts` to handle all market types:
+- [x] **Task 3: Enhance buildOpportunitiesFromRawOdds for comprehensive markets** (AC: #1, #5)
+  - [x] 3.1 Update `buildOpportunitiesFromRawOdds()` in `deepScan.ts` to handle all market types:
     - Ensure two-outcome markets (O/U, Yes/No) are correctly identified
     - Skip markets with != 2 outcomes (3-way markets, etc.)
-  - [ ] 3.2 Improve outcome normalization in `normalizeOutcomeName()`:
+  - [x] 3.2 Improve outcome normalization in `normalizeOutcomeName()`:
     ```typescript
     // Handle additional patterns:
     // "Over 9.5" -> "over_9.5"
@@ -133,14 +133,14 @@ so that Continuous Deep Scan can find arbitrage across every market type the API
     // "Yes" / "No" for binary markets
     // "+1.5" / "-1.5" for handicaps
     ```
-  - [ ] 3.3 Ensure line-aware market key generation works for all market types:
+  - [x] 3.3 Ensure line-aware market key generation works for all market types:
     - Corners: `corners_over_9.5_ft`, `corners_under_9.5_ft`
     - Cards: `cards_over_4.5_ft`, `cards_under_4.5_ft`
     - Shots: `shots_over_25.5_ft`, `shots_on_target_over_5.5_ft`
-  - [ ] 3.4 Ensure AC #5: Remove any default minRoi floor (already handled - verify no regression)
+  - [x] 3.4 Ensure AC #5: Remove any default minRoi floor (already handled - verify no regression)
 
-- [ ] **Task 4: Enhance formatMarketLabelFromKey for readable labels** (AC: #2)
-  - [ ] 4.1 Add label mappings for new market types in `formatMarketLabelFromKey()`:
+- [x] **Task 4: Enhance formatMarketLabelFromKey for readable labels** (AC: #2)
+  - [x] 4.1 Add label mappings for new market types in `formatMarketLabelFromKey()`:
     ```typescript
     const additionalLabels: Record<string, string> = {
       corners_1h: 'Corners (1H)',
@@ -155,16 +155,16 @@ so that Continuous Deep Scan can find arbitrage across every market type the API
       // ... etc
     }
     ```
-  - [ ] 4.2 Improve dynamic label generation for compound keys:
+  - [x] 4.2 Improve dynamic label generation for compound keys:
     - `corners_over_9.5_ft` -> "Corners Over 9.5 (FT)"
     - `cards_red_yes_ft` -> "Red Card Yes (FT)"
     - `shots_on_target_over_5.5` -> "Shots on Target Over 5.5"
-  - [ ] 4.3 Handle numeric line values in labels:
+  - [x] 4.3 Handle numeric line values in labels:
     - Extract line from key, format with appropriate precision
     - "Over 2.5" not "Over 2.50"
 
-- [ ] **Task 5: Add debug logging for unknown markets** (AC: #4)
-  - [ ] 5.1 Add debug-level logging in `inferMarketMetadata()` for unrecognized patterns:
+- [x] **Task 5: Add debug logging for unknown markets** (AC: #4)
+  - [x] 5.1 Add debug-level logging in `inferMarketMetadata()` for unrecognized patterns:
     ```typescript
     if (!exactMatch && !prefixMatch) {
       logDebug('market.unknown', {
@@ -180,52 +180,52 @@ so that Continuous Deep Scan can find arbitrage across every market type the API
       })
     }
     ```
-  - [ ] 5.2 Track unknown market keys for reporting:
+  - [x] 5.2 Track unknown market keys for reporting:
     - Add `unknownMarketKeys: Set<string>` tracking in scan cycle
     - Include count in `continuousScan.cycle.complete` log
-  - [ ] 5.3 Ensure unknown markets don't crash - fallback to 'other' group always works
+  - [x] 5.3 Ensure unknown markets don't crash - fallback to 'other' group always works
 
-- [ ] **Task 6: Create golden fixtures for comprehensive market coverage** (AC: #6)
-  - [ ] 6.1 Create `tests/fixtures/raw-odds-corners.json`:
+- [x] **Task 6: Create golden fixtures for comprehensive market coverage** (AC: #6)
+  - [x] 6.1 Create `tests/fixtures/raw-odds-corners.json`:
     - Event with corners O/U from multiple bookmakers
     - Expected arbitrage opportunity with `corners_over_9.5_ft` market
-  - [ ] 6.2 Create `tests/fixtures/raw-odds-cards.json`:
+  - [x] 6.2 Create `tests/fixtures/raw-odds-cards.json`:
     - Event with cards O/U and red card Yes/No markets
     - Expected arbitrage opportunity with `cards_under_4.5_ft` market
-  - [ ] 6.3 Create `tests/fixtures/raw-odds-btts.json`:
+  - [x] 6.3 Create `tests/fixtures/raw-odds-btts.json`:
     - Event with BTTS Yes/No from multiple bookmakers
     - Expected arbitrage with correct `btts_yes_ft` / `btts_no_ft` outcomes
-  - [ ] 6.4 Create `tests/fixtures/raw-odds-asian-handicap.json`:
+  - [x] 6.4 Create `tests/fixtures/raw-odds-asian-handicap.json`:
     - Event with Asian handicap markets (-0.5, -1.0, -1.5 lines)
     - Expected arbitrage with line-aware market keys
-  - [ ] 6.5 Create `tests/fixtures/raw-odds-red-card.json`:
+  - [x] 6.5 Create `tests/fixtures/raw-odds-red-card.json`:
     - Event with Red Card Yes/No binary market
     - Expected arbitrage opportunity
 
-- [ ] **Task 7: Create unit tests for market normalization** (AC: #1-#6)
-  - [ ] 7.1 Unit tests for `inferMarketMetadata()`:
+- [x] **Task 7: Create unit tests for market normalization** (AC: #1-#6)
+  - [x] 7.1 Unit tests for `inferMarketMetadata()`:
     - Test exact pattern matches (btts, corners, cards, etc.)
     - Test prefix matches with line extraction
     - Test period detection (_1h, _2h, _ft)
     - Test side detection (home_, away_)
     - Test unknown market fallback to 'other'
-  - [ ] 7.2 Unit tests for `normalizeOutcomeName()`:
+  - [x] 7.2 Unit tests for `normalizeOutcomeName()`:
     - Test "Over X.X" patterns
     - Test "Under X.X" patterns
     - Test "Yes"/"No" patterns
     - Test handicap line patterns
-  - [ ] 7.3 Unit tests for `formatMarketLabelFromKey()`:
+  - [x] 7.3 Unit tests for `formatMarketLabelFromKey()`:
     - Test all market groups produce readable labels
     - Test line values are formatted correctly
     - Test period suffixes are added
-  - [ ] 7.4 Integration tests for `buildOpportunitiesFromRawOdds()`:
+  - [x] 7.4 Integration tests for `buildOpportunitiesFromRawOdds()`:
     - Test each golden fixture produces expected opportunities
     - Test market metadata is correctly populated on opportunities
     - Test unknown markets don't crash
-  - [ ] 7.5 Create test file: `tests/7-4-comprehensive-market-normalization.test.cjs`
+  - [x] 7.5 Create test file: `tests/7-4-comprehensive-market-normalization.test.cjs`
 
-- [ ] **Task 8: Update TypeScript types and exports** (AC: #2)
-  - [ ] 8.1 Ensure `MarketMetadata` interface has all required fields:
+- [x] **Task 8: Update TypeScript types and exports** (AC: #2)
+  - [x] 8.1 Ensure `MarketMetadata` interface has all required fields:
     ```typescript
     interface MarketMetadata {
       group: MarketGroup
@@ -236,8 +236,16 @@ so that Continuous Deep Scan can find arbitrage across every market type the API
       side?: 'home' | 'away' | 'match'
     }
     ```
-  - [ ] 8.2 Add any missing type exports to `shared/types.ts`
-  - [ ] 8.3 Verify Zod schemas in `shared/schemas.ts` cover market metadata fields
+  - [x] 8.2 Add any missing type exports to `shared/types.ts`
+  - [x] 8.3 Verify Zod schemas in `shared/schemas.ts` cover market metadata fields
+
+### Review Follow-ups (AI)
+
+- [x] [AI-Review][HIGH] Handicap outcomes are split into different market keys by signed line (e.g., `-0.5` vs `+0.5`), so complementary outcomes never pair for Asian handicap fixtures (src/main/services/deepScan.ts:973)
+- [x] [AI-Review][HIGH] Unknown-market tracking treats all `group: 'other'` markets as unknown and does not skip them; this misclassifies known "other" markets and violates AC #4 skip behavior (src/main/services/deepScan.ts:943)
+- [x] [AI-Review][MEDIUM] Outcome normalization only strips the "goals" suffix, so provider variants like "Under 9.5 Corners" can create extra distinct outcomes and block arbitrage (src/main/services/deepScan.ts:742)
+- [x] [AI-Review][MEDIUM] Story is marked `done` with all tasks unchecked and an empty File List despite git changes; status and Dev Agent Record need reconciliation (_bmad-output/implementation-artifacts/7-4-comprehensive-market-normalization.md:3)
+- [x] [AI-Review][MEDIUM] Integration coverage is missing for `buildOpportunitiesFromRawOdds()` and the golden fixtures; tests only assert shared-type helpers and fixture existence (tests/7-4-comprehensive-market-normalization.test.cjs:1)
 
 ## Dev Notes
 
@@ -412,10 +420,31 @@ Files likely to be modified:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+GPT-5 Codex (Amelia dev agent persona)
 
 ### Debug Log References
 
+- Verified `market.unknown` debug logging via test capture in `tests/7-4-comprehensive-market-normalization.test.cjs`.
 ### Completion Notes List
 
+- Added `isKnownMarketPattern()` to distinguish known `other` markets from truly unknown markets.
+- Unknown markets are now logged at debug level and skipped in `buildOpportunitiesFromRawOdds()` (AC #4).
+- Normalized Over/Under outcomes using line extraction so suffix variants like "Corners" no longer split markets.
+- Exposed `__test.buildOpportunitiesFromRawOdds()` and added fixture-backed integration tests for Story 7.4.
+- Ran Story 7.4 tests directly after each change and kept them green.
 ### File List
+
+- `_bmad-output/implementation-artifacts/7-4-comprehensive-market-normalization.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `shared/types.ts`
+- `src/main/services/deepScan.ts`
+- `src/main/services/logger.ts`
+- `tests/7-4-comprehensive-market-normalization.test.cjs`
+- `tests/fixtures/deep-scan/raw-odds-asian-handicap.json`
+- `tests/fixtures/deep-scan/raw-odds-btts.json`
+- `tests/fixtures/deep-scan/raw-odds-cards.json`
+- `tests/fixtures/deep-scan/raw-odds-corners.json`
+- `tests/fixtures/deep-scan/raw-odds-red-card.json`
+- `out-tests/shared/types.js`
+- `out-tests/src/main/services/deepScan.js`
+- `out-tests/src/main/services/logger.js`

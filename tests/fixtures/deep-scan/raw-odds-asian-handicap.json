@@ -1,0 +1,81 @@
+{
+  "event": {
+    "id": "fixture-ah-001",
+    "name": "Team G vs Team H",
+    "date": "2026-02-03T20:00:00Z",
+    "league": "Serie A",
+    "sport": "soccer"
+  },
+  "bookmakers": [
+    {
+      "name": "AsianBook1",
+      "markets": [
+        {
+          "key": "asian_handicap",
+          "outcomes": [
+            { "name": "Home -0.5", "odds": 2.10 },
+            { "name": "Away +0.5", "odds": 1.80 }
+          ]
+        },
+        {
+          "key": "asian_handicap",
+          "outcomes": [
+            { "name": "Home -1.0", "odds": 2.30 },
+            { "name": "Away +1.0", "odds": 1.65 }
+          ]
+        },
+        {
+          "key": "asian_handicap",
+          "outcomes": [
+            { "name": "Home -1.5", "odds": 2.55 },
+            { "name": "Away +1.5", "odds": 1.52 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AsianBook2",
+      "markets": [
+        {
+          "key": "asian_handicap",
+          "outcomes": [
+            { "name": "Home -0.5", "odds": 1.85 },
+            { "name": "Away +0.5", "odds": 2.05 }
+          ]
+        },
+        {
+          "key": "asian_handicap",
+          "outcomes": [
+            { "name": "Home -1.0", "odds": 2.15 },
+            { "name": "Away +1.0", "odds": 1.75 }
+          ]
+        },
+        {
+          "key": "asian_handicap",
+          "outcomes": [
+            { "name": "Home -1.5", "odds": 2.40 },
+            { "name": "Away +1.5", "odds": 1.60 }
+          ]
+        }
+      ]
+    }
+  ],
+  "_expectedArbitrage": {
+    "_minus_0_5": {
+      "marketKey": "asian_handicap_-0.5",
+      "group": "handicap",
+      "leg1": { "bookmaker": "AsianBook1", "outcome": "home_-0.5", "odds": 2.10 },
+      "leg2": { "bookmaker": "AsianBook2", "outcome": "away_+0.5", "odds": 2.05 },
+      "implied": 0.964,
+      "roiPositive": true
+    },
+    "_minus_1_0": {
+      "marketKey": "asian_handicap_-1.0",
+      "group": "handicap",
+      "leg1": { "bookmaker": "AsianBook1", "outcome": "home_-1.0", "odds": 2.30 },
+      "leg2": { "bookmaker": "AsianBook2", "outcome": "away_+1.0", "odds": 1.75 },
+      "implied": 1.006,
+      "roiPositive": false
+    }
+  }
+}

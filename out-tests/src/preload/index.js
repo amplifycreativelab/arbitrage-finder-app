@@ -116,6 +116,27 @@ const deepScanApi = {
     },
     async clearCache(reason) {
         await trpcClient.deepScanClearCache.mutate(reason ? { reason } : undefined);
+    },
+    async getIntervalMinutes() {
+        const result = await trpcClient.deepScanGetIntervalMinutes.query();
+        return result.intervalMinutes;
+    },
+    async setIntervalMinutes(intervalMinutes) {
+        await trpcClient.deepScanSetIntervalMinutes.mutate({ intervalMinutes });
+    },
+    async getConcurrentRequests() {
+        const result = await trpcClient.deepScanGetConcurrentRequests.query();
+        return result.concurrentRequests;
+    },
+    async setConcurrentRequests(concurrentRequests) {
+        await trpcClient.deepScanSetConcurrentRequests.mutate({ concurrentRequests });
+    },
+    async getScanScope() {
+        const result = await trpcClient.deepScanGetScope.query();
+        return result.scanScope;
+    },
+    async setScanScope(scanScope) {
+        await trpcClient.deepScanSetScope.mutate({ scanScope });
     }
 };
 // ... existing imports

@@ -3,7 +3,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { createTRPCProxyClient } from '@trpc/client'
 import { ELECTRON_TRPC_CHANNEL, ipcLink } from 'electron-trpc/renderer'
 import type { AppRouter } from '../main/services/router'
-import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId } from '../../shared/types'
+import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId, ScanHistoryEntry, DeepScanQuotaStatus } from '../../shared/types'
 
 type CredentialsStorageStatus = {
   isUsingFallbackStorage: boolean
@@ -53,11 +53,18 @@ type DeepScanAPI = {
   getBatchSize: () => Promise<number>
   setBatchSize: (batchSize: number) => Promise<void>
   clearCache: (reason?: string) => Promise<void>
+  getIntervalMinutes: () => Promise<number>
+  setIntervalMinutes: (intervalMinutes: number) => Promise<void>
+  getConcurrentRequests: () => Promise<number>
+  setConcurrentRequests: (concurrentRequests: number) => Promise<void>
+  getScanScope: () => Promise<'all-sports' | 'selected-sports' | 'selected-leagues'>
+  setScanScope: (scanScope: 'all-sports' | 'selected-sports' | 'selected-leagues') => Promise<void>
 }
 
 type DeepScanContinuousStatus = {
   enabled: boolean
   isActive: boolean
+  isPaused: boolean
   lastContinuousScanAt: string | null
   eventsScannedToday: number
   opportunitiesFoundToday: number
@@ -67,6 +74,11 @@ type DeepScanContinuousStatus = {
   cacheTtlMinutes: number
   batchSize: number
   cacheOldestEntryAgeMs: number | null
+  intervalMinutes: number
+  concurrentRequests: number
+  scanScope: 'all-sports' | 'selected-sports' | 'selected-leagues'
+  quotaStatus: DeepScanQuotaStatus
+  history: ScanHistoryEntry[]
 }
 
 // Electron-TRPC bridge: attach to both preload globalThis and renderer via contextBridge
@@ -187,6 +199,27 @@ const deepScanApi: DeepScanAPI = {
   },
   async clearCache(reason) {
     await trpcClient.deepScanClearCache.mutate(reason ? { reason } : undefined)
+  },
+  async getIntervalMinutes() {
+    const result = await trpcClient.deepScanGetIntervalMinutes.query()
+    return result.intervalMinutes
+  },
+  async setIntervalMinutes(intervalMinutes) {
+    await trpcClient.deepScanSetIntervalMinutes.mutate({ intervalMinutes })
+  },
+  async getConcurrentRequests() {
+    const result = await trpcClient.deepScanGetConcurrentRequests.query()
+    return result.concurrentRequests
+  },
+  async setConcurrentRequests(concurrentRequests) {
+    await trpcClient.deepScanSetConcurrentRequests.mutate({ concurrentRequests })
+  },
+  async getScanScope() {
+    const result = await trpcClient.deepScanGetScope.query()
+    return result.scanScope
+  },
+  async setScanScope(scanScope) {
+    await trpcClient.deepScanSetScope.mutate({ scanScope })
   }
 }
 

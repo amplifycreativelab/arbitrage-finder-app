@@ -1,0 +1,44 @@
+{
+  "event": {
+    "id": "fixture-redcard-001",
+    "name": "Team I vs Team J",
+    "date": "2026-02-04T16:00:00Z",
+    "league": "Ligue 1",
+    "sport": "soccer"
+  },
+  "bookmakers": [
+    {
+      "name": "CardBook1",
+      "markets": [
+        {
+          "key": "red_card",
+          "outcomes": [
+            { "name": "Yes", "odds": 3.50 },
+            { "name": "No", "odds": 1.30 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CardBook2",
+      "markets": [
+        {
+          "key": "red_card_shown",
+          "outcomes": [
+            { "name": "Yes", "odds": 3.00 },
+            { "name": "No", "odds": 1.42 }
+          ]
+        }
+      ]
+    }
+  ],
+  "_expectedArbitrage": {
+    "marketKey": "red_card",
+    "group": "cards",
+    "leg1": { "bookmaker": "CardBook1", "outcome": "yes", "odds": 3.50 },
+    "leg2": { "bookmaker": "CardBook2", "outcome": "no", "odds": 1.42 },
+    "implied": 0.989,
+    "roiPositive": true,
+    "_note": "Both bookmakers normalize to same 'red_card' market"
+  }
+}

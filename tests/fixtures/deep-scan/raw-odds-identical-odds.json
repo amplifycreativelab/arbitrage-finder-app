@@ -1,0 +1,37 @@
+{
+  "event": {
+    "id": "fixture-identical-001",
+    "name": "Team A vs Team B",
+    "date": "2026-02-01T15:00:00Z",
+    "league": "Test League",
+    "sport": "soccer"
+  },
+  "bookmakers": [
+    {
+      "name": "Bookmaker1",
+      "markets": [
+        {
+          "key": "btts",
+          "outcomes": [
+            { "name": "Yes", "odds": 1.90 },
+            { "name": "No", "odds": 1.90 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Bookmaker2",
+      "markets": [
+        {
+          "key": "btts",
+          "outcomes": [
+            { "name": "Yes", "odds": 1.90 },
+            { "name": "No", "odds": 1.90 }
+          ]
+        }
+      ]
+    }
+  ],
+  "_description": "Edge case: All bookmakers have identical odds. No arbitrage possible.",
+  "_expectedArbitrage": null
+}

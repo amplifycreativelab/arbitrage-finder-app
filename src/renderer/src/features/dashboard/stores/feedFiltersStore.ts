@@ -57,6 +57,9 @@ export interface FeedFiltersState extends DashboardFilterState {
     globalMinRoi: number
     marketGroupMinRoi: Partial<Record<MarketGroup, number>>
   }
+  deepScanIntervalMinutes: number
+  deepScanConcurrentRequests: number
+  deepScanScope: 'all-sports' | 'selected-sports' | 'selected-leagues'
   setRegions: (regions: RegionCode[]) => void
   setSports: (sports: SportFilterValue[]) => void
   setMarkets: (markets: MarketFilterValue[]) => void
@@ -69,6 +72,9 @@ export interface FeedFiltersState extends DashboardFilterState {
   setDeepScanBatchSize: (size: number) => void
   setDeepScanGlobalMinRoi: (minRoi: number) => void
   setDeepScanMarketGroupMinRoi: (group: MarketGroup, minRoi: number) => void
+  setDeepScanIntervalMinutes: (minutes: number) => void
+  setDeepScanConcurrentRequests: (concurrentRequests: number) => void
+  setDeepScanScope: (scope: 'all-sports' | 'selected-sports' | 'selected-leagues') => void
   toggleRegion: (region: RegionCode) => void
   toggleSport: (sport: SportFilterValue) => void
   toggleMarket: (market: MarketFilterValue) => void
@@ -92,7 +98,10 @@ const defaultState = {
   deepScanRoiThresholds: {
     globalMinRoi: 0,
     marketGroupMinRoi: {}
-  }
+  },
+  deepScanIntervalMinutes: 5,
+  deepScanConcurrentRequests: 2,
+  deepScanScope: 'all-sports' as const
 }
 
 const getRegionKey = (regions: RegionCode[]): string => {
@@ -197,6 +206,23 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
           }
         })
       },
+      setDeepScanIntervalMinutes: (minutes: number) => {
+        const normalized = Number.isFinite(minutes) ? Math.max(1, Math.min(30, Math.floor(minutes))) : 5
+        set({
+          deepScanIntervalMinutes: normalized
+        })
+      },
+      setDeepScanConcurrentRequests: (concurrentRequests: number) => {
+        const normalized = Number.isFinite(concurrentRequests) ? Math.max(1, Math.min(10, Math.floor(concurrentRequests))) : 2
+        set({
+          deepScanConcurrentRequests: normalized
+        })
+      },
+      setDeepScanScope: (scope: 'all-sports' | 'selected-sports' | 'selected-leagues') => {
+        set({
+          deepScanScope: scope
+        })
+      },
       toggleRegion: (region: RegionCode) => {
         const { regions, bookmakerSelections } = get()
         let newRegions: RegionCode[]
@@ -287,7 +313,10 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
         continuousDeepScanMaxEventsPerCycle: state.continuousDeepScanMaxEventsPerCycle,
         deepScanCacheTtlMinutes: state.deepScanCacheTtlMinutes,
         deepScanBatchSize: state.deepScanBatchSize,
-        deepScanRoiThresholds: state.deepScanRoiThresholds
+        deepScanRoiThresholds: state.deepScanRoiThresholds,
+        deepScanIntervalMinutes: state.deepScanIntervalMinutes,
+        deepScanConcurrentRequests: state.deepScanConcurrentRequests,
+        deepScanScope: state.deepScanScope
       })
     }
   )

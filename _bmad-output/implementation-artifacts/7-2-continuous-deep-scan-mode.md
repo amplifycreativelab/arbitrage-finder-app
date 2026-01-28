@@ -387,6 +387,8 @@ GPT-5 Codex
 - Updated dashboard UI and stores to show continuous status, toggle controls, and max events per cycle.
 - Added Story 7.2 tests in `tests/7-2-continuous-deep-scan.test.cjs`, including max-events guardrail coverage.
 - Added quota usage payloads to completion logs for both manual and continuous scan completion events.
+- Added odds payload diagnostics (`deepScan.odds.payload.summary`, `deepScan.odds.payload.sample`, `deepScan.odds.payload.dropped`) with event metadata to validate bookmaker odds coverage during continuous scans.
+- Updated Deep Scan numeric controls to accept typing and commit on blur/Enter for batch size/TTL/max events inputs.
 
 ### File List
 

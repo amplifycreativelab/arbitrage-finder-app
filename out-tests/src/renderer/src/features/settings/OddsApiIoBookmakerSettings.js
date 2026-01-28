@@ -105,20 +105,32 @@ function OddsApiIoBookmakerSettings({ enabled, hasKey }) {
         setIsLoading(true);
         setError(null);
         setSuccess(null);
-        try {
-            const [supportedList, selectedList] = await Promise.all([
-                oddsApiIo.getSupportedBookmakers(),
-                oddsApiIo.getSelectedBookmakers()
-            ]);
-            setSupported(supportedList);
-            setSelected(selectedList);
+        // Use Promise.allSettled to handle partial failures gracefully
+        // (e.g., rate limit on getSelectedBookmakers shouldn't block getSupportedBookmakers)
+        const [supportedResult, selectedResult] = await Promise.allSettled([
+            oddsApiIo.getSupportedBookmakers(),
+            oddsApiIo.getSelectedBookmakers()
+        ]);
+        if (supportedResult.status === 'fulfilled') {
+            setSupported(supportedResult.value);
         }
-        catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to load bookmaker data.');
+        else {
+            setError(supportedResult.reason instanceof Error
+                ? supportedResult.reason.message
+                : 'Failed to load supported bookmakers.');
         }
-        finally {
-            setIsLoading(false);
+        if (selectedResult.status === 'fulfilled') {
+            setSelected(selectedResult.value);
         }
+        else {
+            // Don't overwrite error if supported also failed
+            if (supportedResult.status === 'fulfilled') {
+                setError(selectedResult.reason instanceof Error
+                    ? selectedResult.reason.message
+                    : 'Failed to load selected bookmakers.');
+            }
+        }
+        setIsLoading(false);
     }, []);
     const supportedWithRegion = React.useMemo(() => {
         return supported.map((b) => ({ ...b, region: inferRegion(b.name) }));
@@ -202,10 +214,10 @@ function OddsApiIoBookmakerSettings({ enabled, hasKey }) {
         setSuccess(null);
         try {
             await oddsApiIo.clearSelectedBookmakers();
-            setSuccess('Selection cleared. Refreshing…');
-            const selectedList = await oddsApiIo.getSelectedBookmakers();
-            setSelected(selectedList);
-            setSuccess('Selection cleared.');
+            // Clear succeeded - optimistically set selected to empty
+            // (avoids rate limit issues when fetching selected list)
+            setSelected([]);
+            setSuccess('Selection cleared. You can now select new bookmakers.');
         }
         catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to clear selection.');

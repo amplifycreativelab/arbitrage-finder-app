@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId } from '../../shared/types'
+import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId, ScanHistoryEntry, DeepScanQuotaStatus } from '../../shared/types'
 
 export interface CredentialsStorageStatus {
   isUsingFallbackStorage: boolean
@@ -41,11 +41,16 @@ export interface DeepScanAPI {
   getBatchSize: () => Promise<number>
   setBatchSize: (batchSize: number) => Promise<void>
   clearCache: (reason?: string) => Promise<void>
+  // Story 7.6: New settings
+  setIntervalMinutes: (minutes: number) => Promise<void>
+  setConcurrentRequests: (count: number) => Promise<void>
+  setScanScope: (scope: 'all-sports' | 'selected-sports' | 'selected-leagues') => Promise<void>
 }
 
 export interface DeepScanContinuousStatus {
   enabled: boolean
   isActive: boolean
+  isPaused: boolean
   lastContinuousScanAt: string | null
   eventsScannedToday: number
   opportunitiesFoundToday: number
@@ -55,6 +60,11 @@ export interface DeepScanContinuousStatus {
   cacheTtlMinutes: number
   batchSize: number
   cacheOldestEntryAgeMs: number | null
+  intervalMinutes: number
+  concurrentRequests: number
+  scanScope: 'all-sports' | 'selected-sports' | 'selected-leagues'
+  quotaStatus: DeepScanQuotaStatus
+  history: ScanHistoryEntry[]
 }
 
 export interface OddsApiIoBookmaker {

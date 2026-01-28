@@ -70,24 +70,24 @@ function SignalPreview({ opportunity, providerMetadata }) {
             null);
     }, [opportunity, storeOpportunities, selectedOpportunityId]);
     const effectiveProviderMetadata = providerMetadata ?? storeProviderMetadata ?? null;
+    const isDeepScan = effectiveOpportunity?.source === 'deepScan';
+    const deepScanMeta = React.useMemo(() => {
+        if (!effectiveOpportunity || !isDeepScan)
+            return null;
+        const timestamp = effectiveOpportunity.foundAt;
+        try {
+            const label = new Date(timestamp).toLocaleString();
+            return `${label} - ${effectiveOpportunity.event.name}`;
+        }
+        catch {
+            return `${timestamp} - ${effectiveOpportunity.event.name}`;
+        }
+    }, [isDeepScan, effectiveOpportunity?.foundAt, effectiveOpportunity?.event.name]);
     if (!effectiveOpportunity) {
         return ((0, jsx_runtime_1.jsx)("div", { className: "flex h-full items-center justify-center text-[11px] text-ot-muted", "data-testid": "signal-preview-empty", children: "Select an opportunity from the feed to see its signal preview." }));
     }
     const payload = (0, signalPayload_1.formatSignalPayload)(effectiveOpportunity, effectiveProviderMetadata);
     const roiPercent = (effectiveOpportunity.roi * 100).toFixed(1);
-    const isDeepScan = effectiveOpportunity.source === 'deepScan';
-    const deepScanMeta = React.useMemo(() => {
-        if (!isDeepScan)
-            return null;
-        const timestamp = effectiveOpportunity.foundAt;
-        try {
-            const label = new Date(timestamp).toLocaleString();
-            return `${label} • ${effectiveOpportunity.event.name}`;
-        }
-        catch {
-            return `${timestamp} • ${effectiveOpportunity.event.name}`;
-        }
-    }, [isDeepScan, effectiveOpportunity.foundAt, effectiveOpportunity.event.name]);
     const handleCopyClick = () => {
         if (isCopying) {
             return;

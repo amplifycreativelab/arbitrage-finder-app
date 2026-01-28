@@ -81,9 +81,9 @@ development_status:
   7-1-deep-scan-mode-hybrid-feed: done
   7-2-continuous-deep-scan-mode: done
   7-3-automatic-event-discovery-batch-scanning: done
-  7-4-comprehensive-market-normalization: ready-for-dev
-  7-5-exhaustive-arbitrage-detection-engine: backlog
-  7-6-continuous-deep-scan-settings-status-ui: backlog
+  7-4-comprehensive-market-normalization: done
+  7-5-exhaustive-arbitrage-detection-engine: done
+  7-6-continuous-deep-scan-settings-status-ui: done
   7-7-odds-comparison-view: backlog
   epic-7-retrospective: optional
 

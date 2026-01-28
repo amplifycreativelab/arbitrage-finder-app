@@ -24,6 +24,7 @@ let lastStatus = 'idle';
 const idleContinuousStatus = {
     enabled: true,
     isActive: false,
+    isPaused: false,
     lastContinuousScanAt: null,
     eventsScannedToday: 0,
     opportunitiesFoundToday: 0,
@@ -32,7 +33,19 @@ const idleContinuousStatus = {
     cacheEntries: 0,
     cacheTtlMinutes: 5,
     batchSize: 10,
-    cacheOldestEntryAgeMs: null
+    cacheOldestEntryAgeMs: null,
+    intervalMinutes: 5,
+    concurrentRequests: 2,
+    scanScope: 'all-sports',
+    enabledSports: [],
+    enabledLeagues: [],
+    quotaStatus: {
+        hourlyUsed: 0,
+        hourlyLimit: 5000,
+        percentUsed: 0,
+        isThrottled: false
+    },
+    history: []
 };
 function clearPolling() {
     if (pollHandle) {
@@ -75,7 +88,7 @@ async function syncPersistedSettingsToMain() {
     if (startupSyncCompleted)
         return;
     startupSyncCompleted = true;
-    const { continuousDeepScanEnabled, continuousDeepScanMaxEventsPerCycle, deepScanCacheTtlMinutes, deepScanBatchSize, deepScanRoiThresholds } = feedFiltersStore_1.useFeedFiltersStore.getState();
+    const { continuousDeepScanEnabled, continuousDeepScanMaxEventsPerCycle, deepScanCacheTtlMinutes, deepScanBatchSize, deepScanRoiThresholds, deepScanIntervalMinutes, deepScanConcurrentRequests, deepScanScope } = feedFiltersStore_1.useFeedFiltersStore.getState();
     try {
         await trpc_1.trpcClient.deepScanSetContinuousEnabled.mutate({ enabled: continuousDeepScanEnabled });
     }
@@ -109,6 +122,24 @@ async function syncPersistedSettingsToMain() {
     catch {
         // Best-effort sync; ignore errors
     }
+    try {
+        await trpc_1.trpcClient.deepScanSetIntervalMinutes.mutate({ intervalMinutes: deepScanIntervalMinutes });
+    }
+    catch {
+        // Best-effort sync; ignore errors
+    }
+    try {
+        await trpc_1.trpcClient.deepScanSetConcurrentRequests.mutate({ concurrentRequests: deepScanConcurrentRequests });
+    }
+    catch {
+        // Best-effort sync; ignore errors
+    }
+    try {
+        await trpc_1.trpcClient.deepScanSetScope.mutate({ scanScope: deepScanScope });
+    }
+    catch {
+        // Best-effort sync; ignore errors
+    }
 }
 exports.useDeepScanStore = (0, zustand_1.create)((set, get) => ({
     progress: idleProgress,
@@ -116,6 +147,7 @@ exports.useDeepScanStore = (0, zustand_1.create)((set, get) => ({
     isDialogOpen: false,
     isStarting: false,
     isContinuousUpdating: false,
+    isPausing: false,
     lastConfig: null,
     setDialogOpen: (open) => {
         set({ isDialogOpen: open });
@@ -286,6 +318,54 @@ exports.useDeepScanStore = (0, zustand_1.create)((set, get) => ({
                     errorMessage: message
                 }
             }));
+        }
+    },
+    pauseContinuous: async () => {
+        set({ isPausing: true });
+        try {
+            await trpc_1.trpcClient.deepScanPauseContinuous.mutate();
+            set((state) => ({
+                continuousStatus: {
+                    ...state.continuousStatus,
+                    isPaused: true
+                }
+            }));
+        }
+        catch (error) {
+            const message = error?.message ?? 'Unable to pause continuous scan';
+            set((state) => ({
+                progress: {
+                    ...state.progress,
+                    errorMessage: message
+                }
+            }));
+        }
+        finally {
+            set({ isPausing: false });
+        }
+    },
+    resumeContinuous: async () => {
+        set({ isPausing: true });
+        try {
+            await trpc_1.trpcClient.deepScanResumeContinuous.mutate();
+            set((state) => ({
+                continuousStatus: {
+                    ...state.continuousStatus,
+                    isPaused: false
+                }
+            }));
+        }
+        catch (error) {
+            const message = error?.message ?? 'Unable to resume continuous scan';
+            set((state) => ({
+                progress: {
+                    ...state.progress,
+                    errorMessage: message
+                }
+            }));
+        }
+        finally {
+            set({ isPausing: false });
         }
     }
 }));

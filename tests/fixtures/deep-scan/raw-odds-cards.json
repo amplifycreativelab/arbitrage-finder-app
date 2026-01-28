@@ -1,0 +1,67 @@
+{
+  "event": {
+    "id": "fixture-cards-001",
+    "name": "Team C vs Team D",
+    "date": "2026-02-01T18:00:00Z",
+    "league": "La Liga",
+    "sport": "soccer"
+  },
+  "bookmakers": [
+    {
+      "name": "BookmakerX",
+      "markets": [
+        {
+          "key": "cards_totals",
+          "outcomes": [
+            { "name": "Over 4.5", "odds": 1.90 },
+            { "name": "Under 4.5", "odds": 1.95 }
+          ]
+        },
+        {
+          "key": "red_card",
+          "outcomes": [
+            { "name": "Yes", "odds": 3.25 },
+            { "name": "No", "odds": 1.35 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "BookmakerY",
+      "markets": [
+        {
+          "key": "cards_totals",
+          "outcomes": [
+            { "name": "Over 4.5", "odds": 2.00 },
+            { "name": "Under 4.5", "odds": 1.85 }
+          ]
+        },
+        {
+          "key": "red_card",
+          "outcomes": [
+            { "name": "Yes", "odds": 2.95 },
+            { "name": "No", "odds": 1.45 }
+          ]
+        }
+      ]
+    }
+  ],
+  "_expectedArbitrage": {
+    "_cards_totals": {
+      "marketKey": "cards_totals_4.5",
+      "group": "cards",
+      "leg1": { "bookmaker": "BookmakerY", "outcome": "over_4.5", "odds": 2.00 },
+      "leg2": { "bookmaker": "BookmakerX", "outcome": "under_4.5", "odds": 1.95 },
+      "implied": 1.012,
+      "roiPositive": false
+    },
+    "_red_card": {
+      "marketKey": "red_card",
+      "group": "cards",
+      "leg1": { "bookmaker": "BookmakerX", "outcome": "yes", "odds": 3.25 },
+      "leg2": { "bookmaker": "BookmakerY", "outcome": "no", "odds": 1.45 },
+      "implied": 0.996,
+      "roiPositive": true
+    }
+  }
+}

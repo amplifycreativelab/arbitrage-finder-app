@@ -45,20 +45,32 @@ import {
   cancelDeepScan,
   clearScanCache,
   getAvailableSports,
+  getConcurrentRequests,
   getContinuousDeepScanEnabled,
   getContinuousScanBatchSize,
   getContinuousScanMaxEventsPerCycle,
   getContinuousScanStatus,
   getDeepScanProgress,
+  getDeepScanQuotaStatus,
   getDeepScanResults,
+  getEnabledLeaguesFilter,
   getEnabledSportsFilter,
   getScanCacheTtlMinutes,
+  getScanHistory,
+  getScanIntervalMinutes,
+  getScanScope,
+  pauseContinuousScan,
+  resumeContinuousScan,
+  setConcurrentRequests,
   setContinuousDeepScanEnabled,
   setContinuousScanBatchSize,
   setContinuousScanDefaultThresholds,
   setContinuousScanMaxEventsPerCycle,
+  setEnabledLeaguesFilter,
   setEnabledSportsFilter,
   setScanCacheTtl,
+  setScanIntervalMinutes,
+  setScanScope,
   startContinuousDeepScan,
   startDeepScan
 } from './deepScan'
@@ -415,6 +427,69 @@ export const appRouter = t.router({
       setEnabledSportsFilter(input.sports)
       return { ok: true, sports: getEnabledSportsFilter() }
     }),
+
+  deepScanGetEnabledLeaguesFilter: t.procedure.query(() => {
+    return { leagues: getEnabledLeaguesFilter() }
+  }),
+
+  deepScanSetEnabledLeaguesFilter: t.procedure
+    .input(z.object({ leagues: z.array(z.string()) }))
+    .mutation(({ input }) => {
+      setEnabledLeaguesFilter(input.leagues)
+      return { ok: true, leagues: getEnabledLeaguesFilter() }
+    }),
+
+  deepScanGetIntervalMinutes: t.procedure.query(() => {
+    return { intervalMinutes: getScanIntervalMinutes() }
+  }),
+
+  deepScanSetIntervalMinutes: t.procedure
+    .input(z.object({ intervalMinutes: z.number().int().min(1).max(30) }))
+    .mutation(({ input }) => {
+      setScanIntervalMinutes(input.intervalMinutes)
+      return { ok: true, intervalMinutes: getScanIntervalMinutes() }
+    }),
+
+  deepScanGetConcurrentRequests: t.procedure.query(() => {
+    return { concurrentRequests: getConcurrentRequests() }
+  }),
+
+  deepScanSetConcurrentRequests: t.procedure
+    .input(z.object({ concurrentRequests: z.number().int().min(1).max(10) }))
+    .mutation(({ input }) => {
+      setConcurrentRequests(input.concurrentRequests)
+      return { ok: true, concurrentRequests: getConcurrentRequests() }
+    }),
+
+  deepScanGetScope: t.procedure.query(() => {
+    return { scanScope: getScanScope() }
+  }),
+
+  deepScanSetScope: t.procedure
+    .input(z.object({ scanScope: z.enum(['all-sports', 'selected-sports', 'selected-leagues']) }))
+    .mutation(({ input }) => {
+      setScanScope(input.scanScope)
+      return { ok: true, scanScope: getScanScope() }
+    }),
+
+  // Story 7.6: Pause/Resume functionality
+  deepScanPauseContinuous: t.procedure.mutation(() => {
+    pauseContinuousScan()
+    return { ok: true, isPaused: true }
+  }),
+
+  deepScanResumeContinuous: t.procedure.mutation(() => {
+    resumeContinuousScan()
+    return { ok: true, isPaused: false }
+  }),
+
+  deepScanGetHistory: t.procedure.query(() => {
+    return { history: getScanHistory() }
+  }),
+
+  deepScanGetQuotaStatus: t.procedure.query(() => {
+    return getDeepScanQuotaStatus()
+  }),
 
   // ============================================================
   // Utility procedures

@@ -1,0 +1,44 @@
+{
+  "event": {
+    "id": "fixture-low-roi-001",
+    "name": "Team A vs Team B",
+    "date": "2026-02-01T15:00:00Z",
+    "league": "Test League",
+    "sport": "soccer"
+  },
+  "bookmakers": [
+    {
+      "name": "Bookmaker1",
+      "markets": [
+        {
+          "key": "btts",
+          "outcomes": [
+            { "name": "Yes", "odds": 2.01 },
+            { "name": "No", "odds": 1.98 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Bookmaker2",
+      "markets": [
+        {
+          "key": "btts",
+          "outcomes": [
+            { "name": "Yes", "odds": 1.99 },
+            { "name": "No", "odds": 2.02 }
+          ]
+        }
+      ]
+    }
+  ],
+  "_description": "Edge case: Extremely low ROI (~0.74%). Tests that even tiny arbitrage is captured when minRoi=0.",
+  "_expectedArbitrage": {
+    "marketKey": "btts",
+    "leg1": { "bookmaker": "Bookmaker1", "outcome": "yes", "odds": 2.01 },
+    "leg2": { "bookmaker": "Bookmaker2", "outcome": "no", "odds": 2.02 },
+    "roiApprox": 0.0074,
+    "roiPositive": true,
+    "_calculation": "1 - (1/2.01 + 1/2.02) = 1 - (0.4975 + 0.4950) = 0.0074"
+  }
+}

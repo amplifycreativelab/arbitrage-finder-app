@@ -307,6 +307,57 @@ exports.appRouter = t.router({
         (0, deepScan_1.setEnabledSportsFilter)(input.sports);
         return { ok: true, sports: (0, deepScan_1.getEnabledSportsFilter)() };
     }),
+    deepScanGetEnabledLeaguesFilter: t.procedure.query(() => {
+        return { leagues: (0, deepScan_1.getEnabledLeaguesFilter)() };
+    }),
+    deepScanSetEnabledLeaguesFilter: t.procedure
+        .input(zod_1.z.object({ leagues: zod_1.z.array(zod_1.z.string()) }))
+        .mutation(({ input }) => {
+        (0, deepScan_1.setEnabledLeaguesFilter)(input.leagues);
+        return { ok: true, leagues: (0, deepScan_1.getEnabledLeaguesFilter)() };
+    }),
+    deepScanGetIntervalMinutes: t.procedure.query(() => {
+        return { intervalMinutes: (0, deepScan_1.getScanIntervalMinutes)() };
+    }),
+    deepScanSetIntervalMinutes: t.procedure
+        .input(zod_1.z.object({ intervalMinutes: zod_1.z.number().int().min(1).max(30) }))
+        .mutation(({ input }) => {
+        (0, deepScan_1.setScanIntervalMinutes)(input.intervalMinutes);
+        return { ok: true, intervalMinutes: (0, deepScan_1.getScanIntervalMinutes)() };
+    }),
+    deepScanGetConcurrentRequests: t.procedure.query(() => {
+        return { concurrentRequests: (0, deepScan_1.getConcurrentRequests)() };
+    }),
+    deepScanSetConcurrentRequests: t.procedure
+        .input(zod_1.z.object({ concurrentRequests: zod_1.z.number().int().min(1).max(10) }))
+        .mutation(({ input }) => {
+        (0, deepScan_1.setConcurrentRequests)(input.concurrentRequests);
+        return { ok: true, concurrentRequests: (0, deepScan_1.getConcurrentRequests)() };
+    }),
+    deepScanGetScope: t.procedure.query(() => {
+        return { scanScope: (0, deepScan_1.getScanScope)() };
+    }),
+    deepScanSetScope: t.procedure
+        .input(zod_1.z.object({ scanScope: zod_1.z.enum(['all-sports', 'selected-sports', 'selected-leagues']) }))
+        .mutation(({ input }) => {
+        (0, deepScan_1.setScanScope)(input.scanScope);
+        return { ok: true, scanScope: (0, deepScan_1.getScanScope)() };
+    }),
+    // Story 7.6: Pause/Resume functionality
+    deepScanPauseContinuous: t.procedure.mutation(() => {
+        (0, deepScan_1.pauseContinuousScan)();
+        return { ok: true, isPaused: true };
+    }),
+    deepScanResumeContinuous: t.procedure.mutation(() => {
+        (0, deepScan_1.resumeContinuousScan)();
+        return { ok: true, isPaused: false };
+    }),
+    deepScanGetHistory: t.procedure.query(() => {
+        return { history: (0, deepScan_1.getScanHistory)() };
+    }),
+    deepScanGetQuotaStatus: t.procedure.query(() => {
+        return (0, deepScan_1.getDeepScanQuotaStatus)();
+    }),
     // ============================================================
     // Utility procedures
     // ============================================================

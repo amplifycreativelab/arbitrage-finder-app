@@ -1,5 +1,6 @@
 import Versions from './components/Versions'
 import DashboardLayout from './features/dashboard/DashboardLayout'
+import DeepScanStatusBar from './features/dashboard/DeepScanStatusBar'
 import electronLogo from './assets/electron.svg'
 
 function App(): React.JSX.Element {
@@ -20,6 +21,7 @@ function App(): React.JSX.Element {
               </div>
             </div>
           </div>
+          <DeepScanStatusBar />
         </div>
       </header>
 

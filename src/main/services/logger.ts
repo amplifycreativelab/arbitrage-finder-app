@@ -143,3 +143,16 @@ export function logError(event: string, base: StructuredLogBase): void {
 export function logHeartbeat(base: StructuredLogBase): void {
   logInfo('poller.heartbeat', base)
 }
+
+/**
+ * Debug-level logging - only outputs if DEBUG_LOGGING env var is set.
+ * Used for tracing unknown markets without polluting production logs (Story 7.4 Task 5.1).
+ */
+export function logDebug(event: string, base: StructuredLogBase): void {
+  // Only log debug messages if explicitly enabled
+  if (process.env.DEBUG_LOGGING !== 'true') {
+    return
+  }
+  const payload = buildPayload('info', base)
+  backend.info(`[DEBUG] ${event}`, payload)
+}

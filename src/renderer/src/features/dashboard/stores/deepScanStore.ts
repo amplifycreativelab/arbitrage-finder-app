@@ -4,7 +4,9 @@ import {
   type DeepScanConfig,
   type DeepScanProgress,
   type DeepScanStatus,
-  type MarketGroup
+  type MarketGroup,
+  type ScanHistoryEntry,
+  type DeepScanQuotaStatus
 } from '../../../../../../shared/types'
 import { trpcClient } from '../../../lib/trpc'
 import { useFeedFiltersStore } from './feedFiltersStore'
@@ -32,6 +34,7 @@ let lastStatus: DeepScanStatus = 'idle'
 interface ContinuousStatusSnapshot {
   enabled: boolean
   isActive: boolean
+  isPaused: boolean
   lastContinuousScanAt: string | null
   eventsScannedToday: number
   opportunitiesFoundToday: number
@@ -41,11 +44,19 @@ interface ContinuousStatusSnapshot {
   cacheTtlMinutes: number
   batchSize: number
   cacheOldestEntryAgeMs: number | null
+  intervalMinutes: number
+  concurrentRequests: number
+  scanScope: 'all-sports' | 'selected-sports' | 'selected-leagues'
+  enabledSports: string[]
+  enabledLeagues: string[]
+  quotaStatus: DeepScanQuotaStatus
+  history: ScanHistoryEntry[]
 }
 
 const idleContinuousStatus: ContinuousStatusSnapshot = {
   enabled: true,
   isActive: false,
+  isPaused: false,
   lastContinuousScanAt: null,
   eventsScannedToday: 0,
   opportunitiesFoundToday: 0,
@@ -54,7 +65,19 @@ const idleContinuousStatus: ContinuousStatusSnapshot = {
   cacheEntries: 0,
   cacheTtlMinutes: 5,
   batchSize: 10,
-  cacheOldestEntryAgeMs: null
+  cacheOldestEntryAgeMs: null,
+  intervalMinutes: 5,
+  concurrentRequests: 2,
+  scanScope: 'all-sports',
+  enabledSports: [],
+  enabledLeagues: [],
+  quotaStatus: {
+    hourlyUsed: 0,
+    hourlyLimit: 5000,
+    percentUsed: 0,
+    isThrottled: false
+  },
+  history: []
 }
 
 function clearPolling(): void {
@@ -113,7 +136,10 @@ async function syncPersistedSettingsToMain(): Promise<void> {
     continuousDeepScanMaxEventsPerCycle,
     deepScanCacheTtlMinutes,
     deepScanBatchSize,
-    deepScanRoiThresholds
+    deepScanRoiThresholds,
+    deepScanIntervalMinutes,
+    deepScanConcurrentRequests,
+    deepScanScope
   } = useFeedFiltersStore.getState()
 
   try {
@@ -148,6 +174,24 @@ async function syncPersistedSettingsToMain(): Promise<void> {
   } catch {
     // Best-effort sync; ignore errors
   }
+
+  try {
+    await trpcClient.deepScanSetIntervalMinutes.mutate({ intervalMinutes: deepScanIntervalMinutes })
+  } catch {
+    // Best-effort sync; ignore errors
+  }
+
+  try {
+    await trpcClient.deepScanSetConcurrentRequests.mutate({ concurrentRequests: deepScanConcurrentRequests })
+  } catch {
+    // Best-effort sync; ignore errors
+  }
+
+  try {
+    await trpcClient.deepScanSetScope.mutate({ scanScope: deepScanScope })
+  } catch {
+    // Best-effort sync; ignore errors
+  }
 }
 
 interface DeepScanState {
@@ -156,6 +200,7 @@ interface DeepScanState {
   isDialogOpen: boolean
   isStarting: boolean
   isContinuousUpdating: boolean
+  isPausing: boolean
   lastConfig: DeepScanConfig | null
   setDialogOpen: (open: boolean) => void
   startScan: (config: DeepScanConfig) => Promise<void>
@@ -164,6 +209,8 @@ interface DeepScanState {
   refreshContinuousStatus: () => Promise<void>
   setContinuousEnabled: (enabled: boolean) => Promise<void>
   setMaxEventsPerCycle: (maxEvents: number) => Promise<void>
+  pauseContinuous: () => Promise<void>
+  resumeContinuous: () => Promise<void>
 }
 
 export const useDeepScanStore = create<DeepScanState>((set, get) => ({
@@ -172,6 +219,7 @@ export const useDeepScanStore = create<DeepScanState>((set, get) => ({
   isDialogOpen: false,
   isStarting: false,
   isContinuousUpdating: false,
+  isPausing: false,
   lastConfig: null,
   setDialogOpen: (open) => {
     set({ isDialogOpen: open })
@@ -348,6 +396,50 @@ export const useDeepScanStore = create<DeepScanState>((set, get) => ({
           errorMessage: message
         }
       }))
+    }
+  },
+  pauseContinuous: async () => {
+    set({ isPausing: true })
+    try {
+      await trpcClient.deepScanPauseContinuous.mutate()
+      set((state) => ({
+        continuousStatus: {
+          ...state.continuousStatus,
+          isPaused: true
+        }
+      }))
+    } catch (error) {
+      const message = (error as Error)?.message ?? 'Unable to pause continuous scan'
+      set((state) => ({
+        progress: {
+          ...state.progress,
+          errorMessage: message
+        }
+      }))
+    } finally {
+      set({ isPausing: false })
+    }
+  },
+  resumeContinuous: async () => {
+    set({ isPausing: true })
+    try {
+      await trpcClient.deepScanResumeContinuous.mutate()
+      set((state) => ({
+        continuousStatus: {
+          ...state.continuousStatus,
+          isPaused: false
+        }
+      }))
+    } catch (error) {
+      const message = (error as Error)?.message ?? 'Unable to resume continuous scan'
+      set((state) => ({
+        progress: {
+          ...state.progress,
+          errorMessage: message
+        }
+      }))
+    } finally {
+      set({ isPausing: false })
     }
   }
 }))

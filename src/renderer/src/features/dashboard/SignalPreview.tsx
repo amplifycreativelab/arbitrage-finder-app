@@ -56,6 +56,19 @@ function SignalPreview({
 
   const effectiveProviderMetadata = providerMetadata ?? storeProviderMetadata ?? null
 
+  const isDeepScan = effectiveOpportunity?.source === 'deepScan'
+
+  const deepScanMeta = React.useMemo(() => {
+    if (!effectiveOpportunity || !isDeepScan) return null
+    const timestamp = effectiveOpportunity.foundAt
+    try {
+      const label = new Date(timestamp).toLocaleString()
+      return `${label} - ${effectiveOpportunity.event.name}`
+    } catch {
+      return `${timestamp} - ${effectiveOpportunity.event.name}`
+    }
+  }, [isDeepScan, effectiveOpportunity?.foundAt, effectiveOpportunity?.event.name])
+
   if (!effectiveOpportunity) {
     return (
       <div
@@ -69,18 +82,6 @@ function SignalPreview({
 
   const payload = formatSignalPayload(effectiveOpportunity, effectiveProviderMetadata)
   const roiPercent = (effectiveOpportunity.roi * 100).toFixed(1)
-  const isDeepScan = effectiveOpportunity.source === 'deepScan'
-
-  const deepScanMeta = React.useMemo(() => {
-    if (!isDeepScan) return null
-    const timestamp = effectiveOpportunity.foundAt
-    try {
-      const label = new Date(timestamp).toLocaleString()
-      return `${label} • ${effectiveOpportunity.event.name}`
-    } catch {
-      return `${timestamp} • ${effectiveOpportunity.event.name}`
-    }
-  }, [isDeepScan, effectiveOpportunity.foundAt, effectiveOpportunity.event.name])
 
   const handleCopyClick = (): void => {
     if (isCopying) {

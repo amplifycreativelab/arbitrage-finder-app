@@ -1,0 +1,44 @@
+{
+  "event": {
+    "id": "fixture-btts-001",
+    "name": "Team E vs Team F",
+    "date": "2026-02-02T14:00:00Z",
+    "league": "Bundesliga",
+    "sport": "soccer"
+  },
+  "bookmakers": [
+    {
+      "name": "BetAlpha",
+      "markets": [
+        {
+          "key": "btts",
+          "outcomes": [
+            { "name": "Yes", "odds": 1.95 },
+            { "name": "No", "odds": 1.90 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "BetBeta",
+      "markets": [
+        {
+          "key": "btts",
+          "outcomes": [
+            { "name": "Yes", "odds": 1.85 },
+            { "name": "No", "odds": 2.00 }
+          ]
+        }
+      ]
+    }
+  ],
+  "_expectedArbitrage": {
+    "marketKey": "btts",
+    "group": "goals",
+    "leg1": { "bookmaker": "BetAlpha", "outcome": "yes", "odds": 1.95 },
+    "leg2": { "bookmaker": "BetBeta", "outcome": "no", "odds": 2.00 },
+    "implied": 1.012,
+    "roiPositive": false
+  },
+  "_note": "This fixture does NOT produce arbitrage (implied > 1). Increase odds for arb."
+}

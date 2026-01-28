@@ -82,7 +82,8 @@ const arbitrageLegSchema = z.object({
   bookmaker: z.string(),
   market: z.string(),
   odds: z.number().positive(),
-  outcome: z.string()
+  outcome: z.string(),
+  impliedProbability: z.number().min(0).max(100).optional() // Story 7.5: (1/odds)*100
 })
 
 const opportunitySourceSchema = z.enum(['feed', 'deepScan'])
@@ -126,6 +127,25 @@ export const deepScanStatusSchema = z.enum([
   'error'
 ])
 
+export const deepScanQuotaStatusSchema = z.object({
+  hourlyUsed: z.number().int().min(0),
+  hourlyLimit: z.number().int().min(0),
+  percentUsed: z.number().min(0).max(1),
+  isThrottled: z.boolean(),
+  throttleResumeAt: z.string().optional()
+})
+
+export const scanHistoryEntrySchema = z.object({
+  startedAt: z.string(),
+  completedAt: z.string(),
+  eventsScanned: z.number().int().min(0),
+  opportunitiesFound: z.number().int().min(0),
+  durationMs: z.number().int().min(0),
+  mode: z.enum(['manual', 'continuous'])
+})
+
+export const deepScanScopeSchema = z.enum(['all-sports', 'selected-sports', 'selected-leagues'])
+
 export const deepScanProgressSchema = z.object({
   status: deepScanStatusSchema,
   mode: z.enum(['manual', 'continuous']),
@@ -139,8 +159,10 @@ export const deepScanProgressSchema = z.object({
   elapsedMs: z.number().int().min(0),
   lastContinuousScanAt: z.string().optional(),
   isContinuousScanActive: z.boolean().optional(),
+  isPaused: z.boolean().optional(),
   currentEventName: z.string().optional(),
-  errorMessage: z.string().optional()
+  errorMessage: z.string().optional(),
+  quotaStatus: deepScanQuotaStatusSchema.optional()
 })
 
 const marketGroupSchema = z.enum(MARKET_GROUPS)

@@ -41,7 +41,10 @@ const defaultState = {
     deepScanRoiThresholds: {
         globalMinRoi: 0,
         marketGroupMinRoi: {}
-    }
+    },
+    deepScanIntervalMinutes: 5,
+    deepScanConcurrentRequests: 2,
+    deepScanScope: 'all-sports'
 };
 const getRegionKey = (regions) => {
     return regions.slice().sort().join(',');
@@ -142,6 +145,23 @@ exports.useFeedFiltersStore = (0, zustand_1.create)()((0, middleware_1.persist)(
             }
         });
     },
+    setDeepScanIntervalMinutes: (minutes) => {
+        const normalized = Number.isFinite(minutes) ? Math.max(1, Math.min(30, Math.floor(minutes))) : 5;
+        set({
+            deepScanIntervalMinutes: normalized
+        });
+    },
+    setDeepScanConcurrentRequests: (concurrentRequests) => {
+        const normalized = Number.isFinite(concurrentRequests) ? Math.max(1, Math.min(10, Math.floor(concurrentRequests))) : 2;
+        set({
+            deepScanConcurrentRequests: normalized
+        });
+    },
+    setDeepScanScope: (scope) => {
+        set({
+            deepScanScope: scope
+        });
+    },
     toggleRegion: (region) => {
         const { regions, bookmakerSelections } = get();
         let newRegions;
@@ -236,6 +256,9 @@ exports.useFeedFiltersStore = (0, zustand_1.create)()((0, middleware_1.persist)(
         continuousDeepScanMaxEventsPerCycle: state.continuousDeepScanMaxEventsPerCycle,
         deepScanCacheTtlMinutes: state.deepScanCacheTtlMinutes,
         deepScanBatchSize: state.deepScanBatchSize,
-        deepScanRoiThresholds: state.deepScanRoiThresholds
+        deepScanRoiThresholds: state.deepScanRoiThresholds,
+        deepScanIntervalMinutes: state.deepScanIntervalMinutes,
+        deepScanConcurrentRequests: state.deepScanConcurrentRequests,
+        deepScanScope: state.deepScanScope
     })
 }));
