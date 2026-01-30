@@ -14,6 +14,10 @@ module.exports = {
         'ot-muted': 'var(--ot-muted)',
         'ot-accent': 'var(--ot-accent)',
         'ot-accent-foreground': 'var(--ot-accent-foreground)',
+        'ot-card': 'var(--ot-card)',
+        'ot-success': 'var(--ot-success)',
+        'ot-warning': 'var(--ot-warning)',
+        'ot-error': 'var(--ot-error)',
       },
       fontFamily: {
         mono: [

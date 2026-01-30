@@ -37,10 +37,12 @@ exports.FeedTable = FeedTable;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const React = __importStar(require("react"));
 const date_fns_1 = require("date-fns");
+const button_1 = require("../../components/ui/button");
 const utils_1 = require("../../lib/utils");
 const copyAndAdvance_1 = require("./copyAndAdvance");
 const sortOpportunities_1 = require("./sortOpportunities");
 const feedStore_1 = require("./stores/feedStore");
+const calculatorStore_1 = require("./stores/calculatorStore");
 const staleness_1 = require("./staleness");
 const isServerEnvironment = typeof document === 'undefined';
 const ROW_HEIGHT_PX = 40;
@@ -153,6 +155,7 @@ function FeedTable({ opportunities = [], initialSortBy = 'time', initialSortDire
             container.scrollTop = nextScrollTop;
         }
     }, [sorted.length]);
+    const openCalculator = (0, calculatorStore_1.useCalculatorStore)((state) => state.openCalculator);
     const handleKeyDown = (event) => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             if (!Array.isArray(sorted) || sorted.length === 0) {
@@ -175,6 +178,21 @@ function FeedTable({ opportunities = [], initialSortBy = 'time', initialSortDire
                 const { selectedOpportunityIndex: nextIndex } = feedStore_1.useFeedStore.getState();
                 ensureIndexVisible(nextIndex ?? null);
             });
+            return;
+        }
+        // Story 8.3: Calculator keyboard shortcut
+        if (event.key === 'c' || event.key === 'C') {
+            if (!Array.isArray(sorted) || sorted.length === 0) {
+                return;
+            }
+            event.preventDefault();
+            const { selectedOpportunityId } = feedStore_1.useFeedStore.getState();
+            if (selectedOpportunityId) {
+                const opportunity = sorted.find((o) => o.id === selectedOpportunityId);
+                if (opportunity) {
+                    openCalculator(opportunity);
+                }
+            }
         }
     };
     return ((0, jsx_runtime_1.jsxs)("div", { className: "flex h-full flex-col", "data-testid": "feed-table", "data-virtualized": virtualizationEnabled ? 'true' : 'false', children: [(0, jsx_runtime_1.jsxs)("div", { className: "mb-2 flex items-center border-b border-ot-border pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-muted", children: [(0, jsx_runtime_1.jsxs)("button", { type: "button", className: (0, utils_1.cn)('mr-3 flex items-center gap-1 text-left', sortBy === 'time' ? 'text-ot-foreground' : 'text-ot-muted'), "aria-label": "Sort by time", "aria-sort": getAriaSort(sortBy, 'time', sortDirection), "data-testid": "feed-header-time", onClick: () => handleSortChange('time'), children: [(0, jsx_runtime_1.jsx)("span", { className: "w-12", children: "Time" }), (0, jsx_runtime_1.jsx)("span", { "aria-hidden": "true", children: sortBy === 'time' ? (sortDirection === 'asc' ? '▲' : '▼') : '' })] }), (0, jsx_runtime_1.jsx)("button", { type: "button", className: (0, utils_1.cn)('mr-3 flex flex-1 items-center gap-1 text-left', sortBy === 'time' ? 'text-ot-foreground' : 'text-ot-muted'), "aria-disabled": "true", "data-testid": "feed-header-event", children: (0, jsx_runtime_1.jsx)("span", { children: "Event" }) }), (0, jsx_runtime_1.jsxs)("button", { type: "button", className: (0, utils_1.cn)('ml-auto flex items-center gap-1 text-right', sortBy === 'roi' ? 'text-ot-foreground' : 'text-ot-muted'), "aria-label": "Sort by ROI", "aria-sort": getAriaSort(sortBy, 'roi', sortDirection), "data-testid": "feed-header-roi", onClick: () => handleSortChange('roi'), children: [(0, jsx_runtime_1.jsx)("span", { className: "w-14", children: "ROI" }), (0, jsx_runtime_1.jsx)("span", { "aria-hidden": "true", children: sortBy === 'roi' ? (sortDirection === 'asc' ? '▲' : '▼') : '' })] })] }), (0, jsx_runtime_1.jsxs)("div", { ref: scrollContainerRef, className: "relative flex-1 overflow-y-auto outline-none", "data-testid": "feed-scroll-container", tabIndex: totalCount > 0 ? 0 : -1, role: "listbox", "aria-label": "Arbitrage opportunities", "aria-activedescendant": effectiveSelectedId != null ? `feed-row-${effectiveSelectedId}` : undefined, onKeyDown: handleKeyDown, onScroll: handleScroll, children: [totalCount === 0 && ((0, jsx_runtime_1.jsx)("div", { className: "flex h-full items-center justify-center text-[11px] text-ot-muted", children: "No opportunities yet. Configure a provider to start the feed." })), totalCount > 0 && virtualizationEnabled && ((0, jsx_runtime_1.jsx)("div", { style: { height: totalHeight }, children: (0, jsx_runtime_1.jsx)("div", { className: "absolute left-0 right-0", style: { transform: `translateY(${offsetY}px)` }, children: visibleOpportunities.map((opportunity, index) => {
@@ -233,6 +251,24 @@ function FeedRow({ opportunity, stalenessNow, isSelected, isProcessed, onSelect 
     // Cross-provider badge (Story 5.4)
     const isCrossProvider = opportunity.isCrossProvider === true;
     const isDeepScan = opportunity.source === 'deepScan';
-    return ((0, jsx_runtime_1.jsxs)("div", { id: `feed-row-${opportunity.id}`, className: (0, utils_1.cn)('flex cursor-pointer items-center justify-between border-b border-ot-border py-1.5 text-[11px]', isStale || isProcessed ? 'opacity-50' : '', isSelected ? 'bg-ot-accent/10' : 'hover:bg-black/5'), "data-testid": "feed-row", "data-staleness": isStale ? 'stale' : 'fresh', "data-state": isSelected ? 'selected' : 'idle', "data-processed": isProcessed ? 'true' : 'false', "data-provider": opportunity.providerId ?? 'unknown', "data-merged": isMerged ? 'true' : 'false', "data-cross-provider": isCrossProvider ? 'true' : 'false', "data-deep-scan": isDeepScan ? 'true' : 'false', onClick: onSelect, role: "option", "aria-selected": isSelected ? 'true' : 'false', children: [(0, jsx_runtime_1.jsx)("div", { className: "w-[72px] shrink-0 text-ot-muted font-medium", "data-testid": "feed-cell-time", children: combinedTimeLabel }), isProcessed && ((0, jsx_runtime_1.jsx)("div", { className: "mx-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500/80 text-[9px] font-semibold text-black", "data-testid": "feed-row-processed-badge", "aria-label": "Processed", children: "\u2713" })), isCrossProvider && ((0, jsx_runtime_1.jsx)("div", { className: "mx-1 rounded-full border border-violet-400/50 bg-violet-500/20 px-1.5 py-0.5 text-[8px] font-semibold text-violet-300", "data-testid": "feed-row-cross-provider-badge", "aria-label": "Cross-provider arbitrage combining odds from multiple feeds", children: "\u26A1 Cross-Feed" })), !isCrossProvider && isDeepScan && ((0, jsx_runtime_1.jsx)("div", { className: "mx-1 rounded-full border border-cyan-400/60 bg-cyan-500/15 px-1.5 py-0.5 text-[8px] font-semibold text-cyan-300", "data-testid": "feed-row-deep-scan-badge", "aria-label": "Deep scan result", children: "\uD83D\uDD0D Deep Scan" })), !isCrossProvider && !isDeepScan && isMerged && mergedBadgeLabel && ((0, jsx_runtime_1.jsxs)("div", { className: "mx-1 rounded-full border border-purple-400/40 bg-purple-500/15 px-1.5 py-0.5 text-[8px] font-medium text-purple-300/90", "data-testid": "feed-row-merged-badge", "aria-label": `Merged from: ${opportunity.mergedFrom?.map(id => getProviderDisplayName(id)).join(' + ')}`, children: ["\u26A1", mergedBadgeLabel] })), !isCrossProvider && !isDeepScan && !isMerged && providerBadge && ((0, jsx_runtime_1.jsx)("div", { className: "mx-1 rounded-full border border-ot-accent/30 bg-ot-accent/10 px-1.5 py-0.5 text-[8px] font-medium text-ot-accent/80", "data-testid": "feed-row-provider-badge", "aria-label": `Source: ${opportunity.providerId}`, children: providerBadge })), (0, jsx_runtime_1.jsx)("div", { className: "mx-2 min-w-0 flex-1 truncate text-ot-foreground", "data-testid": "feed-cell-event", title: eventLabel, children: eventLabel }), (0, jsx_runtime_1.jsx)("div", { className: "w-[64px] shrink-0 text-right font-semibold text-ot-accent", "data-testid": "feed-cell-roi", children: roiLabel })] }));
+    const openCalculator = (0, calculatorStore_1.useCalculatorStore)((state) => state.openCalculator);
+    const [contextMenuOpen, setContextMenuOpen] = React.useState(false);
+    const handleContextMenu = (e) => {
+        e.preventDefault();
+        setContextMenuOpen(true);
+    };
+    const handleCalculateClick = (e) => {
+        e.stopPropagation();
+        openCalculator(opportunity);
+    };
+    const handleContextMenuCalculate = () => {
+        openCalculator(opportunity);
+        setContextMenuOpen(false);
+    };
+    return ((0, jsx_runtime_1.jsxs)("div", { id: `feed-row-${opportunity.id}`, className: (0, utils_1.cn)('group relative flex cursor-pointer items-center justify-between border-b border-ot-border py-1.5 text-[11px]', isStale || isProcessed ? 'opacity-50' : '', isSelected ? 'bg-ot-accent/10' : 'hover:bg-black/5'), "data-testid": "feed-row", "data-staleness": isStale ? 'stale' : 'fresh', "data-state": isSelected ? 'selected' : 'idle', "data-processed": isProcessed ? 'true' : 'false', "data-provider": opportunity.providerId ?? 'unknown', "data-merged": isMerged ? 'true' : 'false', "data-cross-provider": isCrossProvider ? 'true' : 'false', "data-deep-scan": isDeepScan ? 'true' : 'false', onClick: onSelect, onContextMenu: handleContextMenu, role: "option", "aria-selected": isSelected ? 'true' : 'false', children: [(0, jsx_runtime_1.jsx)("div", { className: "w-[72px] shrink-0 text-ot-muted font-medium", "data-testid": "feed-cell-time", children: combinedTimeLabel }), isProcessed && ((0, jsx_runtime_1.jsx)("div", { className: "mx-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500/80 text-[9px] font-semibold text-black", "data-testid": "feed-row-processed-badge", "aria-label": "Processed", children: "\u2713" })), isCrossProvider && ((0, jsx_runtime_1.jsx)("div", { className: "mx-1 rounded-full border border-violet-400/50 bg-violet-500/20 px-1.5 py-0.5 text-[8px] font-semibold text-violet-300", "data-testid": "feed-row-cross-provider-badge", "aria-label": "Cross-provider arbitrage combining odds from multiple feeds", children: "\u26A1 Cross-Feed" })), !isCrossProvider && isDeepScan && ((0, jsx_runtime_1.jsx)("div", { className: "mx-1 rounded-full border border-cyan-400/60 bg-cyan-500/15 px-1.5 py-0.5 text-[8px] font-semibold text-cyan-300", "data-testid": "feed-row-deep-scan-badge", "aria-label": "Deep scan result", children: "\uD83D\uDD0D Deep Scan" })), !isCrossProvider && !isDeepScan && isMerged && mergedBadgeLabel && ((0, jsx_runtime_1.jsxs)("div", { className: "mx-1 rounded-full border border-purple-400/40 bg-purple-500/15 px-1.5 py-0.5 text-[8px] font-medium text-purple-300/90", "data-testid": "feed-row-merged-badge", "aria-label": `Merged from: ${opportunity.mergedFrom?.map(id => getProviderDisplayName(id)).join(' + ')}`, children: ["\u26A1", mergedBadgeLabel] })), !isCrossProvider && !isDeepScan && !isMerged && providerBadge && ((0, jsx_runtime_1.jsx)("div", { className: "mx-1 rounded-full border border-ot-accent/30 bg-ot-accent/10 px-1.5 py-0.5 text-[8px] font-medium text-ot-accent/80", "data-testid": "feed-row-provider-badge", "aria-label": `Source: ${opportunity.providerId}`, children: providerBadge })), (0, jsx_runtime_1.jsx)("div", { className: "mx-2 min-w-0 flex-1 truncate text-ot-foreground", "data-testid": "feed-cell-event", title: eventLabel, children: eventLabel }), (0, jsx_runtime_1.jsx)("div", { className: "w-[64px] shrink-0 text-right font-semibold text-ot-accent", "data-testid": "feed-cell-roi", children: roiLabel }), (0, jsx_runtime_1.jsx)("div", { className: (0, utils_1.cn)('absolute right-[70px] top-1/2 -translate-y-1/2 opacity-0 transition-opacity', (isSelected || contextMenuOpen) && 'opacity-100', 'group-hover:opacity-100'), children: (0, jsx_runtime_1.jsx)(button_1.Button, { variant: "outline", size: "sm", onClick: handleCalculateClick, className: "h-6 px-2 text-[9px] font-medium", "data-testid": "calculate-stakes-button", children: "Calculate" }) }), contextMenuOpen && ((0, jsx_runtime_1.jsxs)(jsx_runtime_1.Fragment, { children: [(0, jsx_runtime_1.jsx)("div", { className: "fixed inset-0 z-40", onClick: () => setContextMenuOpen(false) }), (0, jsx_runtime_1.jsxs)("div", { className: "absolute right-2 top-full z-50 mt-1 w-40 rounded-md border border-slate-700 bg-slate-900 py-1 shadow-lg", "data-testid": "context-menu", children: [(0, jsx_runtime_1.jsx)("button", { type: "button", onClick: handleContextMenuCalculate, className: "w-full px-3 py-1.5 text-left text-[11px] text-ot-foreground hover:bg-slate-800", children: "Calculate Stakes" }), (0, jsx_runtime_1.jsx)("button", { type: "button", onClick: () => {
+                                    onSelect();
+                                    void (0, copyAndAdvance_1.copyAndAdvanceCurrentOpportunity)();
+                                    setContextMenuOpen(false);
+                                }, className: "w-full px-3 py-1.5 text-left text-[11px] text-ot-foreground hover:bg-slate-800", children: "Copy Signal" })] })] }))] }));
 }
 exports.default = FeedTable;

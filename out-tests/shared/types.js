@@ -406,7 +406,10 @@ function formatMarketLabelFromKey(key) {
         h2h: 'Moneyline',
         moneyline: 'Moneyline',
         'match-winner': 'Match Winner',
-        totals: 'Totals O/U',
+        totals: 'Goals O/U',
+        goals_totals: 'Goals O/U',
+        goals_totals_1h: 'Goals O/U (1H)',
+        goals_totals_2h: 'Goals O/U (2H)',
         btts: 'BTTS (Both Teams to Score)',
         both_teams_to_score: 'BTTS (Both Teams to Score)',
         btts_yes: 'BTTS Yes',
@@ -506,28 +509,58 @@ function formatMarketLabelFromKey(key) {
         throw_ins: 'Throw-ins',
         goal_kicks: 'Goal Kicks'
     };
-    // Check exact match
+    // Check exact match first
     const normalized = key.toLowerCase();
     if (labelMap[normalized]) {
         return labelMap[normalized];
     }
     // Parse and format dynamically (Task 4.2)
     const parsed = parseMarketKey(normalized);
-    // Build base label from key parts
+    // Extract line value from key if present
+    const lineMatch = key.match(/([+-]?\d+(?:\.\d+)?)/);
+    const lineValue = lineMatch ? parseFloat(lineMatch[0]) : undefined;
+    const formattedLine = lineValue !== undefined && Number.isFinite(lineValue)
+        ? (lineValue % 1 === 0 ? lineValue.toString() : lineValue.toFixed(1).replace(/\.0$/, ''))
+        : null;
+    // Try to match base key (without line) against labelMap for better labels
+    if (formattedLine && lineMatch) {
+        // Remove line value from key to find base key
+        const baseKey = normalized.replace(new RegExp(`_?${lineMatch[0].replace(/[.+]/g, '\\$&')}$`), '');
+        if (labelMap[baseKey]) {
+            // Insert line value into the base label
+            let baseLabel = labelMap[baseKey];
+            // Add line after "O/U" or at the end
+            if (baseLabel.includes('O/U')) {
+                baseLabel = baseLabel.replace('O/U', `O/U ${formattedLine}`);
+            }
+            else if (baseLabel.includes('Over')) {
+                baseLabel = baseLabel.replace(/Over$/, `Over ${formattedLine}`);
+            }
+            else if (baseLabel.includes('Under')) {
+                baseLabel = baseLabel.replace(/Under$/, `Under ${formattedLine}`);
+            }
+            else if (baseLabel.includes('Handicap')) {
+                // formattedLine already contains sign for negative values
+                const sign = lineValue !== undefined && lineValue >= 0 ? '+' : '';
+                baseLabel = `${baseLabel} ${sign}${formattedLine}`;
+            }
+            else {
+                baseLabel = `${baseLabel} ${formattedLine}`;
+            }
+            return baseLabel;
+        }
+    }
+    // Build base label from key parts (fallback)
     let label = key
         .replace(/_/g, ' ')
         .replace(/\b\w/g, (c) => c.toUpperCase());
     // Task 4.2: Handle compound keys like "corners_over_9.5_ft"
-    // Extract and format line value properly (Task 4.3)
-    const lineMatch = key.match(/([+-]?\d+(?:\.\d+)?)/g);
-    if (lineMatch && lineMatch.length > 0) {
-        const lineValue = parseFloat(lineMatch[0]);
-        if (Number.isFinite(lineValue)) {
-            // Format line: "2.5" not "2.50"
-            const formattedLine = lineValue % 1 === 0 ? lineValue.toString() : lineValue.toFixed(1).replace(/\.0$/, '');
-            // Replace the line number in label with clean format
-            label = label.replace(new RegExp(lineMatch[0].replace(/[.+]/g, '\\$&'), 'g'), formattedLine);
-        }
+    // Replace "Totals" with "O/U" for readability
+    label = label.replace(/\bTotals\b/gi, 'O/U');
+    label = label.replace(/\bOver Under\b/gi, 'O/U');
+    // Clean up numeric formatting in label
+    if (formattedLine && lineMatch) {
+        label = label.replace(new RegExp(lineMatch[0].replace(/[.+]/g, '\\$&'), 'g'), formattedLine);
     }
     // Add period suffix if present (Task 4.2)
     if (parsed.period) {

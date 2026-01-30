@@ -432,6 +432,14 @@ GPT-5 Codex (Amelia dev agent persona)
 - Normalized Over/Under outcomes using line extraction so suffix variants like "Corners" no longer split markets.
 - Exposed `__test.buildOpportunitiesFromRawOdds()` and added fixture-backed integration tests for Story 7.4.
 - Ran Story 7.4 tests directly after each change and kept them green.
+
+**Post-Story Enhancement (Story 7.8, 2026-01-30):**
+- Enhanced `canonicalizeMarketBase()` to preserve market type context (goals vs corners vs cards vs shots)
+- Market keys now use specific types: `goals_totals`, `corners_totals`, `cards_totals`, `shots_totals` instead of generic `totals`
+- Preserved `asian_handicap` as distinct from generic `spreads` for user clarity
+- Enhanced `formatMarketLabelFromKey()` with intelligent base-key matching for compound keys (e.g., `corners_totals_9.5` → "Corners O/U 9.5")
+- See Story 7.8 AC #6b for full details
+
 ### File List
 
 - `_bmad-output/implementation-artifacts/7-4-comprehensive-market-normalization.md`

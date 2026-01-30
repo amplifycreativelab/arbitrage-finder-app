@@ -43,8 +43,11 @@ import {
 } from './odds-api-io-bookmakers'
 import {
   cancelDeepScan,
+  clearRawOddsCache,
   clearScanCache,
+  getAllRawOdds,
   getAvailableSports,
+  getBestOddsForEvent,
   getConcurrentRequests,
   getContinuousDeepScanEnabled,
   getContinuousScanBatchSize,
@@ -489,6 +492,25 @@ export const appRouter = t.router({
 
   deepScanGetQuotaStatus: t.procedure.query(() => {
     return getDeepScanQuotaStatus()
+  }),
+
+  // Story 7.7: Best Odds Comparison View
+  deepScanGetBestOdds: t.procedure
+    .input(z.object({ eventId: z.string() }))
+    .query(({ input }) => {
+      const bestOdds = getBestOddsForEvent(input.eventId)
+      return { bestOdds, cachedAt: bestOdds ? Date.now() : null }
+    }),
+
+  // Story 8.1: Odds Browser - Raw Odds Data
+  deepScanGetRawOdds: t.procedure.query(() => {
+    const rawOdds = getAllRawOdds()
+    return { rawOdds, count: rawOdds.length, cachedAt: Date.now() }
+  }),
+
+  deepScanClearRawOddsCache: t.procedure.mutation(() => {
+    clearRawOddsCache()
+    return { ok: true }
   }),
 
   // ============================================================

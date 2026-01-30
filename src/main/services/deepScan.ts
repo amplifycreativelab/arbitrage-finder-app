@@ -8,7 +8,9 @@ import {
   type MarketGroup,
   type ProviderId,
   type ScanHistoryEntry,
-  type DeepScanQuotaStatus
+  type DeepScanQuotaStatus,
+  type OddsTrend,
+  type OddsSnapshot
 } from '../../../shared/types'
 import { deepScanConfigSchema } from '../../../shared/schemas'
 import { getApiKeyForAdapter } from '../credentials'
@@ -20,7 +22,15 @@ import { calculateTwoLegArbitrageRoi } from './calculator'
 const ODDS_API_IO_BASE_URL = 'https://api.odds-api.io'
 const ODDS_API_IO_EVENTS_PATH = '/v3/events'
 const ODDS_API_IO_ODDS_PATH = '/v3/odds'
+// Story 7.8: New API endpoints for efficiency
+const ODDS_API_IO_ODDS_MULTI_PATH = '/v3/odds/multi'
+const ODDS_API_IO_ODDS_UPDATED_PATH = '/v3/odds/updated'
+const ODDS_API_IO_EVENTS_LIVE_PATH = '/v3/events/live'
 const DEEP_SCAN_PROVIDER_ID: ProviderId = 'odds-api-io'
+
+// Story 7.8: Batch fetching constants
+const BATCH_SIZE_MAX = 10 // API limit for /v3/odds/multi
+const DEFAULT_SCAN_HORIZON_HOURS = 4
 
 export interface DeepScanEvent {
   id: string
@@ -46,6 +56,15 @@ let scanIntervalMinutes = 5
 let concurrentRequests = 2
 let scanScope: 'all-sports' | 'selected-sports' | 'selected-leagues' = 'all-sports'
 
+// Story 7.8: API efficiency settings
+let useBatchOdds = true
+let useIncrementalUpdates = true
+let scanHorizonHours = DEFAULT_SCAN_HORIZON_HOURS
+let scanMode: 'all' | 'live' | 'upcoming' = 'all'
+let marketFreshnessThresholdMinutes = 5
+// Track last fetch timestamp for incremental updates
+let lastIncrementalFetchTimestamp: string | null = null
+
 const HOURLY_REQUEST_LIMIT = 5000
 const HOURLY_WARN_THRESHOLD = 0.8
 const HOURLY_THROTTLE_THRESHOLD = 0.9
@@ -63,6 +82,9 @@ type EventsFetcher = (args: {
   correlationId: string
   page?: number
   sport?: string
+  // Story 7.8: Time-range filtering parameters
+  from?: string // ISO timestamp
+  to?: string   // ISO timestamp
 }) => Promise<unknown>
 
 type OddsFetcher = (args: {
@@ -72,6 +94,42 @@ type OddsFetcher = (args: {
   signal: AbortSignal
   correlationId: string
 }) => Promise<unknown>
+
+// Story 7.8: Batch odds fetcher type for /v3/odds/multi endpoint
+type BatchOddsFetcher = (args: {
+  events: DeepScanEvent[]
+  apiKey: string
+  bookmakers: string[]
+  signal: AbortSignal
+  correlationId: string
+}) => Promise<BatchOddsResponse>
+
+// Story 7.8: Live events fetcher type for /v3/events/live endpoint
+type LiveEventsFetcher = (args: {
+  apiKey: string
+  signal: AbortSignal
+  correlationId: string
+  sport?: string
+}) => Promise<unknown>
+
+// Story 7.8: Incremental odds fetcher type for /v3/odds/updated endpoint
+type IncrementalOddsFetcher = (args: {
+  apiKey: string
+  signal: AbortSignal
+  correlationId: string
+  since: string // ISO timestamp
+  bookmakers?: string[]
+}) => Promise<unknown>
+
+// Story 7.8: Batch odds response structure matching API
+interface BatchOddsResponse {
+  results: Array<{
+    eventId: string
+    success: boolean
+    data?: unknown
+    error?: string
+  }>
+}
 
 type BookmakersResolver = (args: { config: DeepScanConfig; apiKey: string }) => Promise<string[]>
 
@@ -99,6 +157,148 @@ let continuousScanMaxEventsPerCycle = CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE
 
 const scanCache = new Map<string, ScanCacheEntry>()
 
+// Story 7.8: Odds Movement History Buffer
+// Maps opportunity ID to historical snapshots (max 3 per opportunity)
+const oddsHistoryBuffer = new Map<string, OddsSnapshot[]>()
+const ODDS_HISTORY_MAX_SNAPSHOTS = 3
+// Threshold for determining if ROI change is significant (0.1% = 0.001)
+const ODDS_TREND_THRESHOLD = 0.001
+
+/**
+ * Story 7.8: Calculate odds trend based on historical snapshots.
+ * Compares the most recent ROI to the oldest in history:
+ * - 'improving': ROI increased by more than threshold
+ * - 'worsening': ROI decreased by more than threshold
+ * - 'stable': ROI change is within threshold
+ */
+function calculateOddsTrend(history: OddsSnapshot[], currentRoi: number): OddsTrend {
+  if (history.length === 0) {
+    return 'stable' // No history, default to stable
+  }
+  // Compare current ROI to the oldest snapshot (first in array)
+  const oldestRoi = history[0].roi
+  const roiDelta = currentRoi - oldestRoi
+
+  if (roiDelta > ODDS_TREND_THRESHOLD) {
+    return 'improving'
+  } else if (roiDelta < -ODDS_TREND_THRESHOLD) {
+    return 'worsening'
+  }
+  return 'stable'
+}
+
+/**
+ * Story 7.8: Update the odds history buffer for an opportunity.
+ * Maintains a sliding window of the most recent N snapshots.
+ * Returns the updated history array (including the new snapshot).
+ */
+function updateOddsHistory(
+  opportunityId: string,
+  currentRoi: number,
+  legOdds: [number, number],
+  timestamp: string
+): OddsSnapshot[] {
+  const existing = oddsHistoryBuffer.get(opportunityId) || []
+
+  const newSnapshot: OddsSnapshot = {
+    roi: currentRoi,
+    timestamp,
+    legOdds
+  }
+
+  // Add new snapshot to the end
+  const updated = [...existing, newSnapshot]
+
+  // Keep only the most recent N snapshots
+  if (updated.length > ODDS_HISTORY_MAX_SNAPSHOTS) {
+    updated.shift() // Remove oldest
+  }
+
+  oddsHistoryBuffer.set(opportunityId, updated)
+  return updated
+}
+
+// Story 7.7: Best Odds Cache for Odds Comparison View
+interface BestOddsCacheEntry {
+  data: Array<{
+    eventId: string
+    marketKey: string
+    marketLabel: string
+    marketGroup: MarketGroup
+    outcomes: Array<{
+      outcome: string
+      bestBookmaker: string
+      bestOdds: number
+      allBookmakers: Array<{ bookmaker: string; odds: number }>
+    }>
+    hasArbitrage: boolean
+    arbitrageRoi?: number
+  }>
+  cachedAt: number
+}
+
+const bestOddsCache = new Map<string, BestOddsCacheEntry>()
+const BEST_ODDS_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
+// Story 8.1: Raw Odds Cache for Odds Browser
+interface RawOddsCacheEntry {
+  payload: RawOddsPayload
+  cachedAt: number
+}
+
+const rawOddsCache = new Map<string, RawOddsCacheEntry>()
+const RAW_ODDS_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+const RAW_ODDS_CACHE_MAX_ENTRIES = 1000 // Limit cache size
+
+/**
+ * Cache raw odds for an event.
+ * Called when processing odds data during Deep Scan.
+ */
+function cacheRawOdds(eventId: string, payload: RawOddsPayload): void {
+  // Cleanup expired entries before adding new ones
+  cleanupRawOddsCache()
+  
+  // Enforce max entries limit (remove oldest if needed)
+  if (rawOddsCache.size >= RAW_ODDS_CACHE_MAX_ENTRIES) {
+    const oldestKey = rawOddsCache.keys().next().value
+    if (oldestKey !== undefined) {
+      rawOddsCache.delete(oldestKey)
+    }
+  }
+  
+  rawOddsCache.set(eventId, { payload, cachedAt: nowMs() })
+}
+
+/**
+ * Get all cached raw odds.
+ * Returns array of all non-expired raw odds payloads.
+ * Story 8.1: Exported for TRPC endpoint.
+ */
+export function getAllRawOdds(): RawOddsPayload[] {
+  cleanupRawOddsCache()
+  return Array.from(rawOddsCache.values()).map(entry => entry.payload)
+}
+
+/**
+ * Cleanup expired raw odds cache entries.
+ */
+function cleanupRawOddsCache(): void {
+  const now = nowMs()
+  for (const [eventId, entry] of rawOddsCache.entries()) {
+    if (now - entry.cachedAt > RAW_ODDS_CACHE_TTL_MS) {
+      rawOddsCache.delete(eventId)
+    }
+  }
+}
+
+/**
+ * Clear raw odds cache.
+ * Called when scan cache is cleared or bookmakers change.
+ */
+export function clearRawOddsCache(): void {
+  rawOddsCache.clear()
+}
+
 let timeOffsetMs = 0
 
 let hourlyWindowStartedAtMs: number | null = null
@@ -125,6 +325,10 @@ let eventResolverOverride: EventResolver | null = null
 let eventsFetcherOverride: EventsFetcher | null = null
 let oddsFetcherOverride: OddsFetcher | null = null
 let bookmakersResolverOverride: BookmakersResolver | null = null
+// Story 7.8: Batch, live, and incremental fetcher overrides for testing
+let batchOddsFetcherOverride: BatchOddsFetcher | null = null
+let liveEventsFetcherOverride: LiveEventsFetcher | null = null
+let incrementalOddsFetcherOverride: IncrementalOddsFetcher | null = null
 
 const SPORT_SLUG_ALIAS_MAP: Record<string, string> = {
   // Odds-API.io uses "football" as the sport slug for soccer/football.
@@ -133,33 +337,12 @@ const SPORT_SLUG_ALIAS_MAP: Record<string, string> = {
   'association-football': 'football'
 }
 
-interface RawOutcome {
-  name: string
-  odds: number
-}
+import type { RawOddsPayload } from '../../../shared/types'
 
-interface RawMarket {
-  key: string
-  outcomes: RawOutcome[]
-}
-
-interface RawBookmaker {
-  name: string
-  markets: RawMarket[]
-}
-
-interface RawEventDetails {
-  id: string
-  name: string
-  date: string
-  league: string
-  sport: string
-}
-
-interface RawOddsPayload {
-  event: RawEventDetails
-  bookmakers: RawBookmaker[]
-}
+// Type re-exports for local usage (ensures consistency with shared types)
+type RawOutcome = RawOddsPayload['bookmakers'][number]['markets'][number]['outcomes'][number]
+type RawMarket = RawOddsPayload['bookmakers'][number]['markets'][number]
+type RawBookmaker = RawOddsPayload['bookmakers'][number]
 
 interface Quote {
   bookmaker: string
@@ -473,12 +656,32 @@ function extractEvents(
 
   for (const item of candidates) {
     if (!item || typeof item !== 'object') continue
-    const rawId = (item as { id?: unknown }).id
+    const rawId = (item as { id?: unknown; eventId?: unknown }).id ?? (item as { eventId?: unknown }).eventId
     const id = rawId != null ? String(rawId) : ''
     if (!id || seen.has(id)) continue
+
+    const homeCandidate =
+      (item as { home?: unknown }).home ??
+      (item as { home_team?: unknown }).home_team ??
+      (item as { event?: { home?: unknown; home_team?: unknown } }).event?.home ??
+      (item as { event?: { home_team?: unknown } }).event?.home_team
+    const awayCandidate =
+      (item as { away?: unknown }).away ??
+      (item as { away_team?: unknown }).away_team ??
+      (item as { event?: { away?: unknown; away_team?: unknown } }).event?.away ??
+      (item as { event?: { away_team?: unknown } }).event?.away_team
+    const inferredName =
+      typeof homeCandidate === 'string' &&
+      homeCandidate.trim().length &&
+      typeof awayCandidate === 'string' &&
+      awayCandidate.trim().length
+        ? `${homeCandidate.trim()} vs ${awayCandidate.trim()}`
+        : null
+
     const rawName =
       (item as { name?: unknown }).name ??
       (item as { event?: { name?: unknown } }).event?.name ??
+      inferredName ??
       id
     const name = typeof rawName === 'string' && rawName.trim().length ? rawName : id
     const rawDate =
@@ -486,12 +689,24 @@ function extractEvents(
       (item as { commence_time?: unknown }).commence_time ??
       (item as { event?: { date?: unknown } }).event?.date
     const date = typeof rawDate === 'string' && rawDate.trim().length ? rawDate : undefined
-    const rawLeague =
+
+    const leagueCandidate =
       (item as { league?: unknown }).league ??
       (item as { event?: { league?: unknown } }).event?.league ??
       defaults.league
+    const rawLeague =
+      typeof leagueCandidate === 'object' && leagueCandidate !== null
+        ? ((leagueCandidate as { name?: unknown; slug?: unknown }).name ??
+          (leagueCandidate as { slug?: unknown }).slug)
+        : leagueCandidate
     const league = typeof rawLeague === 'string' && rawLeague.trim().length ? rawLeague : undefined
-    const rawSport = (item as { sport?: unknown }).sport ?? defaults.sport
+
+    const sportCandidate = (item as { sport?: unknown }).sport ?? defaults.sport
+    const rawSport =
+      typeof sportCandidate === 'object' && sportCandidate !== null
+        ? ((sportCandidate as { name?: unknown; slug?: unknown }).slug ??
+          (sportCandidate as { name?: unknown }).name)
+        : sportCandidate
     const sport = typeof rawSport === 'string' && rawSport.trim().length ? rawSport : undefined
     seen.add(id)
     events.push({ id, name, date, league, sport })
@@ -531,15 +746,32 @@ const defaultEventResolver: EventResolver = async ({ config, apiKey, signal, cor
   return extractEvents(body, { league: config.leagueId, sport: config.sportSlug })
 }
 
-const defaultEventsFetcher: EventsFetcher = async ({ apiKey, signal, correlationId, page, sport }) => {
+const defaultEventsFetcher: EventsFetcher = async ({ apiKey, signal, correlationId, page, sport, from, to }) => {
+  // CRITICAL: odds-api.io /v3/events endpoint requires 'sport' parameter
+  // See: https://docs.odds-api.io/api-reference/events
+  // Required params: apiKey, sport
+  // Optional params: league, participantId, status, from, to, bookmaker
+  if (!sport) {
+    throw new Error(
+      'Sport parameter is required for odds-api.io /events endpoint. ' +
+      'This is an internal error - please report it.'
+    )
+  }
+
   const httpFetch = getHttpFetch()
   const url = new URL(ODDS_API_IO_EVENTS_PATH, ODDS_API_IO_BASE_URL)
   url.searchParams.set('apiKey', apiKey)
-  if (sport) {
-    url.searchParams.set('sport', sport)
-  }
+  url.searchParams.set('sport', sport) // REQUIRED by the API
   if (typeof page === 'number' && Number.isFinite(page) && page > 0) {
     url.searchParams.set('page', String(Math.floor(page)))
+  }
+
+  // Story 7.8: Add time-range filtering parameters
+  if (from) {
+    url.searchParams.set('from', from)
+  }
+  if (to) {
+    url.searchParams.set('to', to)
   }
 
   const response = await trackedRequest(
@@ -654,12 +886,31 @@ export async function discoverAllEvents(args: {
   const requestedSportsDeduped = Array.from(new Set(requestedSports))
   const sportsFilter = Array.isArray(sports) && sports.length > 0 ? new Set(requestedSportsDeduped) : null
 
+  // Story 7.8: Calculate time-range filtering parameters based on scanHorizonHours
+  // 0 = all events (no time filtering), otherwise filter by hours from now
+  let fromTime: string | undefined
+  let toTime: string | undefined
+  if (scanHorizonHours > 0) {
+    const now = new Date()
+    fromTime = now.toISOString()
+    const toDate = new Date(now.getTime() + scanHorizonHours * 60 * 60 * 1000)
+    toTime = toDate.toISOString()
+  }
+
   for (const sport of requestedSportsDeduped) {
     let page: number | null = null
     let pageGuard = 0
 
     do {
-      const payload = await fetchEvents({ apiKey, signal, correlationId, page: page ?? undefined, sport })
+      const payload = await fetchEvents({
+        apiKey,
+        signal,
+        correlationId,
+        page: page ?? undefined,
+        sport,
+        from: fromTime,
+        to: toTime
+      })
       const extracted = extractEvents(payload, { sport })
       for (const event of extracted) {
         if (seen.has(event.id)) continue
@@ -728,13 +979,22 @@ const defaultBookmakersResolver: BookmakersResolver = async ({ config, apiKey })
 }
 
 const defaultOddsFetcher: OddsFetcher = async ({ event, apiKey, bookmakers, signal, correlationId }) => {
+  // CRITICAL: odds-api.io /v3/odds endpoint requires 'bookmakers' parameter
+  // See: https://docs.odds-api.io/api-reference/odds
+  // Required params: apiKey, eventId, bookmakers (comma-separated, max 30)
+  if (!bookmakers.length) {
+    throw new Error(
+      'No bookmakers configured for Deep Scan. The odds-api.io /odds endpoint requires at least one bookmaker. ' +
+      'Please select bookmakers in Settings (Odds-API.io bookmaker selection) and try again.'
+    )
+  }
+
   const httpFetch = getHttpFetch()
   const url = new URL(ODDS_API_IO_ODDS_PATH, ODDS_API_IO_BASE_URL)
   url.searchParams.set('apiKey', apiKey)
   url.searchParams.set('eventId', event.id)
-  if (bookmakers.length) {
-    url.searchParams.set('bookmakers', bookmakers.join(','))
-  }
+  // bookmakers is REQUIRED by the API (not optional) - always set it
+  url.searchParams.set('bookmakers', bookmakers.slice(0, 30).join(',')) // API max: 30 bookmakers
 
   const response = await trackedRequest(
     async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }),
@@ -747,6 +1007,263 @@ const defaultOddsFetcher: OddsFetcher = async ({ event, apiKey, bookmakers, sign
   }
 
   return response.json()
+}
+
+/**
+ * Story 7.8: Batch odds fetcher for /v3/odds/multi endpoint.
+ * Fetches odds for up to 10 events in a single request.
+ * Returns a BatchOddsResponse with per-event success/failure handling.
+ */
+const defaultBatchOddsFetcher: BatchOddsFetcher = async ({ events, apiKey, bookmakers, signal, correlationId }) => {
+  if (!bookmakers.length) {
+    throw new Error(
+      'No bookmakers configured for Deep Scan. The odds-api.io /odds/multi endpoint requires at least one bookmaker. ' +
+      'Please select bookmakers in Settings (Odds-API.io bookmaker selection) and try again.'
+    )
+  }
+
+  if (events.length === 0) {
+    return { results: [] }
+  }
+
+  // Clamp to API maximum of 10 events per batch
+  const batchEvents = events.slice(0, BATCH_SIZE_MAX)
+  const eventIds = batchEvents.map((e) => e.id).join(',')
+
+  const httpFetch = getHttpFetch()
+  const url = new URL(ODDS_API_IO_ODDS_MULTI_PATH, ODDS_API_IO_BASE_URL)
+  url.searchParams.set('apiKey', apiKey)
+  url.searchParams.set('eventIds', eventIds)
+  url.searchParams.set('bookmakers', bookmakers.slice(0, 30).join(','))
+
+  logInfo('deepScan.batch.request', {
+    context: 'service:deepScan',
+    operation: 'fetchOddsMulti',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId,
+    durationMs: null,
+    errorCategory: null,
+    eventCount: batchEvents.length,
+    eventIds: batchEvents.map((e) => e.id),
+    bookmakersCount: Math.min(bookmakers.length, 30)
+  } satisfies StructuredLogBase)
+
+  const response = await trackedRequest(
+    async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }),
+    correlationId,
+    { mode: currentScanMode }
+  )
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => `Batch odds request failed with status ${response.status}`)
+    throw createHttpError(response.status, message || `Batch odds request failed with status ${response.status}`)
+  }
+
+  const body = await response.json() as unknown
+
+  // Parse batch response: array of event odds objects
+  // Each item should have an eventId (or id) and bookmakers data
+  const results = parseBatchOddsResponse(body, batchEvents)
+
+  logInfo('deepScan.batch.response', {
+    context: 'service:deepScan',
+    operation: 'fetchOddsMulti',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId,
+    durationMs: null,
+    errorCategory: null,
+    totalEvents: batchEvents.length,
+    successCount: results.filter((r) => r.success).length,
+    failureCount: results.filter((r) => !r.success).length
+  } satisfies StructuredLogBase)
+
+  return { results }
+}
+
+/**
+ * Story 7.8: Parse batch odds response from /v3/odds/multi endpoint.
+ * The API returns an array of EventResponse objects, one per requested event.
+ * Events that fail may be missing from the response or have error fields.
+ */
+function parseBatchOddsResponse(
+  body: unknown,
+  requestedEvents: DeepScanEvent[]
+): BatchOddsResponse['results'] {
+  const results: BatchOddsResponse['results'] = []
+
+  // Handle array response (expected format)
+  if (Array.isArray(body)) {
+    const seenEventIds = new Set<string>()
+
+    for (const item of body) {
+      if (!item || typeof item !== 'object') continue
+
+      // Extract event ID from response item
+      const rawId = (item as { id?: unknown; eventId?: unknown }).id ??
+                    (item as { eventId?: unknown }).eventId
+      const eventId = rawId != null ? String(rawId) : null
+
+      if (!eventId) continue
+      seenEventIds.add(eventId)
+
+      // Check for error field in response
+      const errorField = (item as { error?: unknown }).error
+      if (typeof errorField === 'string' && errorField.length > 0) {
+        results.push({ eventId, success: false, error: errorField })
+        continue
+      }
+
+      // Successful response - item contains bookmakers data
+      results.push({ eventId, success: true, data: item })
+    }
+
+    // Add failures for any requested events not in response
+    for (const event of requestedEvents) {
+      if (!seenEventIds.has(event.id)) {
+        results.push({ eventId: event.id, success: false, error: 'Event not in batch response' })
+      }
+    }
+
+    return results
+  }
+
+  // Handle object response with data array
+  if (typeof body === 'object' && body !== null) {
+    const dataArray = (body as { data?: unknown }).data
+    if (Array.isArray(dataArray)) {
+      return parseBatchOddsResponse(dataArray, requestedEvents)
+    }
+
+    // Single object response - treat as single event result
+    const rawId = (body as { id?: unknown; eventId?: unknown }).id ??
+                  (body as { eventId?: unknown }).eventId
+    const eventId = rawId != null ? String(rawId) : requestedEvents[0]?.id
+
+    if (eventId) {
+      const errorField = (body as { error?: unknown }).error
+      if (typeof errorField === 'string' && errorField.length > 0) {
+        results.push({ eventId, success: false, error: errorField })
+      } else {
+        results.push({ eventId, success: true, data: body })
+      }
+
+      // Mark other events as failed
+      for (const event of requestedEvents) {
+        if (event.id !== eventId) {
+          results.push({ eventId: event.id, success: false, error: 'Event not in batch response' })
+        }
+      }
+    }
+  }
+
+  // Fallback: mark all events as failed
+  if (results.length === 0) {
+    for (const event of requestedEvents) {
+      results.push({ eventId: event.id, success: false, error: 'Invalid batch response format' })
+    }
+  }
+
+  return results
+}
+
+/**
+ * Story 7.8: Live events fetcher for /v3/events/live endpoint.
+ * Returns all currently live events across all sports (or filtered by sport).
+ */
+const defaultLiveEventsFetcher: LiveEventsFetcher = async ({ apiKey, signal, correlationId, sport }) => {
+  const httpFetch = getHttpFetch()
+  const url = new URL(ODDS_API_IO_EVENTS_LIVE_PATH, ODDS_API_IO_BASE_URL)
+  url.searchParams.set('apiKey', apiKey)
+  if (sport) {
+    url.searchParams.set('sport', sport)
+  }
+
+  const response = await trackedRequest(
+    async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }),
+    correlationId,
+    { mode: currentScanMode }
+  )
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => `Live events request failed with status ${response.status}`)
+    throw createHttpError(response.status, message || `Live events request failed with status ${response.status}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Story 7.8: Get the batch odds fetcher (default or override for testing).
+ * Exported for use in Task 2 integration.
+ */
+export function getBatchOddsFetcher(): BatchOddsFetcher {
+  return batchOddsFetcherOverride ?? defaultBatchOddsFetcher
+}
+
+/**
+ * Story 7.8: Get the live events fetcher (default or override for testing).
+ * Exported for use in Task 5 integration.
+ */
+export function getLiveEventsFetcher(): LiveEventsFetcher {
+  return liveEventsFetcherOverride ?? defaultLiveEventsFetcher
+}
+
+/**
+ * Story 7.8: Incremental odds fetcher for /v3/odds/updated endpoint.
+ * Returns only odds that have changed since the given timestamp.
+ * Reduces data transfer on subsequent scans by fetching only updates.
+ */
+const defaultIncrementalOddsFetcher: IncrementalOddsFetcher = async ({
+  apiKey,
+  signal,
+  correlationId,
+  since,
+  bookmakers
+}) => {
+  const httpFetch = getHttpFetch()
+  const url = new URL(ODDS_API_IO_ODDS_UPDATED_PATH, ODDS_API_IO_BASE_URL)
+  url.searchParams.set('apiKey', apiKey)
+  url.searchParams.set('since', since)
+  if (bookmakers && bookmakers.length > 0) {
+    url.searchParams.set('bookmakers', bookmakers.slice(0, 30).join(','))
+  }
+
+  const response = await trackedRequest(
+    async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }),
+    correlationId,
+    { mode: currentScanMode }
+  )
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => `Incremental odds request failed with status ${response.status}`)
+    throw createHttpError(response.status, message || `Incremental odds request failed with status ${response.status}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Story 7.8: Get the incremental odds fetcher (default or override for testing).
+ * Used to fetch only odds that have changed since a given timestamp.
+ */
+export function getIncrementalOddsFetcher(): IncrementalOddsFetcher {
+  return incrementalOddsFetcherOverride ?? defaultIncrementalOddsFetcher
+}
+
+/**
+ * Story 7.8: Get the last incremental fetch timestamp.
+ * Returns null if no incremental fetch has been performed yet.
+ */
+export function getLastIncrementalFetchTimestamp(): string | null {
+  return lastIncrementalFetchTimestamp
+}
+
+/**
+ * Story 7.8: Update the last incremental fetch timestamp.
+ * Called after a successful incremental or full fetch.
+ */
+export function setLastIncrementalFetchTimestamp(timestamp: string | null): void {
+  lastIncrementalFetchTimestamp = timestamp
 }
 
 function isOpportunityArray(value: unknown): value is ArbitrageOpportunity[] {
@@ -897,12 +1414,53 @@ function summarizeRawOddsResult(result: unknown): {
   }
 
   const rawBookmakers = (result as { bookmakers?: unknown }).bookmakers
-  if (!Array.isArray(rawBookmakers)) {
-    return { ...emptySummary, dropReason: 'missing_bookmakers_array' }
+  const isLegacyArray = Array.isArray(rawBookmakers)
+  const isMapObject = !isLegacyArray && typeof rawBookmakers === 'object' && rawBookmakers !== null
+
+  if (!isLegacyArray && !isMapObject) {
+    return { ...emptySummary, dropReason: 'missing_bookmakers' }
   }
 
-  if (rawBookmakers.length === 0) {
-    return { ...emptySummary, dropReason: 'empty_bookmakers_array' }
+  const bookmakerEntries: Array<{ name: string; marketsRaw: unknown[] }> = []
+
+  if (isLegacyArray) {
+    const list = rawBookmakers as unknown[]
+    if (list.length === 0) {
+      return { ...emptySummary, dropReason: 'empty_bookmakers_array' }
+    }
+    for (const book of list) {
+      if (!book || typeof book !== 'object') continue
+      const nameCandidate =
+        (book as { name?: unknown }).name ??
+        (book as { key?: unknown }).key ??
+        (book as { bookmaker?: unknown }).bookmaker
+      const name = typeof nameCandidate === 'string' && nameCandidate.trim().length ? nameCandidate.trim() : null
+      if (!name) continue
+      const marketsRaw = Array.isArray((book as { markets?: unknown }).markets)
+        ? ((book as { markets: unknown[] }).markets as unknown[])
+        : []
+      bookmakerEntries.push({ name, marketsRaw })
+    }
+  } else {
+    const map = rawBookmakers as Record<string, unknown>
+    const keys = Object.keys(map)
+    if (keys.length === 0) {
+      return { ...emptySummary, dropReason: 'empty_bookmakers_map' }
+    }
+    for (const [name, marketsContainer] of Object.entries(map)) {
+      const trimmed = name.trim()
+      if (!trimmed) continue
+      const marketsRaw = Array.isArray(marketsContainer)
+        ? marketsContainer
+        : marketsContainer && typeof marketsContainer === 'object' && Array.isArray((marketsContainer as { markets?: unknown }).markets)
+          ? ((marketsContainer as { markets: unknown[] }).markets as unknown[])
+          : []
+      bookmakerEntries.push({ name: trimmed, marketsRaw })
+    }
+  }
+
+  if (bookmakerEntries.length === 0) {
+    return { ...emptySummary, dropReason: isLegacyArray ? 'no_valid_bookmakers' : 'no_valid_bookmakers_map' }
   }
 
   let rawMarketsCount = 0
@@ -918,102 +1476,88 @@ function summarizeRawOddsResult(result: unknown): {
     }>
   }> = []
 
-  for (const book of rawBookmakers) {
-    if (!book || typeof book !== 'object') {
-      continue
-    }
-
-    const nameCandidate =
-      (book as { name?: unknown }).name ??
-      (book as { key?: unknown }).key ??
-      (book as { bookmaker?: unknown }).bookmaker
-    const name = typeof nameCandidate === 'string' && nameCandidate.trim().length ? nameCandidate : null
-
-    const marketsRaw = Array.isArray((book as { markets?: unknown }).markets)
-      ? ((book as { markets: unknown[] }).markets as unknown[])
-      : []
-
+  for (const bookmaker of bookmakerEntries) {
+    const name = bookmaker.name
+    const marketsRaw = bookmaker.marketsRaw
     rawMarketsCount += marketsRaw.length
 
-    const validMarketsForBook: Array<{
-      key: string
-      outcomes: Array<{ name: string; odds: number }>
-    }> = []
+    const validMarketsForBook: Array<{ key: string; outcomes: Array<{ name: string; odds: number }> }> = []
 
     for (const market of marketsRaw) {
-      if (!market || typeof market !== 'object') {
-        continue
-      }
+      if (!market || typeof market !== 'object') continue
 
       const keyCandidate =
         (market as { key?: unknown }).key ??
         (market as { name?: unknown }).name ??
         (market as { market?: unknown }).market
-      const key = typeof keyCandidate === 'string' && keyCandidate.trim().length ? keyCandidate : null
+      const key = typeof keyCandidate === 'string' && keyCandidate.trim().length ? keyCandidate.trim() : null
 
-      const outcomesRaw = Array.isArray((market as { outcomes?: unknown }).outcomes)
+      const legacyOutcomesRaw = Array.isArray((market as { outcomes?: unknown }).outcomes)
         ? ((market as { outcomes: unknown[] }).outcomes as unknown[])
-        : []
+        : null
 
+      const oddsRowsRaw = Array.isArray((market as { odds?: unknown }).odds)
+        ? ((market as { odds: unknown[] }).odds as unknown[])
+        : null
+
+      const outcomesRaw = legacyOutcomesRaw ?? oddsRowsRaw ?? []
       rawOutcomesCount += outcomesRaw.length
 
-      if (!key) {
-        continue
-      }
+      if (!key) continue
 
       const validOutcomesForMarket: Array<{ name: string; odds: number }> = []
-      for (const outcome of outcomesRaw) {
-        if (!outcome || typeof outcome !== 'object') {
-          continue
+
+      if (legacyOutcomesRaw) {
+        for (const outcome of legacyOutcomesRaw) {
+          if (!outcome || typeof outcome !== 'object') continue
+          const nameRaw = (outcome as { name?: unknown }).name
+          const outcomeName = typeof nameRaw === 'string' && nameRaw.trim().length ? nameRaw.trim() : null
+          if (!outcomeName) continue
+          const oddsRaw =
+            (outcome as { odds?: unknown }).odds ??
+            (outcome as { price?: unknown }).price ??
+            (outcome as { decimal?: unknown }).decimal
+          const odds =
+            typeof oddsRaw === 'number'
+              ? oddsRaw
+              : typeof oddsRaw === 'string'
+                ? Number.parseFloat(oddsRaw)
+                : Number.NaN
+          if (!Number.isFinite(odds) || odds <= 0) continue
+          validOutcomesForMarket.push({ name: outcomeName, odds })
         }
-        const nameRaw = (outcome as { name?: unknown }).name
-        const outcomeName = typeof nameRaw === 'string' && nameRaw.trim().length ? nameRaw : null
-        if (!outcomeName) {
-          continue
+      } else if (oddsRowsRaw) {
+        for (const row of oddsRowsRaw) {
+          if (!row || typeof row !== 'object') continue
+          for (const [outcomeName, priceRaw] of Object.entries(row as Record<string, unknown>)) {
+            const normalizedName = outcomeName.trim()
+            if (!normalizedName || ['hdp', 'line', 'points'].includes(normalizedName.toLowerCase())) continue
+            const odds =
+              typeof priceRaw === 'number'
+                ? priceRaw
+                : typeof priceRaw === 'string'
+                  ? Number.parseFloat(priceRaw)
+                  : Number.NaN
+            if (!Number.isFinite(odds) || odds <= 0) continue
+            validOutcomesForMarket.push({ name: normalizedName, odds })
+          }
         }
-        const oddsRaw =
-          (outcome as { odds?: unknown }).odds ??
-          (outcome as { price?: unknown }).price ??
-          (outcome as { decimal?: unknown }).decimal
-        const odds =
-          typeof oddsRaw === 'number'
-            ? oddsRaw
-            : typeof oddsRaw === 'string'
-              ? Number.parseFloat(oddsRaw)
-              : Number.NaN
-        if (!Number.isFinite(odds) || odds <= 0) {
-          continue
-        }
-        validOutcomesForMarket.push({ name: outcomeName, odds })
       }
 
       validOutcomesCount += validOutcomesForMarket.length
-
-      if (validOutcomesForMarket.length < 2) {
-        continue
-      }
+      if (validOutcomesForMarket.length < 2) continue
 
       validMarketsCount += 1
-
       if (validMarketsForBook.length < 3) {
-        validMarketsForBook.push({
-          key,
-          outcomes: validOutcomesForMarket.slice(0, 3)
-        })
+        validMarketsForBook.push({ key, outcomes: validOutcomesForMarket.slice(0, 3) })
       }
     }
 
-    if (!name || validMarketsForBook.length === 0) {
-      continue
-    }
-
+    if (validMarketsForBook.length === 0) continue
     validBookmakersCount += 1
 
     if (sampleBookmakers.length < 2) {
-      sampleBookmakers.push({
-        name,
-        markets: validMarketsForBook.slice(0, 3)
-      })
+      sampleBookmakers.push({ name, markets: validMarketsForBook.slice(0, 3) })
     }
   }
 
@@ -1029,7 +1573,7 @@ function summarizeRawOddsResult(result: unknown): {
   }
 
   return {
-    rawBookmakersCount: rawBookmakers.length,
+    rawBookmakersCount: bookmakerEntries.length,
     rawMarketsCount,
     rawOutcomesCount,
     validBookmakersCount,
@@ -1159,21 +1703,34 @@ function toRawOddsPayload(result: unknown, event: DeepScanEvent, config: DeepSca
     return null
   }
 
-  const rawEvent = (result as { event?: unknown }).event
-  const rawBookmakers = (result as { bookmakers?: unknown }).bookmakers
+  const record = result as Record<string, unknown>
+  const rawEvent = (record as { event?: unknown }).event
+  const rawBookmakers = (record as { bookmakers?: unknown }).bookmakers
 
-  if (!Array.isArray(rawBookmakers)) {
+  const bookmakersIsArray = Array.isArray(rawBookmakers)
+  const bookmakersIsMap = !bookmakersIsArray && typeof rawBookmakers === 'object' && rawBookmakers !== null
+
+  if (!bookmakersIsArray && !bookmakersIsMap) {
     return null
   }
 
   const eventId =
     rawEvent && typeof rawEvent === 'object' && (rawEvent as { id?: unknown }).id != null
       ? String((rawEvent as { id?: unknown }).id)
-      : event.id
+      : record.id != null
+        ? String(record.id)
+        : event.id
+
+  const home = typeof record.home === 'string' ? record.home.trim() : ''
+  const away = typeof record.away === 'string' ? record.away.trim() : ''
+  const inferredEventName = home && away ? `${home} vs ${away}` : null
+
   const eventName =
     rawEvent && typeof rawEvent === 'object' && typeof (rawEvent as { name?: unknown }).name === 'string'
-      ? ((rawEvent as { name: string }).name || event.name)
-      : event.name
+      ? ((rawEvent as { name: string }).name || inferredEventName || event.name)
+      : typeof record.name === 'string' && record.name.trim().length
+        ? record.name.trim()
+        : inferredEventName || event.name
   const rawDate =
     rawEvent && typeof rawEvent === 'object'
       ? (rawEvent as { date?: unknown; commence_time?: unknown }).date ??
@@ -1182,66 +1739,382 @@ function toRawOddsPayload(result: unknown, event: DeepScanEvent, config: DeepSca
   const eventDate =
     typeof rawDate === 'string' && rawDate.trim().length
       ? rawDate
-      : event.date ?? new Date().toISOString()
-  const rawLeague = rawEvent && typeof rawEvent === 'object' ? (rawEvent as { league?: unknown }).league : undefined
-  const eventLeague =
-    typeof rawLeague === 'string' && rawLeague.trim().length ? rawLeague : event.league ?? ''
-  const rawSport = rawEvent && typeof rawEvent === 'object' ? (rawEvent as { sport?: unknown }).sport : undefined
-  const eventSport =
-    typeof rawSport === 'string' && rawSport.trim().length ? rawSport : event.sport ?? config.sportSlug ?? 'soccer'
+      : typeof record.date === 'string' && record.date.trim().length
+        ? record.date.trim()
+        : event.date ?? new Date().toISOString()
 
-  const bookmakers: RawBookmaker[] = rawBookmakers
-    .map((book) => {
-      if (!book || typeof book !== 'object') return null
-      const nameCandidate =
-        (book as { name?: unknown }).name ??
-        (book as { key?: unknown }).key ??
-        (book as { bookmaker?: unknown }).bookmaker
-      const name = typeof nameCandidate === 'string' && nameCandidate.trim().length ? nameCandidate : null
-      if (!name) return null
-      const marketsRaw = Array.isArray((book as { markets?: unknown }).markets)
-        ? ((book as { markets: unknown[] }).markets as unknown[])
-        : []
-      const markets: RawMarket[] = marketsRaw
-        .map((market) => {
-          if (!market || typeof market !== 'object') return null
-          const keyCandidate =
-            (market as { key?: unknown }).key ??
-            (market as { name?: unknown }).name ??
-            (market as { market?: unknown }).market
-          const key = typeof keyCandidate === 'string' && keyCandidate.trim().length ? keyCandidate : null
-          if (!key) return null
-          const outcomesRaw = Array.isArray((market as { outcomes?: unknown }).outcomes)
-            ? ((market as { outcomes: unknown[] }).outcomes as unknown[])
-            : []
-          const outcomes: RawOutcome[] = outcomesRaw
-            .map((outcome) => {
-              if (!outcome || typeof outcome !== 'object') return null
-              const nameRaw = (outcome as { name?: unknown }).name
-              const name = typeof nameRaw === 'string' && nameRaw.trim().length ? nameRaw : null
-              if (!name) return null
-              const oddsRaw =
-                (outcome as { odds?: unknown }).odds ??
-                (outcome as { price?: unknown }).price ??
-                (outcome as { decimal?: unknown }).decimal
-              const odds =
-                typeof oddsRaw === 'number'
-                  ? oddsRaw
-                  : typeof oddsRaw === 'string'
-                    ? Number.parseFloat(oddsRaw)
-                    : Number.NaN
-              if (!Number.isFinite(odds) || odds <= 0) return null
-              return { name, odds }
-            })
-            .filter((o): o is RawOutcome => o !== null)
-          if (outcomes.length < 2) return null
-          return { key, outcomes }
-        })
-        .filter((m): m is RawMarket => m !== null)
-      if (markets.length === 0) return null
-      return { name, markets }
-    })
-    .filter((b): b is RawBookmaker => b !== null)
+  const leagueCandidate =
+    rawEvent && typeof rawEvent === 'object'
+      ? (rawEvent as { league?: unknown }).league
+      : record.league
+  const leagueNormalized =
+    typeof leagueCandidate === 'object' && leagueCandidate !== null
+      ? ((leagueCandidate as { name?: unknown; slug?: unknown }).name ??
+        (leagueCandidate as { slug?: unknown }).slug)
+      : leagueCandidate
+  const eventLeague =
+    typeof leagueNormalized === 'string' && leagueNormalized.trim().length
+      ? leagueNormalized.trim()
+      : event.league ?? ''
+
+  const sportCandidate =
+    rawEvent && typeof rawEvent === 'object'
+      ? (rawEvent as { sport?: unknown }).sport
+      : record.sport
+  const sportNormalized =
+    typeof sportCandidate === 'object' && sportCandidate !== null
+      ? ((sportCandidate as { slug?: unknown; name?: unknown }).slug ??
+        (sportCandidate as { name?: unknown }).name)
+      : sportCandidate
+  const eventSport =
+    typeof sportNormalized === 'string' && sportNormalized.trim().length
+      ? sportNormalized.trim()
+      : event.sport ?? config.sportSlug ?? 'soccer'
+
+  const normalizeKey = (key: string): string =>
+    key.toLowerCase().trim().replace(/([a-z])-([a-z])/g, '$1_$2').replace(/ /g, '_')
+
+  const canonicalizeMarketBase = (rawMarketName: string): string => {
+    const normalized = normalizeKey(rawMarketName)
+    
+    // Match result / Moneyline
+    if (normalized === 'ml' || normalized === 'moneyline' || normalized === '1x2' || normalized === 'match_winner') {
+      return 'h2h'
+    }
+    
+    // Asian Handicap - preserve as distinct market
+    if (normalized === 'asian_handicap' || normalized === 'ah') {
+      return 'asian_handicap'
+    }
+    
+    // Handicap / Spread markets
+    if (
+      normalized === 'spread' ||
+      normalized === 'spreads' ||
+      normalized === 'handicap'
+    ) {
+      return 'spreads'
+    }
+    
+    // BTTS
+    if (normalized === 'btts' || normalized === 'both_teams_to_score' || normalized === 'gg') {
+      return 'btts'
+    }
+    
+    // Corners-related markets - preserve context
+    if (normalized.includes('corner')) {
+      if (normalized.includes('total') || normalized.includes('over') || normalized.includes('under')) {
+        return 'corners_totals'
+      }
+      if (normalized.includes('handicap') || normalized.includes('spread')) {
+        return 'corners_handicap'
+      }
+      if (normalized.includes('race')) {
+        return 'corners_race'
+      }
+      if (normalized.includes('1h') || normalized.includes('first_half')) {
+        return 'corners_1h'
+      }
+      if (normalized.includes('2h') || normalized.includes('second_half')) {
+        return 'corners_2h'
+      }
+      return 'corners_totals' // Default corners to totals
+    }
+    
+    // Cards/Bookings-related markets - preserve context
+    if (normalized.includes('card') || normalized.includes('booking')) {
+      if (normalized.includes('red')) {
+        return 'red_card'
+      }
+      if (normalized.includes('total') || normalized.includes('over') || normalized.includes('under')) {
+        return 'cards_totals'
+      }
+      if (normalized.includes('1h') || normalized.includes('first_half')) {
+        return 'cards_1h'
+      }
+      if (normalized.includes('2h') || normalized.includes('second_half')) {
+        return 'cards_2h'
+      }
+      if (normalized.includes('points')) {
+        return 'booking_points'
+      }
+      return 'cards_totals' // Default cards to totals
+    }
+    
+    // Shots-related markets
+    if (normalized.includes('shot')) {
+      if (normalized.includes('target') || normalized === 'sot') {
+        return 'shots_on_target'
+      }
+      if (normalized.includes('total') || normalized.includes('over') || normalized.includes('under')) {
+        return 'shots_totals'
+      }
+      return 'shots_totals' // Default shots to totals
+    }
+    
+    // Goals totals (only if explicitly "goal" or generic "total/totals")
+    if (normalized.includes('goal') && (normalized.includes('total') || normalized.includes('over') || normalized.includes('under'))) {
+      if (normalized.includes('1h') || normalized.includes('first_half')) {
+        return 'goals_totals_1h'
+      }
+      if (normalized.includes('2h') || normalized.includes('second_half')) {
+        return 'goals_totals_2h'
+      }
+      return 'goals_totals'
+    }
+    
+    // Clean sheet
+    if (normalized.includes('clean_sheet') || normalized === 'cleansheet') {
+      if (normalized.includes('home')) return 'home_clean_sheet'
+      if (normalized.includes('away')) return 'away_clean_sheet'
+      return 'clean_sheet'
+    }
+    
+    // Draw no bet
+    if (normalized === 'dnb' || normalized.includes('draw_no_bet') || normalized.includes('draw-no-bet')) {
+      return 'draw_no_bet'
+    }
+    
+    // Penalty
+    if (normalized.includes('penalty')) {
+      return 'penalty'
+    }
+    
+    // Offsides
+    if (normalized.includes('offside')) {
+      return 'offsides'
+    }
+    
+    // Fouls
+    if (normalized.includes('foul')) {
+      return 'fouls'
+    }
+    
+    // Generic totals - assume goals (match totals)
+    if (normalized === 'total' || normalized === 'totals' || normalized === 'over_under' || normalized === 'over/under') {
+      return 'goals_totals'
+    }
+    
+    return normalized
+  }
+
+  const formatSignedLine = (value: number): string => {
+    const formatted = formatLineValue(value)
+    if (value > 0) return `+${formatted}`
+    return formatted
+  }
+
+  const extractUrlMap = (): Record<string, string> => {
+    const candidate =
+      (record as { urls?: unknown }).urls ??
+      (record as { bookmakerUrls?: unknown }).bookmakerUrls ??
+      (record as { bookmaker_urls?: unknown }).bookmaker_urls
+    if (!candidate || typeof candidate !== 'object') return {}
+    const map: Record<string, string> = {}
+    for (const [name, url] of Object.entries(candidate as Record<string, unknown>)) {
+      if (typeof url === 'string' && url.trim().length) {
+        map[name] = url.trim()
+      }
+    }
+    return map
+  }
+
+  const urlByBookmaker = extractUrlMap()
+
+  const parseLegacyBookmakersArray = (raw: unknown[]): RawBookmaker[] => {
+    return raw
+      .map((book) => {
+        if (!book || typeof book !== 'object') return null
+        const nameCandidate =
+          (book as { name?: unknown }).name ??
+          (book as { key?: unknown }).key ??
+          (book as { bookmaker?: unknown }).bookmaker
+        const name = typeof nameCandidate === 'string' && nameCandidate.trim().length ? nameCandidate.trim() : null
+        if (!name) return null
+
+        const urlCandidate =
+          (book as { url?: unknown }).url ??
+          (book as { link?: unknown }).link ??
+          (book as { directLink?: unknown }).directLink ??
+          urlByBookmaker[name]
+        const url = typeof urlCandidate === 'string' && urlCandidate.trim().length ? urlCandidate.trim() : undefined
+
+        const marketsRaw = Array.isArray((book as { markets?: unknown }).markets)
+          ? ((book as { markets: unknown[] }).markets as unknown[])
+          : []
+        const markets: RawMarket[] = marketsRaw
+          .map((market) => {
+            if (!market || typeof market !== 'object') return null
+            const keyCandidate =
+              (market as { key?: unknown }).key ??
+              (market as { name?: unknown }).name ??
+              (market as { market?: unknown }).market
+            const keyRaw = typeof keyCandidate === 'string' && keyCandidate.trim().length ? keyCandidate.trim() : null
+            if (!keyRaw) return null
+            const key = canonicalizeMarketBase(keyRaw)
+            const updatedAtCandidate =
+              (market as { updatedAt?: unknown }).updatedAt ??
+              (market as { updated_at?: unknown }).updated_at ??
+              (market as { last_update?: unknown }).last_update
+            const updatedAt =
+              typeof updatedAtCandidate === 'string' && updatedAtCandidate.trim().length
+                ? updatedAtCandidate.trim()
+                : undefined
+            const outcomesRaw = Array.isArray((market as { outcomes?: unknown }).outcomes)
+              ? ((market as { outcomes: unknown[] }).outcomes as unknown[])
+              : []
+            const outcomes: RawOutcome[] = outcomesRaw
+              .map((outcome) => {
+                if (!outcome || typeof outcome !== 'object') return null
+                const nameRaw = (outcome as { name?: unknown }).name
+                const name = typeof nameRaw === 'string' && nameRaw.trim().length ? nameRaw.trim() : null
+                if (!name) return null
+                const oddsRaw =
+                  (outcome as { odds?: unknown }).odds ??
+                  (outcome as { price?: unknown }).price ??
+                  (outcome as { decimal?: unknown }).decimal
+                const odds =
+                  typeof oddsRaw === 'number'
+                    ? oddsRaw
+                    : typeof oddsRaw === 'string'
+                      ? Number.parseFloat(oddsRaw)
+                      : Number.NaN
+                if (!Number.isFinite(odds) || odds <= 0) return null
+                return { name, odds }
+              })
+              .filter((o): o is RawOutcome => o !== null)
+            if (outcomes.length < 2) return null
+            return { key, ...(updatedAt ? { updatedAt } : {}), outcomes }
+          })
+          .filter((m): m is RawMarket => m !== null)
+        if (markets.length === 0) return null
+        return { name, ...(url ? { url } : {}), markets }
+      })
+      .filter((b): b is RawBookmaker => b !== null)
+  }
+
+  const parseBookmakersMap = (raw: Record<string, unknown>): RawBookmaker[] => {
+    const bookmakers: RawBookmaker[] = []
+
+    for (const [bookmakerNameRaw, marketsContainer] of Object.entries(raw)) {
+      const bookmakerName = bookmakerNameRaw.trim()
+      if (!bookmakerName) continue
+
+      const url = urlByBookmaker[bookmakerName]
+      const marketsRaw = Array.isArray(marketsContainer)
+        ? marketsContainer
+        : marketsContainer && typeof marketsContainer === 'object' && Array.isArray((marketsContainer as { markets?: unknown }).markets)
+          ? ((marketsContainer as { markets: unknown[] }).markets as unknown[])
+          : []
+
+      const mergedMarkets = new Map<string, { updatedAt?: string; outcomes: Map<string, number> }>()
+
+      for (const market of marketsRaw) {
+        if (!market || typeof market !== 'object') continue
+
+        const marketNameCandidate =
+          (market as { name?: unknown }).name ??
+          (market as { key?: unknown }).key ??
+          (market as { market?: unknown }).market
+        const marketName =
+          typeof marketNameCandidate === 'string' && marketNameCandidate.trim().length ? marketNameCandidate.trim() : null
+        if (!marketName) continue
+
+        const baseKey = canonicalizeMarketBase(marketName)
+
+        const marketUpdatedAtCandidate =
+          (market as { updatedAt?: unknown }).updatedAt ??
+          (market as { updated_at?: unknown }).updated_at ??
+          (market as { last_update?: unknown }).last_update
+        const marketUpdatedAt =
+          typeof marketUpdatedAtCandidate === 'string' && marketUpdatedAtCandidate.trim().length
+            ? marketUpdatedAtCandidate.trim()
+            : undefined
+
+        const oddsRows = Array.isArray((market as { odds?: unknown }).odds)
+          ? ((market as { odds: unknown[] }).odds as unknown[])
+          : []
+
+        for (const row of oddsRows) {
+          if (!row || typeof row !== 'object') continue
+          const rowObj = row as Record<string, unknown>
+
+          const lineCandidate =
+            rowObj.hdp ??
+            rowObj.line ??
+            rowObj.points ??
+            rowObj.handicap
+          const line =
+            typeof lineCandidate === 'number'
+              ? lineCandidate
+              : typeof lineCandidate === 'string'
+                ? Number.parseFloat(lineCandidate)
+                : Number.NaN
+          const hasLine = Number.isFinite(line)
+          const marketKey = hasLine ? `${baseKey}_${formatLineValue(line)}` : baseKey
+
+          let state = mergedMarkets.get(marketKey)
+          if (!state) {
+            state = { updatedAt: marketUpdatedAt, outcomes: new Map<string, number>() }
+            mergedMarkets.set(marketKey, state)
+          } else if (marketUpdatedAt && (!state.updatedAt || marketUpdatedAt > state.updatedAt)) {
+            state.updatedAt = marketUpdatedAt
+          }
+
+          const shouldDecorateOutcomeWithLine = hasLine && (baseKey === 'spreads' || baseKey === 'handicap')
+          const shouldDecorateOverUnder = hasLine && baseKey === 'totals'
+
+          for (const [outcomeKeyRaw, oddsRaw] of Object.entries(rowObj)) {
+            const outcomeKey = outcomeKeyRaw.trim()
+            if (!outcomeKey) continue
+            const lowered = outcomeKey.toLowerCase()
+            if (['hdp', 'line', 'points', 'handicap', 'updatedat', 'updated_at', 'timestamp', 'id'].includes(lowered)) {
+              continue
+            }
+
+            const odds =
+              typeof oddsRaw === 'number'
+                ? oddsRaw
+                : typeof oddsRaw === 'string'
+                  ? Number.parseFloat(oddsRaw)
+                  : Number.NaN
+            if (!Number.isFinite(odds) || odds <= 0) continue
+
+            let outcomeName = outcomeKey
+            if (shouldDecorateOutcomeWithLine && (lowered === 'home' || lowered === 'away')) {
+              const signedLine = lowered === 'home' ? formatSignedLine(line) : formatSignedLine(-line)
+              outcomeName = `${lowered} ${signedLine}`
+            } else if (shouldDecorateOverUnder && (lowered === 'over' || lowered === 'under')) {
+              outcomeName = `${lowered} ${formatLineValue(Math.abs(line))}`
+            }
+
+            const existing = state.outcomes.get(outcomeName)
+            if (existing === undefined || odds > existing) {
+              state.outcomes.set(outcomeName, odds)
+            }
+          }
+        }
+      }
+
+      const markets: RawMarket[] = []
+      for (const [key, state] of mergedMarkets.entries()) {
+        const outcomes: RawOutcome[] = [...state.outcomes.entries()]
+          .map(([name, odds]) => ({ name, odds }))
+          .filter((outcome) => outcome.name.trim().length && Number.isFinite(outcome.odds) && outcome.odds > 0)
+        if (outcomes.length < 2) continue
+        markets.push({ key, ...(state.updatedAt ? { updatedAt: state.updatedAt } : {}), outcomes })
+      }
+
+      if (markets.length === 0) continue
+      bookmakers.push({ name: bookmakerName, ...(url ? { url } : {}), markets })
+    }
+
+    return bookmakers
+  }
+
+  const bookmakers: RawBookmaker[] = bookmakersIsArray
+    ? parseLegacyBookmakersArray(rawBookmakers as unknown[])
+    : parseBookmakersMap(rawBookmakers as Record<string, unknown>)
 
   if (bookmakers.length === 0) {
     return null
@@ -1291,6 +2164,26 @@ function buildOpportunitiesFromRawOdds(
 ): ArbitrageOpportunity[] {
   const marketOutcomeQuotes = new Map<string, Map<string, Quote[]>>()
   const marketMetadataByKey = new Map<string, ReturnType<typeof inferMarketMetadata>>()
+
+  // Story 7.8: Extract bookmaker URLs
+  const bookmakerUrls: Record<string, string> = {}
+  for (const bookmaker of payload.bookmakers) {
+    if (bookmaker.url) {
+      bookmakerUrls[bookmaker.name] = bookmaker.url
+    }
+  }
+
+  // Story 7.8: Track most recent market update timestamp
+  let mostRecentMarketUpdate: string | null = null
+  for (const bookmaker of payload.bookmakers) {
+    for (const market of bookmaker.markets) {
+      if (market.updatedAt) {
+        if (!mostRecentMarketUpdate || market.updatedAt > mostRecentMarketUpdate) {
+          mostRecentMarketUpdate = market.updatedAt
+        }
+      }
+    }
+  }
 
   const normalizeMarketKeyForLogging = (key: string): string =>
     key.toLowerCase().trim().replace(/([a-z])-([a-z])/g, '$1_$2').replace(/ /g, '_')
@@ -1406,6 +2299,15 @@ function buildOpportunitiesFromRawOdds(
     const impliedProbA = Number((1 / bestPair.a.odds * 100).toFixed(2))
     const impliedProbB = Number((1 / bestPair.b.odds * 100).toFixed(2))
 
+    // Story 7.8: Odds movement tracking
+    // Get existing history BEFORE updating (to calculate trend against previous data)
+    const existingHistory = oddsHistoryBuffer.get(id) || []
+    const oddsTrend = calculateOddsTrend(existingHistory, bestPair.roi)
+
+    // Update history buffer with current snapshot
+    const legOdds: [number, number] = [bestPair.a.odds, bestPair.b.odds]
+    const oddsHistory = updateOddsHistory(id, bestPair.roi, legOdds, foundAt)
+
     opportunities.push({
       id,
       providerId: DEEP_SCAN_PROVIDER_ID,
@@ -1433,7 +2335,14 @@ function buildOpportunitiesFromRawOdds(
       ],
       roi: bestPair.roi,
       foundAt,
-      source: 'deepScan'
+      source: 'deepScan',
+      // Story 7.8: Include bookmaker URLs if available
+      ...(Object.keys(bookmakerUrls).length > 0 && { bookmakerUrls }),
+      // Story 7.8: Include most recent market update timestamp if available
+      ...(mostRecentMarketUpdate && { marketUpdatedAt: mostRecentMarketUpdate }),
+      // Story 7.8: Odds movement tracking
+      oddsTrend,
+      oddsHistory
     })
   }
 
@@ -1598,6 +2507,79 @@ function computeBestOddsComparison(
   }
 
   return comparisons
+}
+
+// Story 7.7: Best Odds Cache Management Functions
+
+/**
+ * Cache best odds for an event.
+ * Called when processing odds data during Deep Scan.
+ */
+function cacheBestOddsForEvent(
+  eventId: string,
+  comparisons: Array<{
+    eventId: string
+    marketKey: string
+    marketLabel: string
+    marketGroup: MarketGroup
+    outcomes: Array<{
+      outcome: string
+      bestBookmaker: string
+      bestOdds: number
+      allBookmakers: Array<{ bookmaker: string; odds: number }>
+    }>
+    hasArbitrage: boolean
+    arbitrageRoi?: number
+  }>
+): void {
+  bestOddsCache.set(eventId, { data: comparisons, cachedAt: nowMs() })
+}
+
+/**
+ * Get cached best odds for an event.
+ * Returns null if cache miss or expired (> 5 minutes old).
+ * Story 7.7: Exported for TRPC endpoint.
+ */
+export function getBestOddsForEvent(eventId: string): Array<{
+  eventId: string
+  marketKey: string
+  marketLabel: string
+  marketGroup: MarketGroup
+  outcomes: Array<{
+    outcome: string
+    bestBookmaker: string
+    bestOdds: number
+    allBookmakers: Array<{ bookmaker: string; odds: number }>
+  }>
+  hasArbitrage: boolean
+  arbitrageRoi?: number
+}> | null {
+  // Lazily cleanup expired entries on access to prevent unbounded growth
+  cleanupBestOddsCache()
+
+  const entry = bestOddsCache.get(eventId)
+  if (!entry) return null
+
+  const age = nowMs() - entry.cachedAt
+  if (age > BEST_ODDS_CACHE_TTL_MS) {
+    bestOddsCache.delete(eventId)
+    return null
+  }
+
+  return entry.data
+}
+
+/**
+ * Cleanup expired best odds cache entries.
+ * Called periodically to prevent unbounded growth.
+ */
+function cleanupBestOddsCache(): void {
+  const now = nowMs()
+  for (const [eventId, entry] of bestOddsCache.entries()) {
+    if (now - entry.cachedAt > BEST_ODDS_CACHE_TTL_MS) {
+      bestOddsCache.delete(eventId)
+    }
+  }
 }
 
 async function fetchOddsWithRetry(
@@ -1890,6 +2872,16 @@ async function runScanForEvents(args: {
             }
             const uniqueMarketKeys = collectUniqueMarketKeys(payload)
             marketsRetrievedForEvent = uniqueMarketKeys.length
+
+            // Story 7.7: Cache best odds for Odds Comparison View
+            const bestOddsComparisons = computeBestOddsComparison(payload, config)
+            if (bestOddsComparisons.length > 0) {
+              cacheBestOddsForEvent(payload.event.id, bestOddsComparisons)
+            }
+
+            // Story 8.1: Cache raw odds for Odds Browser
+            cacheRawOdds(payload.event.id, payload)
+
             return buildOpportunitiesFromRawOdds(payload, config, foundAt, unknownMarketKeys)
           })()
 
@@ -1968,6 +2960,177 @@ async function runScanForEvents(args: {
     }
   }
 
+  // Story 7.8: Process a batch of events using the batch odds endpoint
+  const processBatchWithBatchOdds = async (batchEvents: DeepScanEvent[]): Promise<void> => {
+    if (signal.aborted || batchEvents.length === 0) return
+
+    // Group into API batches of 10 events max
+    const apiBatches = chunk(batchEvents, BATCH_SIZE_MAX)
+    const batchFetcher = getBatchOddsFetcher()
+
+    for (const apiBatch of apiBatches) {
+      if (signal.aborted) break
+
+      updateProgress({ currentEventName: `Batch: ${apiBatch.length} events`, mode } as Partial<DeepScanProgress>)
+      const batchStartedAtMs = nowMs()
+
+      try {
+        const batchResponse = await batchFetcher({
+          events: apiBatch,
+          apiKey,
+          bookmakers,
+          signal,
+          correlationId
+        })
+
+        // Process each event result in the batch
+        for (const eventResult of batchResponse.results) {
+          if (signal.aborted) break
+
+          const event = apiBatch.find((e) => e.id === eventResult.eventId)
+          if (!event) continue
+
+          updateProgress({ currentEventName: event.name, mode } as Partial<DeepScanProgress>)
+
+          if (!eventResult.success) {
+            // Event failed in batch
+            eventErrors += 1
+            if (mode === 'continuous') {
+              recordContinuousEventScanned(1)
+            }
+            logWarn(perEventEventName, {
+              context: 'service:deepScan',
+              operation,
+              providerId: DEEP_SCAN_PROVIDER_ID,
+              correlationId,
+              durationMs: null,
+              errorCategory: 'ProviderError',
+              eventId: event.id,
+              eventName: event.name,
+              success: false,
+              arbsFound: 0,
+              message: eventResult.error ?? 'Event failed in batch'
+            } satisfies StructuredLogBase)
+            updateProgress({ eventsScanned: (currentScan?.eventsScanned ?? 0) + 1, mode } as Partial<DeepScanProgress>)
+            continue
+          }
+
+          // Process successful event result
+          const result = eventResult.data
+          const foundAt = nowIso()
+          const resultsBefore = (mode === 'continuous' ? continuousResults : manualResults).length
+          let marketsRetrievedForEvent = 0
+
+          const opportunities = isOpportunityArray(result)
+            ? result
+            : (() => {
+                const payload = toRawOddsPayload(result, event, config)
+                if (!payload) {
+                  return []
+                }
+                const uniqueMarketKeys = collectUniqueMarketKeys(payload)
+                marketsRetrievedForEvent = uniqueMarketKeys.length
+
+                // Cache best odds and raw odds
+                const bestOddsComparisons = computeBestOddsComparison(payload, config)
+                if (bestOddsComparisons.length > 0) {
+                  cacheBestOddsForEvent(payload.event.id, bestOddsComparisons)
+                }
+                cacheRawOdds(payload.event.id, payload)
+
+                return buildOpportunitiesFromRawOdds(payload, config, foundAt, unknownMarketKeys)
+              })()
+
+          if (marketsRetrievedForEvent > 0) {
+            totalMarketsRetrieved += marketsRetrievedForEvent
+            eventsWithMarkets += 1
+          }
+
+          if (opportunities.length) {
+            updateArbTrackingFromOpportunities(opportunities)
+
+            if (mode === 'continuous') {
+              continuousResults.push(...opportunities)
+              updateProgress({ opportunitiesFound: continuousResults.length, mode } as Partial<DeepScanProgress>)
+            } else {
+              manualResults.push(...opportunities)
+              updateProgress({ opportunitiesFound: manualResults.length, mode } as Partial<DeepScanProgress>)
+            }
+          }
+
+          const resultsAfter = (mode === 'continuous' ? continuousResults : manualResults).length
+          const arbsFound = Math.max(0, resultsAfter - resultsBefore)
+
+          updateProgress({
+            eventsScanned: (currentScan?.eventsScanned ?? 0) + 1,
+            marketsScanned: (currentScan?.marketsScanned ?? 0) + marketsRetrievedForEvent,
+            marketGroupsWithArbs: [...arbMarketGroups],
+            mode
+          } as Partial<DeepScanProgress>)
+
+          if (mode === 'continuous') {
+            updateScanCache(event.id, bookmakers)
+            recordContinuousEventScanned(1)
+            recordContinuousOpportunitiesFound(arbsFound)
+          }
+
+          logInfo(perEventEventName, {
+            context: 'service:deepScan',
+            operation,
+            providerId: DEEP_SCAN_PROVIDER_ID,
+            correlationId,
+            durationMs: null,
+            errorCategory: null,
+            eventId: event.id,
+            eventName: event.name,
+            success: true,
+            arbsFound,
+            requestsMade: currentScan?.requestsMade ?? 0,
+            batchMode: true
+          } satisfies StructuredLogBase)
+        }
+
+        logInfo('deepScan.batch.processed', {
+          context: 'service:deepScan',
+          operation,
+          providerId: DEEP_SCAN_PROVIDER_ID,
+          correlationId,
+          durationMs: nowMs() - batchStartedAtMs,
+          errorCategory: null,
+          batchSize: apiBatch.length,
+          successCount: batchResponse.results.filter((r) => r.success).length,
+          failureCount: batchResponse.results.filter((r) => !r.success).length
+        } satisfies StructuredLogBase)
+      } catch (error) {
+        if (signal.aborted || isAbortError(error)) {
+          updateProgress({ status: 'cancelled', currentEventName: undefined, mode } as Partial<DeepScanProgress>)
+          return
+        }
+
+        // Batch request failed entirely - count all events as errors
+        eventErrors += apiBatch.length
+        for (let i = 0; i < apiBatch.length; i++) {
+          if (mode === 'continuous') {
+            recordContinuousEventScanned(1)
+          }
+          updateProgress({ eventsScanned: (currentScan?.eventsScanned ?? 0) + 1, mode } as Partial<DeepScanProgress>)
+        }
+
+        logWarn('deepScan.batch.failed', {
+          context: 'service:deepScan',
+          operation,
+          providerId: DEEP_SCAN_PROVIDER_ID,
+          correlationId,
+          durationMs: nowMs() - batchStartedAtMs,
+          errorCategory: 'ProviderError',
+          batchSize: apiBatch.length,
+          message: (error as Error)?.message ?? 'Batch request failed'
+        } satisfies StructuredLogBase)
+      }
+    }
+  }
+
+  // Story 7.8: Legacy single-event scan batch (used when batch mode disabled)
   const scanBatch = async (batchEvents: DeepScanEvent[]): Promise<void> => {
     let nextIndex = 0
     const worker = async (): Promise<void> => {
@@ -1983,9 +3146,40 @@ async function runScanForEvents(args: {
     await Promise.all(Array.from({ length: concurrency }, () => worker()))
   }
 
-  for (const batch of batches) {
-    if (signal.aborted) break
-    await scanBatch(batch)
+  // Story 7.8: Choose batch or single-event processing based on setting
+  if (useBatchOdds) {
+    // Batch mode: process events in batches of 10 using /v3/odds/multi
+    // Concurrency: N concurrent batch requests (each batch = 10 events)
+    const batchConcurrency = Math.max(1, Math.min(5, concurrency))
+    const apiBatches = chunk(events, BATCH_SIZE_MAX)
+
+    logInfo('deepScan.batch.mode', {
+      context: 'service:deepScan',
+      operation,
+      providerId: DEEP_SCAN_PROVIDER_ID,
+      correlationId,
+      durationMs: null,
+      errorCategory: null,
+      totalEvents: events.length,
+      totalBatches: apiBatches.length,
+      batchSize: BATCH_SIZE_MAX,
+      batchConcurrency
+    } satisfies StructuredLogBase)
+
+    // Process batches with concurrency
+    const batchChunks = chunk(apiBatches, batchConcurrency)
+    for (const concurrentBatches of batchChunks) {
+      if (signal.aborted) break
+      // Flatten concurrent batches and process
+      const flatEvents = concurrentBatches.flat()
+      await processBatchWithBatchOdds(flatEvents)
+    }
+  } else {
+    // Legacy mode: single-event processing
+    for (const batch of batches) {
+      if (signal.aborted) break
+      await scanBatch(batch)
+    }
   }
 
   if ((currentScan?.status ?? 'idle') !== 'cancelled') {
@@ -2056,6 +3250,15 @@ async function runManualScan(
   const resolveBookmakers = bookmakersResolverOverride ?? defaultBookmakersResolver
 
   const bookmakers = await resolveBookmakers({ config, apiKey })
+
+  // Early validation: odds-api.io /odds endpoint requires bookmakers
+  if (!bookmakers.length) {
+    throw new Error(
+      'No bookmakers configured for Deep Scan. ' +
+      'Please select bookmakers in Settings (Odds-API.io bookmaker selection) before running a scan.'
+    )
+  }
+
   const events = await resolveEvents({ config, apiKey, signal, correlationId })
 
   await runScanForEvents({
@@ -2524,6 +3727,14 @@ async function runContinuousScanCycle(reason: string): Promise<void> {
     const resolveBookmakers = bookmakersResolverOverride ?? defaultBookmakersResolver
     const bookmakers = await resolveBookmakers({ config, apiKey })
 
+    // Early validation: odds-api.io /odds endpoint requires bookmakers
+    if (!bookmakers.length) {
+      throw new Error(
+        'No bookmakers configured for Continuous Deep Scan. ' +
+        'Please select bookmakers in Settings (Odds-API.io bookmaker selection) before enabling continuous scanning.'
+      )
+    }
+
     // Determine sports filter based on scan scope
     let sportsFilter: string[] | undefined
     if (scanScope === 'selected-sports' && enabledSportsFilter.length > 0) {
@@ -2871,6 +4082,19 @@ export const __test = {
     eventsFetcherOverride = null
     oddsFetcherOverride = null
     bookmakersResolverOverride = null
+    // Story 7.8: Reset batch/live/incremental fetcher overrides
+    batchOddsFetcherOverride = null
+    liveEventsFetcherOverride = null
+    incrementalOddsFetcherOverride = null
+    // Story 7.8: Reset efficiency settings
+    useBatchOdds = true
+    useIncrementalUpdates = true
+    scanHorizonHours = DEFAULT_SCAN_HORIZON_HOURS
+    scanMode = 'all'
+    marketFreshnessThresholdMinutes = 5
+    lastIncrementalFetchTimestamp = null
+    // Story 7.8: Clear odds history buffer
+    oddsHistoryBuffer.clear()
   },
   setEventResolver(resolver: EventResolver | null): void {
     eventResolverOverride = resolver
@@ -2883,6 +4107,22 @@ export const __test = {
   },
   setBookmakersResolver(resolver: BookmakersResolver | null): void {
     bookmakersResolverOverride = resolver
+  },
+  // Story 7.8: Test helpers for batch, live, and incremental fetchers
+  setBatchOddsFetcher(fetcher: BatchOddsFetcher | null): void {
+    batchOddsFetcherOverride = fetcher
+  },
+  setLiveEventsFetcher(fetcher: LiveEventsFetcher | null): void {
+    liveEventsFetcherOverride = fetcher
+  },
+  setIncrementalOddsFetcher(fetcher: IncrementalOddsFetcher | null): void {
+    incrementalOddsFetcherOverride = fetcher
+  },
+  getLastIncrementalFetchTimestamp(): string | null {
+    return lastIncrementalFetchTimestamp
+  },
+  setLastIncrementalFetchTimestamp(timestamp: string | null): void {
+    lastIncrementalFetchTimestamp = timestamp
   },
   async waitForScanCompletion(): Promise<void> {
     if (!manualScanPromise) return
@@ -2917,5 +4157,55 @@ export const __test = {
   },
   getContinuousScanBatchSize(): number {
     return continuousScanBatchSize
-  }
+  },
+  // Story 7.8: Test helpers for API efficiency settings
+  getUseBatchOdds(): boolean {
+    return useBatchOdds
+  },
+  setUseBatchOdds(value: boolean): void {
+    useBatchOdds = value
+  },
+  getUseIncrementalUpdates(): boolean {
+    return useIncrementalUpdates
+  },
+  setUseIncrementalUpdates(value: boolean): void {
+    useIncrementalUpdates = value
+  },
+  getScanHorizonHours(): number {
+    return scanHorizonHours
+  },
+  setScanHorizonHours(value: number): void {
+    scanHorizonHours = value
+  },
+  getScanMode(): 'all' | 'live' | 'upcoming' {
+    return scanMode
+  },
+  setScanMode(value: 'all' | 'live' | 'upcoming'): void {
+    scanMode = value
+  },
+  getMarketFreshnessThresholdMinutes(): number {
+    return marketFreshnessThresholdMinutes
+  },
+  setMarketFreshnessThresholdMinutes(value: number): void {
+    marketFreshnessThresholdMinutes = value
+  },
+  parseBatchOddsResponse(body: unknown, requestedEvents: DeepScanEvent[]): BatchOddsResponse['results'] {
+    return parseBatchOddsResponse(body, requestedEvents)
+  },
+  toRawOddsPayload(result: unknown, event: DeepScanEvent, config: DeepScanConfig): RawOddsPayload | null {
+    return toRawOddsPayload(result, event, config)
+  },
+  BATCH_SIZE_MAX,
+  // Story 7.8: Test helpers for odds movement tracking
+  getOddsHistoryBuffer(): Map<string, OddsSnapshot[]> {
+    return oddsHistoryBuffer
+  },
+  clearOddsHistoryBuffer(): void {
+    oddsHistoryBuffer.clear()
+  },
+  setOddsHistory(opportunityId: string, history: OddsSnapshot[]): void {
+    oddsHistoryBuffer.set(opportunityId, history)
+  },
+  ODDS_HISTORY_MAX_SNAPSHOTS,
+  ODDS_TREND_THRESHOLD
 }

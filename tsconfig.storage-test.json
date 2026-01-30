@@ -18,5 +18,8 @@
     "src/preload/**/*",
     "src/renderer/src/**/*",
     "shared/**/*"
+  ],
+  "exclude": [
+    "src/renderer/src/features/odds-browser"
   ]
 }

@@ -2,11 +2,13 @@ import * as React from 'react'
 import { format, parseISO } from 'date-fns'
 
 import type { ArbitrageOpportunity } from '../../../../../shared/types'
+import { Button } from '../../components/ui/button'
 import { cn } from '../../lib/utils'
 import { copyAndAdvanceCurrentOpportunity } from './copyAndAdvance'
 import { sortOpportunities } from './sortOpportunities'
 import type { FeedSortDirection, FeedSortKey } from './stores/feedStore'
 import { useFeedStore } from './stores/feedStore'
+import { useCalculatorStore } from './stores/calculatorStore'
 import { getStalenessInfo } from './staleness'
 
 const isServerEnvironment = typeof document === 'undefined'
@@ -169,6 +171,8 @@ export function FeedTable({
     [sorted.length]
   )
 
+  const openCalculator = useCalculatorStore((state) => state.openCalculator)
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       if (!Array.isArray(sorted) || sorted.length === 0) {
@@ -198,6 +202,24 @@ export function FeedTable({
         const { selectedOpportunityIndex: nextIndex } = useFeedStore.getState()
         ensureIndexVisible(nextIndex ?? null)
       })
+      return
+    }
+
+    // Story 8.3: Calculator keyboard shortcut
+    if (event.key === 'c' || event.key === 'C') {
+      if (!Array.isArray(sorted) || sorted.length === 0) {
+        return
+      }
+
+      event.preventDefault()
+
+      const { selectedOpportunityId } = useFeedStore.getState()
+      if (selectedOpportunityId) {
+        const opportunity = sorted.find((o) => o.id === selectedOpportunityId)
+        if (opportunity) {
+          openCalculator(opportunity)
+        }
+      }
     }
   }
 
@@ -353,13 +375,19 @@ function getProviderDisplayName(providerId: string): string {
   }
 }
 
+interface FeedRowExternalProps extends FeedRowProps {
+  isSelected: boolean
+  isProcessed: boolean
+  onSelect: () => void
+}
+
 function FeedRow({
   opportunity,
   stalenessNow,
   isSelected,
   isProcessed,
   onSelect
-}: FeedRowProps & { isSelected: boolean; isProcessed: boolean; onSelect: () => void }): React.JSX.Element {
+}: FeedRowExternalProps): React.JSX.Element {
   const timeLabel = formatTime(opportunity)
   const eventLabel = opportunity.event.name
   const roiLabel = formatRoi(opportunity.roi)
@@ -381,11 +409,29 @@ function FeedRow({
   const isCrossProvider = opportunity.isCrossProvider === true
   const isDeepScan = opportunity.source === 'deepScan'
 
+  const openCalculator = useCalculatorStore((state) => state.openCalculator)
+  const [contextMenuOpen, setContextMenuOpen] = React.useState(false)
+
+  const handleContextMenu = (e: React.MouseEvent): void => {
+    e.preventDefault()
+    setContextMenuOpen(true)
+  }
+
+  const handleCalculateClick = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+    openCalculator(opportunity)
+  }
+
+  const handleContextMenuCalculate = (): void => {
+    openCalculator(opportunity)
+    setContextMenuOpen(false)
+  }
+
   return (
     <div
       id={`feed-row-${opportunity.id}`}
       className={cn(
-        'flex cursor-pointer items-center justify-between border-b border-ot-border py-1.5 text-[11px]',
+        'group relative flex cursor-pointer items-center justify-between border-b border-ot-border py-1.5 text-[11px]',
         isStale || isProcessed ? 'opacity-50' : '',
         isSelected ? 'bg-ot-accent/10' : 'hover:bg-black/5'
       )}
@@ -398,6 +444,7 @@ function FeedRow({
       data-cross-provider={isCrossProvider ? 'true' : 'false'}
       data-deep-scan={isDeepScan ? 'true' : 'false'}
       onClick={onSelect}
+      onContextMenu={handleContextMenu}
       role="option"
       aria-selected={isSelected ? 'true' : 'false'}
     >
@@ -469,6 +516,58 @@ function FeedRow({
       >
         {roiLabel}
       </div>
+
+      {/* Calculate Stakes Button - visible on hover or when selected */}
+      <div
+        className={cn(
+          'absolute right-[70px] top-1/2 -translate-y-1/2 opacity-0 transition-opacity',
+          (isSelected || contextMenuOpen) && 'opacity-100',
+          'group-hover:opacity-100'
+        )}
+      >
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleCalculateClick}
+          className="h-6 px-2 text-[9px] font-medium"
+          data-testid="calculate-stakes-button"
+        >
+          Calculate
+        </Button>
+      </div>
+
+      {/* Context Menu */}
+      {contextMenuOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setContextMenuOpen(false)}
+          />
+          <div
+            className="absolute right-2 top-full z-50 mt-1 w-40 rounded-md border border-slate-700 bg-slate-900 py-1 shadow-lg"
+            data-testid="context-menu"
+          >
+            <button
+              type="button"
+              onClick={handleContextMenuCalculate}
+              className="w-full px-3 py-1.5 text-left text-[11px] text-ot-foreground hover:bg-slate-800"
+            >
+              Calculate Stakes
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onSelect()
+                void copyAndAdvanceCurrentOpportunity()
+                setContextMenuOpen(false)
+              }}
+              className="w-full px-3 py-1.5 text-left text-[11px] text-ot-foreground hover:bg-slate-800"
+            >
+              Copy Signal
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }

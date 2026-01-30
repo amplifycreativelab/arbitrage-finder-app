@@ -358,6 +358,22 @@ exports.appRouter = t.router({
     deepScanGetQuotaStatus: t.procedure.query(() => {
         return (0, deepScan_1.getDeepScanQuotaStatus)();
     }),
+    // Story 7.7: Best Odds Comparison View
+    deepScanGetBestOdds: t.procedure
+        .input(zod_1.z.object({ eventId: zod_1.z.string() }))
+        .query(({ input }) => {
+        const bestOdds = (0, deepScan_1.getBestOddsForEvent)(input.eventId);
+        return { bestOdds, cachedAt: bestOdds ? Date.now() : null };
+    }),
+    // Story 8.1: Odds Browser - Raw Odds Data
+    deepScanGetRawOdds: t.procedure.query(() => {
+        const rawOdds = (0, deepScan_1.getAllRawOdds)();
+        return { rawOdds, count: rawOdds.length, cachedAt: Date.now() };
+    }),
+    deepScanClearRawOddsCache: t.procedure.mutation(() => {
+        (0, deepScan_1.clearRawOddsCache)();
+        return { ok: true };
+    }),
     // ============================================================
     // Utility procedures
     // ============================================================

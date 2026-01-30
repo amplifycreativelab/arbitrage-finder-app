@@ -62,6 +62,7 @@ We follow a **Walking Skeleton** approach:
   Epic 5 -- Multi-Provider & Advanced Markets   FR3, FR4, FR5, FR6, FR7, FR9, FR10, FR11
   Epic 6 -- Enhanced Filtering & Desktop UX     FR3, FR6, FR9, FR10, FR11, FR13
   Epic 7 -- Deep Scan (All Markets)             FR5, FR6, FR7, FR8, FR9, FR10, FR11, FR15
+  Epic 8 -- Odds Browser & Surebet Tools        FR14, FR16, FR17, FR18
 
 ------------------------------------------------------------------------
 
@@ -92,6 +93,15 @@ We follow a **Walking Skeleton** approach:
   - Shared: `shared/types.ts` (`ArbitrageOpportunity`, market metadata), `shared/schemas.ts`
   - Renderer: `renderer/src/features/dashboard/**`, `renderer/src/features/settings/**`
   - Architecture refs: â€œHigh-Risk Domain Patterns â€“ Rate Limiting (R-001)â€, â€œHigh-Risk Domain Patterns â€“ Arbitrage Correctness (R-002)â€
+
+- **Epic 8 – Odds Browser & Surebet Tools**
+  - Main: `src/main/services/currency.ts` (Frankfurt API integration)
+  - Shared: `shared/types.ts` (`RawOddsPayload`, currency types), `shared/schemas.ts`
+  - Renderer: 
+    - `renderer/src/features/dashboard/SurebetCalculator.tsx` (calculator in main feed)
+    - `renderer/src/features/odds-browser/**` (view-only odds browser)
+  - State: Zustand stores for odds browser filters, calculator history, currency settings
+  - Architecture refs: "Implementation Patterns – Caching and Persistence", "Implementation Patterns – Naming/Structure"
 
 Each story below should be read together with these architecture touchpoints to avoid introducing ad-hoc patterns or file layouts.
 
@@ -769,11 +779,13 @@ So that I can see more data and work efficiently on my desktop monitor.
 
 ------------------------------------------------------------------------
 
-# **Epic 7: Deep Scan (All Markets via /odds)**
+# **Epic 7: Deep Scan (All Markets via /v3/odds + /v3/odds/multi)**
 
-Goal: Maximize arbitrage discovery by fetching raw odds via Odds-API.io `/odds` for **all events and markets**, calculating arbitrage locally. Deep Scan operates as the **primary discovery mechanism** running continuously alongside regular polling, ensuring no arbitrage opportunity is missed across any market type (corners, cards, goals, handicaps, etc.).
+Goal: Maximize arbitrage discovery by fetching raw odds via Odds-API.io `/v3/odds` (single) and `/v3/odds/multi` (batch) for **all events and markets**, calculating arbitrage locally. Deep Scan operates as the **primary discovery mechanism** running continuously alongside regular polling, ensuring no arbitrage opportunity is missed across any market type (corners, cards, goals, handicaps, etc.).
 
 **Design Philosophy:** Arbitrage opportunities are rare and time-sensitive. With 5,000 requests/hour capacity, the system should scan aggressively across all available events and markets rather than waiting for user-initiated scans. The existing `/arbitrage-bets` endpoint provides a fast initial feed, while Continuous Deep Scan ensures comprehensive coverage of all two-way markets.
+
+Note: Three-way market support (e.g., 1X2 / Moneyline-with-draw) is out of scope for the current Deep Scan arbitrage engine and best-odds comparison; these markets can still be surfaced in the Odds Browser as raw odds.
 
 ------------------------------------------------------------------------
 
@@ -1036,6 +1048,7 @@ So that I can place bets at the best available price even when no arbitrage exis
 - One-click copy of odds/bookmaker info to clipboard
 - This view uses the same raw odds data collected by Deep Scan (no additional API calls)
 - Useful even when no arbitrage exists - helps users find value bets
+- Clarification: Best odds comparison currently focuses on **two-way markets** only (3-way markets are excluded until explicitly supported).
 
 ### Technical Notes
 
@@ -1051,6 +1064,424 @@ So that I can place bets at the best available price even when no arbitrage exis
 
 ------------------------------------------------------------------------
 
+## **Story 7.8 -- API Efficiency & Advanced Features**
+
+**As a Developer**\
+I want to maximize API efficiency using batch endpoints, incremental updates, and advanced filtering\
+So that the system can scan 10x more events within the same rate limit budget while providing richer data.
+
+### Background
+
+The odds-api.io API provides several advanced endpoints and parameters that are not currently utilized:
+- **`/v3/odds/multi`**: Batch fetch odds for up to 10 events per request (vs 1 event per request currently)
+- **`/v3/odds/updated`**: Incremental updates returning only odds changed since a timestamp
+- **`/v3/events/live`**: Single endpoint returning all in-play events across sports
+- **Time-range filtering**: `/events` supports `from`/`to` parameters to filter by event start time
+- **Response enrichment**: API returns bookmaker URLs and market timestamps not currently extracted
+
+**API Documentation Reference**: https://docs.odds-api.io/
+
+### Acceptance Criteria
+
+#### Critical: Batch Odds Fetching (90% API Call Reduction)
+
+- [x] Replace single-event `/v3/odds` calls with batched `/v3/odds/multi` endpoint
+- [x] Batch up to 10 events per request (API maximum)
+- [x] Adjust concurrency settings to account for batching (e.g., 5 concurrent batched requests = 50 events in flight)
+- [x] Maintain existing error handling per-event within batch responses
+- [x] Update quota tracking to reflect actual request count (not event count)
+- [ ] **Expected impact**: With 5,000 req/hour limit:
+  - Current: ~80-100 events/hour (1 request per event)
+  - After: ~800-1,000 events/hour (10 events per request)
+
+Contract note (resolved): `/v3/odds/multi` may return `bookmakers` as an object map (not an array). Deep Scan must normalize this shape into `RawOddsPayload` so Odds Browser and best-odds caches populate correctly in batch mode.
+
+#### Critical: Time-Range Filtering for Event Discovery
+
+- [x] Add `from` and `to` parameters to `/v3/events` requests
+- [x] Default scan horizon: events starting within next 4 hours (configurable)
+- [ ] Settings option: "Scan Horizon" dropdown (1h, 2h, 4h, 8h, 24h, All) (UI deferred)
+- [x] Reduce data transfer by excluding distant future events from discovery
+- [x] Prioritization logic remains: live > starting soon > later today
+
+#### High Value: Incremental Odds Updates
+
+- [x] Track `lastFetchTimestamp` per scan cycle
+- [x] Implement optional `/v3/odds/updated?since={timestamp}` polling mode (fetcher ready)
+- [x] Settings toggle: "Use Incremental Updates" (default: ON for continuous scan)
+- [~] Fall back to full fetch if incremental returns empty or errors (integration deferred)
+- [x] Benefit: Detect odds movements and reduce redundant data transfer
+
+#### High Value: Live Events Mode
+
+- [x] Add `/v3/events/live` endpoint integration (fetcher ready)
+- [x] Settings option: "Scan Mode" dropdown (All Events / Live Only / Upcoming Only) (setting ready, UI deferred)
+- [~] "Live Only" mode uses single `/events/live` request instead of per-sport queries (integration deferred)
+- [ ] UI indicator when in Live-only mode (UI deferred)
+- [x] Benefit: Focus on in-play arbitrage with highest volatility
+
+#### Medium Value: Bookmaker Direct Links
+
+- [x] Extract `urls` object from odds responses containing direct bookmaker links
+- [x] Store bookmaker URLs in `ArbitrageOpportunity` as `bookmakerUrls?: Record<string, string>`
+- [ ] Display "Place Bet" button in Signal Preview pane that opens bookmaker URL (UI deferred)
+- [ ] Keyboard shortcut (e.g., `B`) to open best bookmaker link for selected opportunity (UI deferred)
+- [x] Benefit: Reduce time from discovery to bet placement
+
+#### Medium Value: True Market Freshness
+
+- [x] Extract `updatedAt` timestamp from each market in odds responses
+- [x] Store as `marketUpdatedAt: string` in opportunity data
+- [~] Calculate staleness from `marketUpdatedAt` (not just `foundAt`) (UI/logic deferred)
+- [ ] Display "Odds updated Xm ago" in addition to "Found Xm ago" (UI deferred)
+- [ ] Visual warning if `marketUpdatedAt` > 5 minutes old (configurable threshold) (UI deferred)
+- [x] Benefit: Distinguish between "we found it late" vs "odds are actually stale"
+
+#### Nice to Have: Dynamic Rate Limit Tracking
+
+- [ ] Parse rate limit headers from API responses:
+  - `X-RateLimit-Limit`: Total hourly quota
+  - `X-RateLimit-Remaining`: Requests remaining
+  - `X-RateLimit-Reset`: Timestamp when quota resets
+- [ ] Use actual remaining quota instead of estimated count
+- [ ] Display real quota status in Deep Scan panel
+- [ ] Auto-adjust concurrency based on remaining quota percentage
+- [ ] Benefit: More accurate throttling, avoid hardcoded assumptions
+
+#### Nice to Have: Odds Movement Tracking
+
+- [ ] Implement `/v3/odds/movements` endpoint integration for detailed history (deferred)
+- [x] Store last N odds snapshots per opportunity (configurable, default: 3)
+- [x] Calculate and display odds trend: ↑ improving, ↓ worsening, → stable
+- [x] "Movement" column in feed showing trend indicator
+- [x] Benefit: Timing signal for when to act on an opportunity
+
+### Technical Notes
+
+#### Batch Odds Implementation
+
+```typescript
+// Current (inefficient):
+for (const event of events) {
+  const odds = await fetch(`/v3/odds?eventId=${event.id}&bookmakers=${list}`)
+}
+
+// New (batched):
+const BATCH_SIZE = 10
+for (let i = 0; i < events.length; i += BATCH_SIZE) {
+  const batch = events.slice(i, i + BATCH_SIZE)
+  const eventIds = batch.map(e => e.id).join(',')
+  const odds = await fetch(`/v3/odds/multi?eventIds=${eventIds}&bookmakers=${list}`)
+  // Response is array of event odds objects
+}
+```
+
+#### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/main/services/deepScan.ts` | Add batch fetcher, time filtering, incremental mode |
+| `src/main/adapters/odds-api-io.ts` | Extract URLs and timestamps in normalization |
+| `shared/types.ts` | Add `bookmakerUrls`, `marketUpdatedAt` to `ArbitrageOpportunity` |
+| `src/renderer/src/features/dashboard/SignalPreview.tsx` | Add "Place Bet" button |
+| `src/renderer/src/features/settings/DeepScanSettings.tsx` | Add new settings controls |
+
+#### New Constants
+
+```typescript
+const ODDS_API_IO_ODDS_MULTI_PATH = '/v3/odds/multi'
+const ODDS_API_IO_ODDS_UPDATED_PATH = '/v3/odds/updated'
+const ODDS_API_IO_EVENTS_LIVE_PATH = '/v3/events/live'
+const BATCH_SIZE_MAX = 10 // API limit
+const DEFAULT_SCAN_HORIZON_HOURS = 4
+```
+
+#### Settings Schema Extension
+
+```typescript
+interface DeepScanConfig {
+  // ... existing fields ...
+
+  // New fields for Story 7.8
+  useBatchOdds: boolean           // default: true
+  useIncrementalUpdates: boolean  // default: true
+  scanHorizonHours: number        // default: 4
+  scanMode: 'all' | 'live' | 'upcoming'  // default: 'all'
+  marketFreshnessThresholdMinutes: number  // default: 5
+  trackOddsMovements: boolean     // default: false (nice-to-have)
+}
+```
+
+### Testing Requirements
+
+- [ ] Unit tests for batch request construction and response parsing
+- [ ] Unit tests for incremental update timestamp tracking
+- [ ] Integration test: batch mode reduces request count by ~90%
+- [ ] Integration test: time-range filtering reduces event count
+- [ ] Golden fixtures for `/odds/multi` response format
+- [ ] Test: bookmaker URLs correctly extracted and displayed
+- [ ] Test: market timestamps correctly parsed and staleness calculated
+
+### Performance Expectations
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Events scanned per hour | 80-100 | 800-1,000 |
+| API requests per 50 events | 50 | 5 |
+| Time to scan 50 events | ~35s (at 1.4 req/s) | ~3.5s |
+| Data freshness awareness | Scan time only | True market update time |
+
+### Migration Notes
+
+- Batch mode should be **opt-out** (enabled by default) for immediate benefit
+- Existing scan cache logic remains valid (cache by eventId)
+- No breaking changes to `ArbitrageOpportunity` interface (new fields are optional)
+- Incremental mode can be disabled if API behavior is unexpected
+
+### Links
+
+- FR5 (Retrieve pre-calculated bets)
+- FR6 (Calculate local arbs)
+- FR8 (API rate limiting)
+- FR15 (Deep Scan all markets)
+- Architecture: "External Provider APIs (Odds-API.io)"
+
+------------------------------------------------------------------------
+
+# **Epic 8: Odds Browser & Surebet Tools**
+
+Goal: Provide a bookmaker-style odds browser with integrated surebet calculator and multi-currency support for professional betting workflows.
+
+------------------------------------------------------------------------
+
+## **Story 8.1 -- Odds Browser Tab & Grid View**
+
+**As a User**\
+I want to browse raw odds in a bookmaker-style grid view\
+So that I can explore all available odds across sports, leagues, and events systematically.
+
+### Acceptance Criteria
+
+- New tab "Odds Browser" appears alongside the main Arbitrage feed
+- Grid displays odds grouped hierarchically: Sport → League → Event → Market
+- Columns include: Event (teams), Market Type, Bookmaker, Odds, Last Updated
+- Sortable columns: Sport, League, Event Time, Market Type, Odds value
+- Filters available:
+  - Sport multi-select (e.g., Soccer, Basketball, Tennis)
+  - League multi-select (dependent on selected sports)
+  - Event search (team name fuzzy match)
+  - Market type filter (Moneyline, Totals, Handicaps, etc.)
+  - Bookmaker filter
+- Real-time updates as new Deep Scan data arrives
+- Virtualized list for performance with 1000+ rows
+- Row highlighting on hover; click to select an outcome
+
+### Technical Notes
+
+- Reuse `RawOddsPayload` data structure from Deep Scan (Story 7.x)
+- Create `OddsBrowserStore` with Zustand for filter state persistence
+- Implement hierarchical grouping with collapsible sections
+- Use shadcn/ui `Table` with sorting and filtering capabilities
+- Data source: Cached Deep Scan odds (no additional API calls)
+
+### Links
+
+- FR16 (Browse raw odds in bookmaker-style view)
+- Story 7.4 (Comprehensive Market Normalization)
+- Story 7.7 (Odds Comparison View)
+
+------------------------------------------------------------------------
+
+## **Story 8.2 -- Odds Selection & Comparison Integration**
+
+**As a User**\
+I want to select any odd in the browser and immediately see the odds comparison view\
+So that I can compare prices across all bookmakers for that specific market.
+
+### Acceptance Criteria
+
+- Clicking any odd in the Odds Browser opens the **Odds Comparison Panel**
+- Comparison panel shows:
+  - Selected event and market context
+  - All bookmakers offering that market, sorted by odds (best first)
+  - Highlighting of the best price per outcome
+  - Visual indicator showing the selected odd's rank (e.g., "3rd best")
+- Panel can be docked (side view) or floating (modal)
+- "Pin" feature to keep comparison visible while browsing other odds
+- Copy odds info to clipboard from comparison panel
+- Updates in real-time as new odds arrive
+
+### Technical Notes
+
+- Reuse existing `bestOddsView` component from Story 7.7
+- Extend comparison logic to work with single-outcome selection
+- Add selection state to `OddsBrowserStore`
+- Consider keyboard shortcut (Space or Enter) to open comparison for selected row
+
+### Links
+
+- FR16 (Browse raw odds in bookmaker-style view)
+- Story 7.7 (Odds Comparison View)
+
+------------------------------------------------------------------------
+
+## **Story 8.3 -- Surebet Calculator Core**
+
+**As a User**\
+I want a surebet calculator that tells me exactly how much to bet on each side\
+So that I can lock in guaranteed profit regardless of the outcome.
+
+### Acceptance Criteria
+
+- Calculator is integrated directly into the **main Arbitrage/Surebet feed tab**
+- Accessible via:
+  - "Calculate Stakes" button on each surebet opportunity row
+  - Keyboard shortcut (e.g., 'C') when a surebet row is selected
+  - Context menu on right-click of any opportunity
+- Calculator appears as an **inline panel or modal** within the surebet feed:
+  - When activated, pre-populates with the selected opportunity's data
+  - Bookmakers and odds are read-only (from the opportunity)
+  - User enters stake amount for one side, other side auto-calculates
+- Input fields:
+  - Outcome A: Bookmaker (read-only), Odds (read-only), Stake amount (editable or auto-calculated)
+  - Outcome B: Bookmaker (read-only), Odds (read-only), Stake amount (editable or auto-calculated)
+  - Optional: Total bankroll to risk (auto-distributes optimally)
+- Output displays:
+  - Recommended stake for each outcome
+  - Total investment (sum of both stakes)
+  - Guaranteed profit amount
+  - ROI percentage
+  - Profit breakdown per outcome (should be equal for pure arbitrage)
+- Supports both "total stake" and "target profit" modes:
+  - "I want to invest $100 total" → calculates optimal split
+  - "I want to make $10 profit" → calculates required stakes
+- Visual warning if the selected opportunity is stale (>5 min old) or no longer valid
+- History of recent calculations (last 20, persisted), accessible from the calculator panel
+
+### Technical Notes
+
+- Core formula for optimal stake distribution:
+  - `stakeA = totalStake * (1/oddsA) / (1/oddsA + 1/oddsB)`
+  - `stakeB = totalStake * (1/oddsB) / (1/oddsA + 1/oddsB)`
+- Create `SurebetCalculator` component as a reusable panel/modal
+- Store calculation history in `appSettingsStore`
+- Add "copy bet slip" feature formatted for common bookmaker interfaces
+- Integrate with existing opportunity selection state in the feed
+
+### Links
+
+- FR17 (Surebet stake calculation)
+- Epic 3 (Dashboard - Signal Preview Pane)
+- Story 4.1 (Signal Preview Pane)
+
+------------------------------------------------------------------------
+
+## **Story 8.4 -- Currency Exchange Rate Service**
+
+**As a User**\
+I want to see exchange rates for USD, AUD, and EUR\
+So that I can calculate stakes and profits in my preferred currency.
+Different bookmakers use different currencies.
+When placing bets, I need to calculate the correct stake amounts in different currencies.
+
+### Acceptance Criteria
+
+- Settings panel includes new "Currency" section with:
+  - Base currency selector (USD, AUD, EUR - default: USD)
+  - "Fetch Rates" button for manual rate update
+  - Display of last fetch timestamp and next scheduled fetch
+  - Visual indicator showing rate age (green: <24h, yellow: 24-48h, red: >48h)
+- Exchange rates fetched from **Frankfurter API** (api.frankfurter.app):
+  - Endpoint: `https://api.frankfurter.app/latest?from=USD&to=AUD,EUR`
+  - Free, no API key required
+  - Updated once per day manually (no auto-poll to respect rate limits)
+- Supported currencies:
+  - USD (US Dollar) - base/reference
+  - AUD (Australian Dollar)
+  - EUR (Euro)
+- Rates are persisted locally in settings store with timestamp
+- Rate display in settings shows:
+  - 1 USD = X AUD
+  - 1 USD = X EUR
+  - Inverse rates (1 AUD = X USD, etc.)
+- Offline handling: Use last fetched rates with clear "stale data" warning
+- Error handling: User-friendly message if API unreachable
+- AUD is the main currency
+
+### Technical Notes
+
+- Create `currencyService.ts` in main process for fetching rates
+- Add TRPC endpoints: `currency.fetchRates()`, `currency.getRates()`, `currency.getLastFetchTime()`
+- Store structure: `{ rates: { USD: 1, AUD: x, EUR: y }, lastFetched: ISO8601, baseCurrency: 'USD' }`
+- Add rate to IPC schema for access in renderer
+- Consider caching multiple base currencies if user switches frequently
+
+### Links
+
+- FR18 (Multi-currency support with exchange rates)
+- Frankfurt API: https://api.frankfurter.app/
+
+------------------------------------------------------------------------
+
+## **Story 8.5 -- Multi-Currency Surebet Calculator (Integrated)**
+
+**As a User**\
+I want the surebet calculator (in the main feed) to handle different currencies across bookmakers\
+So that I can calculate stakes accurately when bookmakers use different account currencies.
+
+### Acceptance Criteria
+
+- Calculator integrated in the **main Arbitrage/Surebet feed** supports multi-currency calculations
+- Each stake input in the calculator has a **currency selector** (USD/AUD/EUR)
+- Calculator automatically converts all stakes to a **base currency** for profit calculation
+- Base currency is configurable in settings (default: USD)
+- Display shows:
+  - Stake amounts in their original currency (as entered)
+  - Converted values in base currency (for comparison)
+  - Total investment in base currency
+  - Guaranteed profit in base currency
+  - Optional: profit converted to user's preferred display currency
+- Real-time conversion using latest fetched exchange rates
+- Visual indicator when exchange rates are stale (>24h old)
+- "Refresh Rates" button in calculator panel (calls manual fetch)
+- Example workflow:
+  - User clicks "Calculate Stakes" on a surebet in the main feed
+  - Calculator opens with opportunity details pre-filled
+  - User sets Bookmaker A currency to AUD, enters stake
+  - Calculator auto-calculates Bookmaker B stake in EUR (or user selects EUR manually)
+  - Display shows total investment and profit in USD (base currency)
+- History shows original currencies used per calculation
+
+### Technical Notes
+
+- Extend `SurebetCalculator` component from Story 8.3
+- Create `useCurrencyConversion()` hook for rate lookups
+- Conversion formula: `amountInBase = amountInForeign / rateToBase`
+- Consider bid/ask spread if implementing in future (for now use mid-market rates)
+- Add currency symbols and formatting per locale
+- Calculator panel in main feed needs to handle currency state per opportunity
+
+### Links
+
+- FR17 (Surebet stake calculation)
+- FR18 (Multi-currency support with exchange rates)
+- Story 8.3 (Surebet Calculator Core)
+- Story 8.4 (Currency Exchange Rate Service)
+
+------------------------------------------------------------------------
+
+# **New Functional Requirements**
+
+  ID     Description
+  ------ ---------------------------------------------------------
+  FR16   Browse raw odds in bookmaker-style grid view
+  FR17   Calculate surebet stakes for optimal profit distribution
+  FR18   Multi-currency support with exchange rate conversion
+  FR19   Batch API operations for 10x efficiency improvement
+  FR20   Direct bookmaker links for one-click bet placement
+
+------------------------------------------------------------------------
+
 # **FR Coverage Matrix**
 
   Requirement   Story
@@ -1059,17 +1490,22 @@ So that I can place bets at the best available price even when no arbitrage exis
   FR2           1.2, 1.3, 1.4
   FR3           3.4, 5.3, 6.3, 7.3
   FR4           3.4, 5.3
-  FR5           2.4, 2.6, 5.2, 5.4, 7.2
-  FR6           2.5, 2.6, 5.2, 5.3, 5.4, 6.1, 7.2, 7.5
+  FR5           2.4, 2.6, 5.2, 5.4, 7.2, 7.8
+  FR6           2.5, 2.6, 5.2, 5.3, 5.4, 6.1, 7.2, 7.5, 7.8
   FR7           2.1, 2.4, 2.5, 2.6, 5.2, 5.3, 5.4, 6.1, 7.3, 7.4
-  FR8           2.2, 2.3, 5.2, 7.2, 7.3, 7.6
+  FR8           2.2, 2.3, 5.2, 7.2, 7.3, 7.6, 7.8
   FR9           3.2, 5.2, 5.4, 7.5, 7.7
   FR10          3.4, 5.3, 5.4, 6.2, 7.5
   FR11          3.4, 5.3, 5.4, 6.1, 6.2, 7.4, 7.5
   FR12          3.2, 5.3
-  FR13          3.3, 3.5
-  FR14          4.3, 7.7
-  FR15          7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7
+  FR13          3.3, 3.5, 7.8
+  FR14          4.3, 7.7, 7.8, 8.2
+  FR15          7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8
+  FR16          8.1, 8.2
+  FR17          8.3, 8.5
+  FR18          8.4, 8.5
+  FR19          7.8
+  FR20          7.8
 
 ------------------------------------------------------------------------
 
@@ -1084,51 +1520,145 @@ This epic breakdown ensures:
 - **Epic 5** – expanded provider coverage and advanced market support for richer arbitrage opportunities
 - **Epic 6** – enhanced filtering UX, granular bookmaker selection, and full-width desktop optimization
 - **Epic 7** – **Continuous Deep Scan** as the primary arbitrage discovery mechanism, automatically scanning all events and markets to maximize opportunity detection
+- **Epic 8** – **Odds Browser & Surebet Tools** - Surebet calculator integrated into the main feed for immediate stake calculation; separate view-only Odds Browser for systematic odds exploration; multi-currency support via Frankfurt API
 
 ## Epic 7 Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Continuous Deep Scan Flow                     │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Regular Poll (/arbitrage-bets)                                 │
-│       │                                                          │
-│       ▼                                                          │
-│  ┌─────────────┐    ┌──────────────────┐    ┌────────────────┐  │
-│  │ Fast Feed   │───▶│ Event Discovery  │───▶│ Batch Scanner  │  │
-│  │ (Moneyline) │    │ (/events)        │    │ (/odds)        │  │
-│  └─────────────┘    └──────────────────┘    └────────────────┘  │
-│                              │                      │            │
-│                              ▼                      ▼            │
-│                     ┌──────────────┐      ┌─────────────────┐   │
-│                     │ Event Cache  │      │ Market          │   │
-│                     │ (TTL-based)  │      │ Normalization   │   │
-│                     └──────────────┘      └─────────────────┘   │
-│                                                    │            │
-│                                                    ▼            │
-│                                          ┌─────────────────┐   │
-│                                          │ Arbitrage       │   │
-│                                          │ Detection       │   │
-│                                          │ (All Markets)   │   │
-│                                          └─────────────────┘   │
-│                                                    │            │
-│                                                    ▼            │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │              Merged Feed (Deduplicated)                  │   │
-│  │   • Pre-calculated arbs (fast)                          │   │
-│  │   • Deep Scan arbs (comprehensive)                      │   │
-│  │   • Tagged by source for filtering                      │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    Continuous Deep Scan Flow (Story 7.8 Optimized)         │
+├───────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  Regular Poll (/arbitrage-bets)                                           │
+│       │                                                                    │
+│       ▼                                                                    │
+│  ┌─────────────┐    ┌──────────────────────┐    ┌──────────────────────┐  │
+│  │ Fast Feed   │───▶│ Event Discovery      │───▶│ BATCH Scanner        │  │
+│  │ (Moneyline) │    │ (/events + filters)  │    │ (/odds/multi)        │  │
+│  └─────────────┘    │ • Time-range (from/to)│    │ • 10 events/request │  │
+│                     │ • /events/live option │    │ • 90% fewer calls   │  │
+│                     └──────────────────────┘    └──────────────────────┘  │
+│                              │                           │                 │
+│                              ▼                           ▼                 │
+│                     ┌──────────────┐      ┌─────────────────────────────┐ │
+│                     │ Event Cache  │      │ Enhanced Normalization      │ │
+│                     │ (TTL-based)  │      │ • Market timestamps         │ │
+│                     └──────────────┘      │ • Bookmaker URLs            │ │
+│                              │            │ • Odds movements            │ │
+│                              │            └─────────────────────────────┘ │
+│                              │                           │                 │
+│                              ▼                           ▼                 │
+│                     ┌──────────────────┐      ┌─────────────────┐        │
+│                     │ Incremental Mode │      │ Arbitrage       │        │
+│                     │ (/odds/updated)  │      │ Detection       │        │
+│                     │ • Only changes   │      │ (All Markets)   │        │
+│                     └──────────────────┘      └─────────────────┘        │
+│                                                        │                  │
+│                                                        ▼                  │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │              Merged Feed (Deduplicated + Enriched)                   │ │
+│  │   • Pre-calculated arbs (fast)                                      │ │
+│  │   • Deep Scan arbs (comprehensive)                                  │ │
+│  │   • Tagged by source for filtering                                  │ │
+│  │   • Direct bookmaker links for quick bet placement                  │ │
+│  │   • True market freshness (from API timestamps)                     │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+│                                                                            │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Key Design Decisions:**
-- Deep Scan runs continuously by default (5,000 req/hour budget allows ~80-100 events/hour)
+- **Story 7.8 Optimization**: Batch API calls via `/odds/multi` (10 events per request = 90% reduction)
+- Deep Scan runs continuously by default (5,000 req/hour budget now allows ~800-1,000 events/hour)
+- Time-range filtering focuses on imminent events (configurable scan horizon)
+- Incremental updates via `/odds/updated` reduce redundant data transfer
 - No ROI thresholds - all positive arbitrage opportunities are surfaced
 - Event caching prevents redundant API calls (configurable TTL)
 - Results merge seamlessly with fast feed, deduplicated by event/market/bookmaker key
+- **Direct bookmaker URLs** enable one-click bet placement
+- **True market freshness** from API timestamps (not just scan time)
 - Manual Deep Scan remains available for targeted single-event investigation
 
-A complete, production-grade arbitrage analysis workflow optimized for maximum opportunity discovery.
+A complete, production-grade arbitrage analysis workflow optimized for maximum opportunity detection with 10x improved API efficiency.
+
+------------------------------------------------------------------------
+
+## Epic 8 Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Epic 8: Odds Browser & Surebet Tools                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                     MAIN ARBITRAGE FEED TAB                      │   │
+│  │  ┌──────────────────────────────────────────────────────────┐  │   │
+│  │  │  Surebet Opportunities Grid                              │  │   │
+│  │  │  • ROI | Event | Market | Bookmakers | Time             │  │   │
+│  │  │                                                          │  │   │
+│  │  │  [Row selected] ──► [Calculate Stakes] button           │  │   │
+│  │  │       │                                                  │  │   │
+│  │  │       ▼                                                  │  │   │
+│  │  │  ┌────────────────────────────────────────────────────┐ │  │   │
+│  │  │  │     Multi-Currency Surebet Calculator (Inline)     │ │  │   │
+│  │  │  │  ┌─────────────────┐    ┌─────────────────┐       │ │  │   │
+│  │  │  │  │  Outcome A      │    │  Outcome B      │       │ │  │   │
+│  │  │  │  │  • Bookmaker    │    │  • Bookmaker    │       │ │  │   │
+│  │  │  │  │  • Odds: 2.10   │    │  • Odds: 2.05   │       │ │  │   │
+│  │  │  │  │  • Stake: [100] │    │  • Stake: calc  │       │ │  │   │
+│  │  │  │  │  • Curr:[AUD▼]  │    │  • Curr:[EUR▼]  │       │ │  │   │
+│  │  │  │  └─────────────────┘    └─────────────────┘       │ │  │   │
+│  │  │  │  Results: Total $142.50 | Profit $7.50 (5.26%)   │ │  │   │
+│  │  │  └────────────────────────────────────────────────────┘ │  │   │
+│  │  └──────────────────────────────────────────────────────────┘  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                     ODDS BROWSER TAB (View Only)                 │   │
+│  │  ┌──────────────────────────────────────────────────────────┐  │   │
+│  │  │  Filters: Sport | League | Event | Market | Bookmaker    │  │   │
+│  │  └──────────────────────────────────────────────────────────┘  │   │
+│  │  ┌──────────────────────────────────────────────────────────┐  │   │
+│  │  │  Hierarchical Grid (View Only)                           │  │   │
+│  │  │  • Sport ▼                                               │  │   │
+│  │  │    • League ▼                                            │  │   │
+│  │  │      • Event (Team A vs Team B)                          │  │   │
+│  │  │        • Market | Bookmaker | Odds | Updated             │  │   │
+│  │  └──────────────────────────────────────────────────────────┘  │   │
+│  │                              │                                   │   │
+│  │                              ▼ (Select Odd)                     │   │
+│  │  ┌──────────────────────────────────────────────────────────┐  │   │
+│  │  │              Odds Comparison Panel (View Only)           │  │   │
+│  │  │  • All bookmakers sorted by odds                       │  │   │
+│  │  │  • Best price highlighted                              │  │   │
+│  │  │  • Copy odds info to clipboard                         │  │   │
+│  │  └──────────────────────────────────────────────────────────┘  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │              Currency Exchange Rate Service                      │   │
+│  │  ┌─────────────────┐    ┌─────────────────┐                    │   │
+│  │  │  Frankfurter    │───▶│  Cached Rates   │                    │   │
+│  │  │  API (Daily)    │    │  • USD: 1.0     │                    │   │
+│  │  │  Manual Fetch   │    │  • AUD: 1.52    │                    │   │
+│  │  └─────────────────┘    │  • EUR: 0.85    │                    │   │
+│  │                         │  Last: 2h ago   │                    │   │
+│  │                         └─────────────────┘                    │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Design Decisions:**
+- **Surebet Calculator is integrated into the main Arbitrage feed** - appears when user clicks "Calculate Stakes" on any opportunity
+- **Odds Browser is view-only** - for systematic odds exploration without betting functionality
+- Odds Browser reuses existing Deep Scan cached data (no additional API costs)
+- Bookmaker-style hierarchical view enables systematic odds exploration
+- Odds Comparison panel integrates directly with Story 7.7 implementation
+- Surebet Calculator supports both "total stake" and "target profit" calculation modes
+- Multi-currency support handles bookmakers with different account currencies
+- Frankfurt API chosen for free, reliable exchange rates without API keys
+- Manual rate fetching respects API rate limits (once per day sufficient for betting)
+- All calculations happen client-side for instant feedback
+
+A professional-grade toolkit with calculator integrated in the main surebet workflow, plus a dedicated odds exploration view.

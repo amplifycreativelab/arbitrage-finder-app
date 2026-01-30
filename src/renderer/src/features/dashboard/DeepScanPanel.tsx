@@ -82,10 +82,30 @@ export function DeepScanPanel(): React.JSX.Element {
   const [intervalInput, setIntervalInput] = React.useState(() => String(intervalMinutes))
   const [concurrentRequestsInput, setConcurrentRequestsInput] = React.useState(() => String(concurrentRequests))
   const [isClearingBookmakers, setIsClearingBookmakers] = React.useState(false)
+  const [selectedBookmakers, setSelectedBookmakers] = React.useState<string[]>([])
+  const [isLoadingBookmakers, setIsLoadingBookmakers] = React.useState(false)
+  const [bookmakersExpanded, setBookmakersExpanded] = React.useState(false)
+
+  // Fetch selected bookmakers on mount and after clearing
+  const fetchSelectedBookmakers = React.useCallback(async () => {
+    const oddsApiIo = (window as unknown as { api?: { oddsApiIo?: (typeof window.api)['oddsApiIo'] } }).api?.oddsApiIo
+    if (!oddsApiIo) return
+
+    setIsLoadingBookmakers(true)
+    try {
+      const bookmakers = await oddsApiIo.getSelectedBookmakers()
+      setSelectedBookmakers(bookmakers ?? [])
+    } catch {
+      // Silently fail - don't block the UI
+    } finally {
+      setIsLoadingBookmakers(false)
+    }
+  }, [])
 
   React.useEffect(() => {
     void refreshStatus()
-  }, [refreshStatus])
+    void fetchSelectedBookmakers()
+  }, [refreshStatus, fetchSelectedBookmakers])
 
   React.useEffect(() => {
     if (continuousStatus.enabled !== continuousEnabled) {
@@ -310,6 +330,7 @@ export function DeepScanPanel(): React.JSX.Element {
     setIsClearingBookmakers(true)
     try {
       await oddsApiIo.clearSelectedBookmakers()
+      setSelectedBookmakers([])
       void refreshStatus()
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Failed to clear selected bookmakers.')
@@ -342,161 +363,161 @@ export function DeepScanPanel(): React.JSX.Element {
           <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ot-accent">
             Deep Scan
           </span>
-              <span
-                className={`rounded-full border px-2 py-[2px] text-[9px] font-semibold uppercase tracking-[0.12em] ${statusPillClass(
-                  progress.status
-                )}`}
-              >
-                {progress.status}
-              </span>
-              {isContinuousMode && (
-                <span className="rounded-full border border-sky-400/60 bg-sky-400/10 px-2 py-[2px] text-[9px] font-semibold uppercase tracking-[0.12em] text-sky-200">
-                  Continuous
-                </span>
-              )}
-            </div>
-            <DeepScanButton />
-          </div>
+          <span
+            className={`rounded-full border px-2 py-[2px] text-[9px] font-semibold uppercase tracking-[0.12em] ${statusPillClass(
+              progress.status
+            )}`}
+          >
+            {progress.status}
+          </span>
+          {isContinuousMode && (
+            <span className="rounded-full border border-sky-400/60 bg-sky-400/10 px-2 py-[2px] text-[9px] font-semibold uppercase tracking-[0.12em] text-sky-200">
+              Continuous
+            </span>
+          )}
+        </div>
+        <DeepScanButton />
+      </div>
 
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div>
-                <div className="text-[10px] font-semibold text-ot-foreground">Continuous Deep Scan</div>
-                <div className="text-[9px] text-ot-muted">
-                  Automatically scan after each poll
-                </div>
-              </div>
-              <label className="inline-flex cursor-pointer items-center gap-2 text-[9px] uppercase tracking-[0.12em] text-ot-muted">
-                <input
-                  type="checkbox"
-                  role="switch"
-                  aria-checked={continuousEnabled}
-                  checked={continuousEnabled}
-                  onChange={(event) => handleContinuousToggle(event.target.checked)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      handleContinuousToggle(!continuousEnabled)
-                    }
-                  }}
-                  className="h-4 w-4 cursor-pointer rounded border border-ot-border/80 bg-ot-surface accent-ot-accent"
-                />
-                {continuousEnabled ? 'On' : 'Off'}
-              </label>
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div>
-                <div className="text-[10px] font-semibold text-ot-foreground">Scan Scope</div>
-                <div className="text-[9px] text-ot-muted">
-                  Which events to scan
-                </div>
-              </div>
-              <select
-                value={scanScope}
-                onChange={(event) => void handleScanScopeChange(event.target.value as 'all-sports' | 'selected-sports' | 'selected-leagues')}
-                className="h-7 rounded border border-ot-border bg-ot-surface px-2 text-[11px] text-ot-foreground"
-                aria-label="Scan scope selection"
-              >
-                <option value="all-sports">All Sports</option>
-                <option value="selected-sports">Selected Sports</option>
-                <option value="selected-leagues">Selected Leagues</option>
-              </select>
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div>
+            <div className="text-[10px] font-semibold text-ot-foreground">Continuous Deep Scan</div>
+            <div className="text-[9px] text-ot-muted">
+              Automatically scan after each poll
             </div>
           </div>
-
-          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
-            <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div>
-                <div className="text-[10px] font-semibold text-ot-foreground">Scan Interval</div>
-                <div className="text-[9px] text-ot-muted">Minutes</div>
-              </div>
-              <input
-                type="number"
-                min={1}
-                max={30}
-                value={intervalInput}
-                onChange={(event) => setIntervalInput(event.target.value)}
-                onBlur={commitIntervalInput}
-                onKeyDown={(event) => handleNumericInputKeyDown(event, commitIntervalInput)}
-                className="h-7 w-14 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
-                aria-label="Scan interval in minutes"
-              />
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div>
-                <div className="text-[10px] font-semibold text-ot-foreground">Max Events</div>
-                <div className="text-[9px] text-ot-muted">Per cycle</div>
-              </div>
-              <input
-                type="number"
-                min={1}
-                max={500}
-                value={maxEventsInput}
-                onChange={(event) => setMaxEventsInput(event.target.value)}
-                onBlur={commitMaxEventsInput}
-                onKeyDown={(event) => handleNumericInputKeyDown(event, commitMaxEventsInput)}
-                className="h-7 w-14 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
-                aria-label="Max events per continuous scan cycle"
-              />
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div>
-                <div className="text-[10px] font-semibold text-ot-foreground">Concurrency</div>
-                <div className="text-[9px] text-ot-muted">Parallel</div>
-              </div>
-              <input
-                type="number"
-                min={1}
-                max={10}
-                value={concurrentRequestsInput}
-                onChange={(event) => setConcurrentRequestsInput(event.target.value)}
-                onBlur={commitConcurrentRequestsInput}
-                onKeyDown={(event) => handleNumericInputKeyDown(event, commitConcurrentRequestsInput)}
-                className="h-7 w-14 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
-                aria-label="Concurrent requests for scanning"
-              />
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div>
-                <div className="text-[10px] font-semibold text-ot-foreground">Cache TTL</div>
-                <div className="text-[9px] text-ot-muted">Minutes</div>
-              </div>
-              <input
-                type="number"
-                min={1}
-                max={60}
-                value={cacheTtlInput}
-                onChange={(event) => setCacheTtlInput(event.target.value)}
-                onBlur={commitCacheTtlInput}
-                onKeyDown={(event) => handleNumericInputKeyDown(event, commitCacheTtlInput)}
-                className="h-7 w-14 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
-                aria-label="Cache TTL in minutes"
-              />
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div>
-                <div className="text-[10px] font-semibold text-ot-foreground">Batch Size</div>
-                <div className="text-[9px] text-ot-muted">Events/batch</div>
-              </div>
-              <input
-                type="number"
-                min={5}
-                max={50}
-                value={batchSizeInput}
-                onChange={(event) => setBatchSizeInput(event.target.value)}
-                onBlur={commitBatchSizeInput}
-                onKeyDown={(event) => handleNumericInputKeyDown(event, commitBatchSizeInput)}
-                className="h-7 w-14 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
-                aria-label="Batch size for continuous scan"
-              />
+          <label className="inline-flex cursor-pointer items-center gap-2 text-[9px] uppercase tracking-[0.12em] text-ot-muted">
+            <input
+              type="checkbox"
+              role="switch"
+              aria-checked={continuousEnabled}
+              checked={continuousEnabled}
+              onChange={(event) => handleContinuousToggle(event.target.checked)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  handleContinuousToggle(!continuousEnabled)
+                }
+              }}
+              className="h-4 w-4 cursor-pointer rounded border border-ot-border/80 bg-ot-surface accent-ot-accent"
+            />
+            {continuousEnabled ? 'On' : 'Off'}
+          </label>
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div>
+            <div className="text-[10px] font-semibold text-ot-foreground">Scan Scope</div>
+            <div className="text-[9px] text-ot-muted">
+              Which events to scan
             </div>
           </div>
+          <select
+            value={scanScope}
+            onChange={(event) => void handleScanScopeChange(event.target.value as 'all-sports' | 'selected-sports' | 'selected-leagues')}
+            className="h-7 rounded border border-ot-border bg-ot-surface px-2 text-[11px] text-ot-foreground"
+            aria-label="Scan scope selection"
+          >
+            <option value="all-sports">All Sports</option>
+            <option value="selected-sports">Selected Sports</option>
+            <option value="selected-leagues">Selected Leagues</option>
+          </select>
+        </div>
+      </div>
 
-          <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-ot-muted sm:grid-cols-4">
-            <div className="rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div className="text-[9px] uppercase tracking-[0.12em]">Events</div>
-              <div className="text-[11px] font-semibold text-ot-foreground">
-                {progress.eventsScanned}/{eventsTotalSafe}
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div>
+            <div className="text-[10px] font-semibold text-ot-foreground">Scan Interval</div>
+            <div className="text-[9px] text-ot-muted">Minutes</div>
+          </div>
+          <input
+            type="number"
+            min={1}
+            max={30}
+            value={intervalInput}
+            onChange={(event) => setIntervalInput(event.target.value)}
+            onBlur={commitIntervalInput}
+            onKeyDown={(event) => handleNumericInputKeyDown(event, commitIntervalInput)}
+            className="h-7 w-14 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
+            aria-label="Scan interval in minutes"
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div>
+            <div className="text-[10px] font-semibold text-ot-foreground">Max Events</div>
+            <div className="text-[9px] text-ot-muted">Per cycle</div>
+          </div>
+          <input
+            type="number"
+            min={1}
+            max={500}
+            value={maxEventsInput}
+            onChange={(event) => setMaxEventsInput(event.target.value)}
+            onBlur={commitMaxEventsInput}
+            onKeyDown={(event) => handleNumericInputKeyDown(event, commitMaxEventsInput)}
+            className="h-7 w-14 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
+            aria-label="Max events per continuous scan cycle"
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div>
+            <div className="text-[10px] font-semibold text-ot-foreground">Concurrency</div>
+            <div className="text-[9px] text-ot-muted">Parallel</div>
+          </div>
+          <input
+            type="number"
+            min={1}
+            max={10}
+            value={concurrentRequestsInput}
+            onChange={(event) => setConcurrentRequestsInput(event.target.value)}
+            onBlur={commitConcurrentRequestsInput}
+            onKeyDown={(event) => handleNumericInputKeyDown(event, commitConcurrentRequestsInput)}
+            className="h-7 w-14 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
+            aria-label="Concurrent requests for scanning"
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div>
+            <div className="text-[10px] font-semibold text-ot-foreground">Cache TTL</div>
+            <div className="text-[9px] text-ot-muted">Minutes</div>
+          </div>
+          <input
+            type="number"
+            min={1}
+            max={60}
+            value={cacheTtlInput}
+            onChange={(event) => setCacheTtlInput(event.target.value)}
+            onBlur={commitCacheTtlInput}
+            onKeyDown={(event) => handleNumericInputKeyDown(event, commitCacheTtlInput)}
+            className="h-7 w-14 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
+            aria-label="Cache TTL in minutes"
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div>
+            <div className="text-[10px] font-semibold text-ot-foreground">Batch Size</div>
+            <div className="text-[9px] text-ot-muted">Events/batch</div>
+          </div>
+          <input
+            type="number"
+            min={5}
+            max={50}
+            value={batchSizeInput}
+            onChange={(event) => setBatchSizeInput(event.target.value)}
+            onBlur={commitBatchSizeInput}
+            onKeyDown={(event) => handleNumericInputKeyDown(event, commitBatchSizeInput)}
+            className="h-7 w-14 rounded border border-ot-border bg-ot-surface px-2 text-right text-[11px] text-ot-foreground"
+            aria-label="Batch size for continuous scan"
+          />
+        </div>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-ot-muted sm:grid-cols-4">
+        <div className="rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div className="text-[9px] uppercase tracking-[0.12em]">Events</div>
+          <div className="text-[11px] font-semibold text-ot-foreground">
+            {progress.eventsScanned}/{eventsTotalSafe}
           </div>
         </div>
         <div className="rounded border border-ot-border/60 bg-ot-border/10 p-2">
@@ -510,155 +531,195 @@ export function DeepScanPanel(): React.JSX.Element {
           </div>
         </div>
         <div className="rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div className="text-[9px] uppercase tracking-[0.12em]">Elapsed</div>
-              <div className="text-[11px] font-semibold text-ot-foreground">{formatElapsed(elapsedMs)}</div>
+          <div className="text-[9px] uppercase tracking-[0.12em]">Elapsed</div>
+          <div className="text-[11px] font-semibold text-ot-foreground">{formatElapsed(elapsedMs)}</div>
+        </div>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-ot-muted sm:grid-cols-5">
+        <div className="rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div className="text-[9px] uppercase tracking-[0.12em]">Last scan</div>
+          <div className="text-[11px] font-semibold text-ot-foreground">
+            {formatMinutesAgo(continuousStatus.lastContinuousScanAt)}
+          </div>
+        </div>
+        <div className="rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div className="text-[9px] uppercase tracking-[0.12em]">Today events</div>
+          <div className="text-[11px] font-semibold text-ot-foreground">
+            {continuousStatus.eventsScannedToday}
+          </div>
+        </div>
+        <div className="rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div className="text-[9px] uppercase tracking-[0.12em]">Today arbs</div>
+          <div className="text-[11px] font-semibold text-ot-foreground">
+            {continuousStatus.opportunitiesFoundToday}
+          </div>
+        </div>
+        <div className="rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div className="text-[9px] uppercase tracking-[0.12em]">Today requests</div>
+          <div className="text-[11px] font-semibold text-ot-foreground">
+            {continuousStatus.requestsToday}
+          </div>
+        </div>
+        <div className="flex items-center justify-between rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div>
+            <div className="text-[9px] uppercase tracking-[0.12em]">Cache</div>
+            <div className="text-[11px] font-semibold text-ot-foreground">
+              {continuousStatus.cacheEntries} events
             </div>
           </div>
-
-          <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-ot-muted sm:grid-cols-5">
-            <div className="rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div className="text-[9px] uppercase tracking-[0.12em]">Last scan</div>
+          <button
+            type="button"
+            onClick={() => void handleClearCache()}
+            className="rounded border border-ot-border bg-ot-surface px-2 py-1 text-[9px] text-ot-muted hover:border-ot-accent hover:text-ot-accent"
+            title="Clear scan cache"
+          >
+            Clear
+          </button>
+        </div>
+        <div className="col-span-2 rounded border border-ot-border/60 bg-ot-border/10 p-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[9px] uppercase tracking-[0.12em]">Odds-API.io Bookmakers</div>
               <div className="text-[11px] font-semibold text-ot-foreground">
-                {formatMinutesAgo(continuousStatus.lastContinuousScanAt)}
+                {isLoadingBookmakers ? 'Loading...' : selectedBookmakers.length > 0 ? `${selectedBookmakers.length} selected` : 'None selected'}
               </div>
             </div>
-            <div className="rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div className="text-[9px] uppercase tracking-[0.12em]">Today events</div>
-              <div className="text-[11px] font-semibold text-ot-foreground">
-                {continuousStatus.eventsScannedToday}
-              </div>
-            </div>
-            <div className="rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div className="text-[9px] uppercase tracking-[0.12em]">Today arbs</div>
-              <div className="text-[11px] font-semibold text-ot-foreground">
-                {continuousStatus.opportunitiesFoundToday}
-              </div>
-            </div>
-            <div className="rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div className="text-[9px] uppercase tracking-[0.12em]">Today requests</div>
-              <div className="text-[11px] font-semibold text-ot-foreground">
-                {continuousStatus.requestsToday}
-              </div>
-            </div>
-            <div className="flex items-center justify-between rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div>
-                <div className="text-[9px] uppercase tracking-[0.12em]">Cache</div>
-                <div className="text-[11px] font-semibold text-ot-foreground">
-                  {continuousStatus.cacheEntries} events
-                </div>
-              </div>
+            <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => void handleClearCache()}
-                className="rounded border border-ot-border bg-ot-surface px-2 py-1 text-[9px] text-ot-muted hover:border-ot-accent hover:text-ot-accent"
-                title="Clear scan cache"
+                onClick={() => void fetchSelectedBookmakers()}
+                disabled={isLoadingBookmakers}
+                className="rounded border border-ot-border bg-ot-surface px-2 py-1 text-[9px] text-ot-muted hover:border-ot-accent hover:text-ot-accent disabled:opacity-60"
+                title="Refresh selected bookmakers"
               >
-                Clear
+                ↻
               </button>
-            </div>
-            <div className="flex items-center justify-between rounded border border-ot-border/60 bg-ot-border/10 p-2">
-              <div>
-                <div className="text-[9px] uppercase tracking-[0.12em]">Bookmakers</div>
-                <div className="text-[11px] font-semibold text-ot-foreground">Reset selection</div>
-              </div>
+              <button
+                type="button"
+                onClick={() => setBookmakersExpanded(!bookmakersExpanded)}
+                className="rounded border border-ot-border bg-ot-surface px-2 py-1 text-[9px] text-ot-muted hover:border-ot-accent hover:text-ot-accent"
+                title={bookmakersExpanded ? 'Hide bookmakers' : 'Show bookmakers'}
+              >
+                {bookmakersExpanded ? '▲' : '▼'}
+              </button>
               <button
                 type="button"
                 onClick={() => void handleClearSelectedBookmakers()}
-                disabled={isClearingBookmakers}
-                className="rounded border border-ot-border bg-ot-surface px-2 py-1 text-[9px] text-ot-muted hover:border-ot-accent hover:text-ot-accent disabled:opacity-60"
+                disabled={isClearingBookmakers || selectedBookmakers.length === 0}
+                className="rounded border border-ot-border bg-ot-surface px-2 py-1 text-[9px] text-ot-muted hover:border-red-400 hover:text-red-400 disabled:opacity-60"
                 title="Clear Odds-API.io selected bookmakers (12h limit)"
               >
-                {isClearingBookmakers ? 'Clearing…' : 'Reset'}
+                {isClearingBookmakers ? '...' : 'Reset'}
               </button>
             </div>
           </div>
-
-          {/* Story 7.6: Pause/Resume Button */}
-          {continuousEnabled && (
-            <div className="mt-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void handlePauseResume()}
-                disabled={isPausing}
-                className={`rounded border px-3 py-1 text-[10px] font-semibold transition-colors ${
-                  continuousStatus.isPaused
-                    ? 'border-emerald-400/60 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20'
-                    : 'border-amber-400/60 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20'
-                } disabled:opacity-50`}
-              >
-                {isPausing ? '...' : continuousStatus.isPaused ? '▶ Resume' : '⏸ Pause'}
-              </button>
-              {continuousStatus.isPaused && (
-                <span className="text-[10px] text-amber-300">Continuous scan is paused</span>
-              )}
-            </div>
-          )}
-
-          {/* Story 7.6: Quota Status */}
-          {showQuotaWarning && (
-            <div className={`mt-2 rounded border px-2 py-1 text-[10px] ${
-              showQuotaDanger
-                ? 'border-red-400/60 bg-red-400/10 text-red-200'
-                : 'border-amber-400/60 bg-amber-400/10 text-amber-200'
-            }`}>
-              <div className="flex items-center gap-2">
-                <span>⚠️</span>
-                <span>
-                  API Quota: {Math.round(quotaPercent * 100)}% used 
-                  ({continuousStatus.quotaStatus?.hourlyUsed ?? 0}/{continuousStatus.quotaStatus?.hourlyLimit ?? 5000} requests)
-                  {continuousStatus.quotaStatus?.isThrottled && continuousStatus.quotaStatus?.throttleResumeAt && (
-                    <span className="ml-1">
-                      - Resuming {formatMinutesAgo(continuousStatus.quotaStatus.throttleResumeAt).replace(' ago', '')}
+          {bookmakersExpanded && (
+            <div className="mt-2 border-t border-ot-border/40 pt-2">
+              {selectedBookmakers.length === 0 ? (
+                <div className="text-[10px] text-ot-muted">
+                  No bookmakers selected. Go to Provider Settings → Odds-API.io to select bookmakers.
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1">
+                  {selectedBookmakers.map((name) => (
+                    <span
+                      key={name}
+                      className="rounded-full border border-ot-accent/30 bg-ot-accent/10 px-2 py-0.5 text-[9px] font-medium text-ot-accent"
+                    >
+                      {name}
                     </span>
-                  )}
-                </span>
-              </div>
-              <div className="mt-1 h-1.5 w-full rounded-full bg-ot-border">
-                <div
-                  className={`h-1.5 rounded-full transition-all ${
-                    showQuotaDanger ? 'bg-red-400' : 'bg-amber-400'
-                  }`}
-                  style={{ width: `${Math.min(quotaPercent * 100, 100)}%` }}
-                />
-              </div>
-              {continuousStatus.quotaStatus?.isThrottled && (
-                <div className="mt-1 text-[9px] opacity-80">
-                  Scan throttled - will resume when hourly quota resets
+                  ))}
                 </div>
               )}
             </div>
           )}
+        </div>
+      </div>
 
-          {/* Story 7.6: Scan History */}
-          {continuousStatus.history && continuousStatus.history.length > 0 && (
-            <details className="mt-2">
-              <summary className="cursor-pointer text-[10px] text-ot-muted hover:text-ot-foreground">
-                Scan History (last {continuousStatus.history.length} cycles)
-              </summary>
-              <div className="mt-1 space-y-1">
-                {continuousStatus.history.map((entry, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between rounded border border-ot-border/60 bg-ot-border/10 px-2 py-1 text-[9px]"
-                  >
-                    <span className={entry.mode === 'continuous' ? 'text-sky-300' : 'text-ot-foreground'}>
-                      {entry.mode === 'continuous' ? 'Auto' : 'Manual'}
-                    </span>
-                    <span className="text-ot-muted">
-                      {entry.eventsScanned} events, {entry.opportunitiesFound} arbs
-                    </span>
-                    <span className="text-ot-muted">{formatElapsed(entry.durationMs)}</span>
-                  </div>
-                ))}
-              </div>
-            </details>
+      {/* Story 7.6: Pause/Resume Button */}
+      {continuousEnabled && (
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handlePauseResume()}
+            disabled={isPausing}
+            className={`rounded border px-3 py-1 text-[10px] font-semibold transition-colors ${continuousStatus.isPaused
+                ? 'border-emerald-400/60 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20'
+                : 'border-amber-400/60 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20'
+              } disabled:opacity-50`}
+          >
+            {isPausing ? '...' : continuousStatus.isPaused ? '▶ Resume' : '⏸ Pause'}
+          </button>
+          {continuousStatus.isPaused && (
+            <span className="text-[10px] text-amber-300">Continuous scan is paused</span>
           )}
+        </div>
+      )}
 
-          {progress.currentEventName && (
-            <div className="mt-2 rounded border border-ot-border/60 bg-ot-border/10 px-2 py-1 text-[10px] text-ot-foreground">
-              Scanning: <span className="font-semibold">{progress.currentEventName}</span>
+      {/* Story 7.6: Quota Status */}
+      {showQuotaWarning && (
+        <div className={`mt-2 rounded border px-2 py-1 text-[10px] ${showQuotaDanger
+            ? 'border-red-400/60 bg-red-400/10 text-red-200'
+            : 'border-amber-400/60 bg-amber-400/10 text-amber-200'
+          }`}>
+          <div className="flex items-center gap-2">
+            <span>⚠️</span>
+            <span>
+              API Quota: {Math.round(quotaPercent * 100)}% used
+              ({continuousStatus.quotaStatus?.hourlyUsed ?? 0}/{continuousStatus.quotaStatus?.hourlyLimit ?? 5000} requests)
+              {continuousStatus.quotaStatus?.isThrottled && continuousStatus.quotaStatus?.throttleResumeAt && (
+                <span className="ml-1">
+                  - Resuming {formatMinutesAgo(continuousStatus.quotaStatus.throttleResumeAt).replace(' ago', '')}
+                </span>
+              )}
+            </span>
+          </div>
+          <div className="mt-1 h-1.5 w-full rounded-full bg-ot-border">
+            <div
+              className={`h-1.5 rounded-full transition-all ${showQuotaDanger ? 'bg-red-400' : 'bg-amber-400'
+                }`}
+              style={{ width: `${Math.min(quotaPercent * 100, 100)}%` }}
+            />
+          </div>
+          {continuousStatus.quotaStatus?.isThrottled && (
+            <div className="mt-1 text-[9px] opacity-80">
+              Scan throttled - will resume when hourly quota resets
             </div>
           )}
+        </div>
+      )}
+
+      {/* Story 7.6: Scan History */}
+      {continuousStatus.history && continuousStatus.history.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[10px] text-ot-muted hover:text-ot-foreground">
+            Scan History (last {continuousStatus.history.length} cycles)
+          </summary>
+          <div className="mt-1 space-y-1">
+            {continuousStatus.history.map((entry, index) => (
+              <div
+                key={index}
+                className="flex items-center justify-between rounded border border-ot-border/60 bg-ot-border/10 px-2 py-1 text-[9px]"
+              >
+                <span className={entry.mode === 'continuous' ? 'text-sky-300' : 'text-ot-foreground'}>
+                  {entry.mode === 'continuous' ? 'Auto' : 'Manual'}
+                </span>
+                <span className="text-ot-muted">
+                  {entry.eventsScanned} events, {entry.opportunitiesFound} arbs
+                </span>
+                <span className="text-ot-muted">{formatElapsed(entry.durationMs)}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {progress.currentEventName && (
+        <div className="mt-2 rounded border border-ot-border/60 bg-ot-border/10 px-2 py-1 text-[10px] text-ot-foreground">
+          Scanning: <span className="font-semibold">{progress.currentEventName}</span>
+        </div>
+      )}
 
       {progress.errorMessage && progress.status === 'error' && (
         <div className="mt-2 rounded border border-red-400/60 bg-red-400/10 px-2 py-1 text-[10px] text-red-200">

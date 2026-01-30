@@ -223,7 +223,6 @@ const deepScanApi: DeepScanAPI = {
   }
 }
 
-// ... existing imports
 // Custom APIs for renderer
 const api = {
   credentials: credentialsApi,
@@ -233,6 +232,13 @@ const api = {
     async runManualFetch() {
       await trpcClient.pollAndGetFeedSnapshot.mutate()
     }
+  },
+  // Story 7.7: Best Odds Comparison API
+  async deepScanGetBestOdds(input: { eventId: string }) {
+    return trpcClient.deepScanGetBestOdds.query(input)
+  },
+  async copySignalToClipboard(input: { text: string }) {
+    await trpcClient.copySignalToClipboard.mutate(input)
   }
 }
 

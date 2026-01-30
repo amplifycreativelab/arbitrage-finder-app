@@ -96,6 +96,7 @@ function buildOddsPayload(eventId, eventName) {
 
 test.beforeEach(async () => {
   deepScan.__test.resetState();
+  deepScan.__test.setUseBatchOdds(false); // Use single-event mode for legacy tests
   credentials.getApiKeyForAdapter = async () => 'test-api-key';
   deepScan.__test.setBookmakersResolver(async () => ['Book-1', 'Book-2']);
 

@@ -12,15 +12,127 @@
     --ot-border: #E2E8F0;
     --ot-foreground: #0F172A;
     --ot-muted: #475569;
-    --ot-accent: #EA580C;
+    --ot-accent: #F97316;
     --ot-accent-foreground: #FFFFFF;
+
+    /* Additional tokens for enhanced UX */
+    --ot-card: #FAFAFA;
+    --ot-success: #10B981;
+    --ot-warning: #F59E0B;
+    --ot-error: #EF4444;
   }
 
   body {
-    @apply min-h-screen bg-ot-background text-ot-foreground font-mono;
+    @apply min-h-screen bg-ot-background text-ot-foreground font-mono antialiased;
   }
 
   #root {
     @apply min-h-screen min-w-[900px];
+  }
+}
+
+@layer components {
+
+  /* Filter chip animations */
+  .filter-chip {
+    @apply transition-all duration-150 ease-out;
+  }
+
+  .filter-chip:active {
+    @apply scale-95;
+  }
+
+  /* Smooth scrollbar styling */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ot-border) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--ot-border);
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: var(--ot-muted);
+  }
+
+  /* Dropdown select custom arrow */
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 12px;
+    padding-right: 28px;
+    appearance: none;
+  }
+
+  /* Focus ring consistency */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-ot-accent/30 focus:ring-offset-1 focus:ring-offset-ot-background;
+  }
+
+  /* Hover card effect */
+  .hover-card {
+    @apply transition-all duration-150;
+  }
+
+  .hover-card:hover {
+    @apply shadow-sm border-ot-accent/30;
+  }
+
+  /* Gradient text accent */
+  .text-gradient {
+    @apply bg-gradient-to-r from-ot-accent to-orange-400 bg-clip-text text-transparent;
+  }
+
+  /* Pulse animation for active indicators */
+  @keyframes soft-pulse {
+
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  .animate-soft-pulse {
+    animation: soft-pulse 2s ease-in-out infinite;
+  }
+
+  /* Number input spinner removal */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+}
+
+@layer utilities {
+
+  /* Glass effect for overlays */
+  .glass {
+    @apply bg-ot-surface/80 backdrop-blur-sm;
+  }
+
+  /* Subtle shadow for elevated elements */
+  .shadow-subtle {
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04);
   }
 }

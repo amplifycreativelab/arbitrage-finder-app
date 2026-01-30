@@ -55,6 +55,8 @@ test.beforeEach(async () => {
   deepScan.__test.resetState();
   credentials.getApiKeyForAdapter = async () => 'test-api-key';
   deepScan.__test.setBookmakersResolver(async () => ['Book-1', 'Book-2']);
+  // Story 7.8: Disable batch mode for legacy tests that use single-event oddsFetcher
+  deepScan.__test.setUseBatchOdds(false);
 
   poller.__test.resetLimiterState();
   poller.registerAdapters([new OddsApiIoAdapter(), new TheOddsApiAdapter()]);

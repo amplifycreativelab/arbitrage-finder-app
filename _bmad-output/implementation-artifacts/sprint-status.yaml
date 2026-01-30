@@ -1,4 +1,4 @@
-# generated: 2026-01-27
+# generated: 2026-01-30
 # project: Arbitrage_Finder_App
 # project_key:
 # tracking_system: file-system
@@ -25,15 +25,16 @@
 #
 # WORKFLOW NOTES:
 # ===============
-# - Epic transitions to 'in-progress' automatically when first story is created
+# - Epic transitions to 'in-progress' automatically when first story is created (via create-story)
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review workflow
 
-generated: 2026-01-27
+generated: 2026-01-30
 project: Arbitrage_Finder_App
 project_key:
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
+# Refreshed: 2026-01-30 - Added Epic 8 stories, preserved all existing statuses
 
 development_status:
   epic-1: done
@@ -69,7 +70,7 @@ development_status:
   5-2-merged-multi-provider-feed: done
   5-3-additional-soccer-two-way-markets: done
   5-4-cross-provider-arbitrage-aggregator-advanced: done
-  5-5-advanced-soccer-markets-ui-selector: superseded  # Superseded by Epic 6
+  5-5-advanced-soccer-markets-ui-selector: superseded
   epic-5-retrospective: optional
   epic-6: done
   6-1-expanded-two-way-market-types: done
@@ -84,6 +85,13 @@ development_status:
   7-4-comprehensive-market-normalization: done
   7-5-exhaustive-arbitrage-detection-engine: done
   7-6-continuous-deep-scan-settings-status-ui: done
-  7-7-odds-comparison-view: backlog
+  7-7-odds-comparison-view: done
+  7-8-api-efficiency-advanced-features: review
   epic-7-retrospective: optional
-
+  epic-8: in-progress
+  8-1-odds-browser-tab-grid-view: review
+  8-2-odds-selection-comparison-integration: done
+  8-3-surebet-calculator-core: review
+  8-4-currency-exchange-rate-service: backlog
+  8-5-multi-currency-surebet-calculator-integrated: backlog
+  epic-8-retrospective: optional

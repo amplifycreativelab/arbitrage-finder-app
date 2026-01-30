@@ -139,7 +139,6 @@ const deepScanApi = {
         await trpcClient.deepScanSetScope.mutate({ scanScope });
     }
 };
-// ... existing imports
 // Custom APIs for renderer
 const api = {
     credentials: credentialsApi,
@@ -149,6 +148,13 @@ const api = {
         async runManualFetch() {
             await trpcClient.pollAndGetFeedSnapshot.mutate();
         }
+    },
+    // Story 7.7: Best Odds Comparison API
+    async deepScanGetBestOdds(input) {
+        return trpcClient.deepScanGetBestOdds.query(input);
+    },
+    async copySignalToClipboard(input) {
+        await trpcClient.copySignalToClipboard.mutate(input);
     }
 };
 if (process.contextIsolated) {

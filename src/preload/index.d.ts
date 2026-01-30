@@ -87,6 +87,25 @@ declare global {
       oddsApiIo: OddsApiIoAPI
       feed: FeedAPI
       deepScan: DeepScanAPI
+      // Story 7.7: Best Odds Comparison & copy utilities
+      deepScanGetBestOdds: (input: { eventId: string }) => Promise<{
+        bestOdds: Array<{
+          eventId: string
+          marketKey: string
+          marketLabel: string
+          marketGroup: string
+          outcomes: Array<{
+            outcome: string
+            bestBookmaker: string
+            bestOdds: number
+            allBookmakers: Array<{ bookmaker: string; odds: number }>
+          }>
+          hasArbitrage: boolean
+          arbitrageRoi?: number
+        }> | null
+        cachedAt: number | null
+      }>
+      copySignalToClipboard: (input: { text: string }) => Promise<void>
     }
   }
 }

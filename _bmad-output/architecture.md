@@ -223,6 +223,158 @@ interface ArbitrageOpportunity {
 
 ------------------------------------------------------------------------
 
+# External Provider APIs (Odds-API.io)
+
+This section documents the external API contracts that the application depends on.
+**Critical for new developers**: Understanding these API requirements is essential for debugging and extending the app.
+
+## Odds-API.io API Reference
+
+**Base URL**: `https://api.odds-api.io/v3`
+
+**Documentation**: https://docs.odds-api.io/
+
+**Rate Limits**: 5,000 requests/hour (baseline). Monitor via response headers.
+
+### Endpoint: GET /events
+
+Retrieves a list of upcoming and live events for a given sport.
+
+**Required Parameters**:
+| Parameter | Type   | Description                          |
+|-----------|--------|--------------------------------------|
+| `apiKey`  | string | API key for authentication           |
+| `sport`   | string | Sport identifier (e.g., "football")  |
+
+**Optional Parameters**:
+| Parameter       | Type   | Description                                         |
+|-----------------|--------|-----------------------------------------------------|
+| `league`        | string | League identifier (e.g., "england-premier-league")  |
+| `participantId` | int    | Filter by team ID (home or away)                    |
+| `status`        | string | Comma-separated: "pending,live,settled"             |
+| `from`          | string | Start datetime in RFC3339 format                    |
+| `to`            | string | End datetime in RFC3339 format                      |
+| `bookmaker`     | string | Filter events by bookmaker availability             |
+
+**Response**: JSON array of event objects containing `id`, `home`, `away`, `date`, `sport`, `league`, `status`.
+
+**Example**:
+```
+GET /v3/events?apiKey=YOUR_KEY&sport=football
+```
+
+### Endpoint: GET /odds
+
+Retrieves odds for a specific event across multiple bookmakers.
+
+**Required Parameters**:
+| Parameter    | Type   | Description                                      |
+|--------------|--------|--------------------------------------------------|
+| `apiKey`     | string | API key for authentication                       |
+| `eventId`    | string | Event identifier from /events response           |
+| `bookmakers` | string | Comma-separated list of bookmaker names (max 30) |
+
+**⚠️ CRITICAL**: All three parameters are **REQUIRED**. The `bookmakers` parameter is NOT optional.
+Requests without `bookmakers` will fail with HTTP 400.
+
+**Response**: JSON object containing event details and odds per bookmaker per market.
+
+**Example**:
+```
+GET /v3/odds?apiKey=YOUR_KEY&eventId=123456&bookmakers=Bet365,Unibet,Pinnacle
+```
+
+### Endpoint: GET /arbitrage-bets
+
+Retrieves pre-calculated arbitrage opportunities (fast feed, limited markets).
+
+**Required Parameters**:
+| Parameter    | Type   | Description                                      |
+|--------------|--------|--------------------------------------------------|
+| `apiKey`     | string | API key for authentication                       |
+| `bookmakers` | string | Comma-separated list of bookmaker names          |
+
+**Optional Parameters**:
+| Parameter            | Type    | Description                              |
+|----------------------|---------|------------------------------------------|
+| `includeEventDetails`| boolean | Include full event info in response      |
+| `limit`              | int     | Max number of results (default varies)   |
+
+**Example**:
+```
+GET /v3/arbitrage-bets?apiKey=YOUR_KEY&bookmakers=Bet365,Unibet&includeEventDetails=true&limit=500
+```
+
+### Endpoint: GET /bookmakers
+
+Retrieves list of all supported bookmakers. **No authentication required**.
+
+**Example**:
+```
+GET /v3/bookmakers
+```
+
+### Endpoint: GET /bookmakers/selected
+
+Retrieves the user's selected bookmakers (account-level configuration).
+
+**Required Parameters**:
+| Parameter | Type   | Description                |
+|-----------|--------|----------------------------|
+| `apiKey`  | string | API key for authentication |
+
+### Endpoint: PUT /bookmakers/selected/select
+
+Updates the user's selected bookmakers.
+
+**Required Parameters**:
+| Parameter    | Type   | Description                              |
+|--------------|--------|------------------------------------------|
+| `apiKey`     | string | API key for authentication               |
+| `bookmakers` | string | Comma-separated list of bookmaker names  |
+
+### Endpoint: PUT /bookmakers/selected/clear
+
+Clears the user's selected bookmakers. May be rate-limited (e.g., once per 12 hours).
+
+**Required Parameters**:
+| Parameter | Type   | Description                |
+|-----------|--------|----------------------------|
+| `apiKey`  | string | API key for authentication |
+
+### Endpoint: GET /sports
+
+Retrieves list of all available sports. **No authentication required**.
+
+**Example**:
+```
+GET /v3/sports
+```
+
+## Common Integration Pitfalls
+
+1. **Missing `bookmakers` on /odds**: This is the most common bug. The parameter is REQUIRED but often treated as optional.
+
+2. **Missing `sport` on /events**: The sport parameter is REQUIRED. Always pass it.
+
+3. **Empty bookmaker selection**: If the user hasn't selected bookmakers in Settings, all odds/arbitrage requests will fail.
+   - Solution: Validate bookmakers early and show actionable error messages.
+
+4. **Rate limiting (HTTP 429)**: Implement exponential backoff. The app has a central rate limiter.
+
+5. **Bookmaker name case sensitivity**: Bookmaker names may be case-sensitive. Use names exactly as returned by `/bookmakers`.
+
+## Implementation Files
+
+| Purpose                    | File                                          |
+|---------------------------|-----------------------------------------------|
+| Events & Odds fetching    | `src/main/services/deepScan.ts`               |
+| Arbitrage-bets adapter    | `src/main/adapters/odds-api-io.ts`            |
+| Bookmaker management      | `src/main/services/odds-api-io-bookmakers.ts` |
+| Rate limiting             | `src/main/services/poller.ts`                 |
+
+------------------------------------------------------------------------
+
 # Error Handling, Logging, and Observability
 
 ### Error Categories

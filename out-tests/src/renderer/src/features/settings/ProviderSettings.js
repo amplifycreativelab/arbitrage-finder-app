@@ -95,7 +95,7 @@ function ProviderSettings() {
                     return;
                 setProviders((prev) => {
                     const next = { ...prev };
-                    for (const status of allStatus) {
+                    for (const status of allStatus ?? []) {
                         if (next[status.providerId]) {
                             next[status.providerId] = {
                                 ...next[status.providerId],
