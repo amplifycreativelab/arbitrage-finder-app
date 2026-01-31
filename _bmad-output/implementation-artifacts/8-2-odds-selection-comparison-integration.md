@@ -458,3 +458,29 @@ Kimi Code CLI (kimi-code-cli)
 
 *Story created by BMAD Method - comprehensive developer guide*
 *Dependencies: Story 8.1 (complete), Story 7.7 (partial - core functionality)*
+
+### Icon Improvements (2026-01-31)
+
+**OddsComparisonPanel Component - SVG Icon Upgrade:**
+
+All emoji-based icon placeholders have been replaced with proper SVG icons for a professional UI:
+
+| Icon | Before (Emoji) | After (SVG) |
+|------|----------------|-------------|
+| Pin |  | Lucide-style pin icon |
+| Close |  | X icon with diagonal lines |
+| Dock |  | PanelLeft icon with sidebar |
+| Float |  | Maximize2 with corner arrows |
+| Copy |  | Copy icon with layered rectangles |
+| Loading |  | Loader2 spinning arc |
+| Refresh |  | RefreshCw with bidirectional arrows |
+| Trophy | (new) | Trophy icon for empty state |
+
+**Benefits:**
+- Consistent visual language across the application
+- Scalable vector graphics for crisp rendering at any size
+- Proper stroke-based icons match the Orange Terminal theme
+- No font/emoji rendering inconsistencies across platforms
+
+**File Modified:**
+- `src/renderer/src/features/odds-browser/components/OddsComparisonPanel.tsx`

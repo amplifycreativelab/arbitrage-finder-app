@@ -26,6 +26,9 @@ const ODDS_API_IO_ODDS_PATH = '/v3/odds'
 const ODDS_API_IO_ODDS_MULTI_PATH = '/v3/odds/multi'
 const ODDS_API_IO_ODDS_UPDATED_PATH = '/v3/odds/updated'
 const ODDS_API_IO_EVENTS_LIVE_PATH = '/v3/events/live'
+// Story 7.9: Sports and leagues discovery endpoints
+const ODDS_API_IO_SPORTS_PATH = '/v3/sports'
+const ODDS_API_IO_LEAGUES_PATH = '/v3/leagues'
 const DEEP_SCAN_PROVIDER_ID: ProviderId = 'odds-api-io'
 
 // Story 7.8: Batch fetching constants
@@ -336,6 +339,110 @@ const SPORT_SLUG_ALIAS_MAP: Record<string, string> = {
   futbol: 'football',
   'association-football': 'football'
 }
+
+// Story 7.9: League presets for quick configuration
+// These are the league slugs used by odds-api.io with good bookmaker coverage
+export interface LeaguePreset {
+  id: string
+  name: string
+  description: string
+  sport: string
+  leagues: string[]
+}
+
+export const LEAGUE_PRESETS: LeaguePreset[] = [
+  {
+    id: 'top-5-european',
+    name: 'Top 5 European Leagues',
+    description: 'Premier League, La Liga, Serie A, Bundesliga, Ligue 1',
+    sport: 'football',
+    leagues: [
+      'england-premier-league',
+      'spain-la-liga',
+      'italy-serie-a',
+      'germany-bundesliga',
+      'france-ligue-1'
+    ]
+  },
+  {
+    id: 'european-elite',
+    name: 'European Elite',
+    description: 'Top 5 + Champions League, Europa League, Conference League',
+    sport: 'football',
+    leagues: [
+      'england-premier-league',
+      'spain-la-liga',
+      'italy-serie-a',
+      'germany-bundesliga',
+      'france-ligue-1',
+      'europe-champions-league',
+      'europe-europa-league',
+      'europe-conference-league'
+    ]
+  },
+  {
+    id: 'major-european',
+    name: 'Major European',
+    description: 'Top 5 + Portugal, Netherlands, Belgium, Turkey, Scotland',
+    sport: 'football',
+    leagues: [
+      'england-premier-league',
+      'spain-la-liga',
+      'italy-serie-a',
+      'germany-bundesliga',
+      'france-ligue-1',
+      'portugal-primeira-liga',
+      'netherlands-eredivisie',
+      'belgium-first-division-a',
+      'turkey-super-lig',
+      'scotland-premiership'
+    ]
+  },
+  {
+    id: 'english-football',
+    name: 'English Football',
+    description: 'Premier League, Championship, League One, League Two',
+    sport: 'football',
+    leagues: [
+      'england-premier-league',
+      'england-championship',
+      'england-league-one',
+      'england-league-two',
+      'england-fa-cup',
+      'england-efl-cup'
+    ]
+  },
+  {
+    id: 'international',
+    name: 'International',
+    description: 'World Cup, Euro, Nations League, WC Qualifiers',
+    sport: 'football',
+    leagues: [
+      'world-world-cup',
+      'europe-euro',
+      'europe-nations-league',
+      'world-world-cup-qualification',
+      'south-america-copa-america',
+      'africa-africa-cup-of-nations'
+    ]
+  }
+]
+
+// Story 7.9: Discovered leagues cache (populated by API calls)
+export interface DiscoveredLeague {
+  name: string
+  slug: string
+  eventsCount: number
+  sport: string
+}
+
+export interface DiscoveredSport {
+  name: string
+  slug: string
+}
+
+let lastDiscoveredLeagues: DiscoveredLeague[] = []
+let lastDiscoveredSportsDetails: DiscoveredSport[] = []
 
 import type { RawOddsPayload } from '../../../shared/types'
 
@@ -790,6 +897,147 @@ const defaultEventsFetcher: EventsFetcher = async ({ apiKey, signal, correlation
 
 function getEventsFetcher(): EventsFetcher {
   return eventsFetcherOverride ?? defaultEventsFetcher
+}
+
+// Story 7.9: Fetch available sports from odds-api.io
+export async function fetchAvailableSports(args: {
+  apiKey: string
+  signal?: AbortSignal
+  correlationId?: string
+}): Promise<DiscoveredSport[]> {
+  const { apiKey, signal, correlationId = 'fetch-sports' } = args
+  const httpFetch = getHttpFetch()
+  const url = new URL(ODDS_API_IO_SPORTS_PATH, ODDS_API_IO_BASE_URL)
+  url.searchParams.set('apiKey', apiKey)
+
+  const response = await trackedRequest(
+    async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }),
+    correlationId,
+    { mode: 'continuous' }
+  )
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => `Sports request failed with status ${response.status}`)
+    throw createHttpError(response.status, message || `Sports request failed with status ${response.status}`)
+  }
+
+  const data = (await response.json()) as Array<{ name: string; slug: string }>
+  const sports: DiscoveredSport[] = data.map((s) => ({
+    name: s.name,
+    slug: s.slug
+  }))
+
+  // Cache for later use
+  lastDiscoveredSportsDetails = sports
+  lastDiscoveredSports = sports.map((s) => s.slug)
+
+  logInfo('deepScan.sports.fetched', {
+    context: 'service:deepScan',
+    operation: 'fetchAvailableSports',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId,
+    durationMs: null,
+    errorCategory: null,
+    sportsCount: sports.length
+  } satisfies StructuredLogBase)
+
+  return sports
+}
+
+// Story 7.9: Fetch available leagues for a sport from odds-api.io
+export async function fetchAvailableLeagues(args: {
+  apiKey: string
+  sport: string
+  signal?: AbortSignal
+  correlationId?: string
+}): Promise<DiscoveredLeague[]> {
+  const { apiKey, sport, signal, correlationId = 'fetch-leagues' } = args
+  const httpFetch = getHttpFetch()
+  const url = new URL(ODDS_API_IO_LEAGUES_PATH, ODDS_API_IO_BASE_URL)
+  url.searchParams.set('apiKey', apiKey)
+  url.searchParams.set('sport', sport)
+
+  const response = await trackedRequest(
+    async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }),
+    correlationId,
+    { mode: 'continuous' }
+  )
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => `Leagues request failed with status ${response.status}`)
+    throw createHttpError(response.status, message || `Leagues request failed with status ${response.status}`)
+  }
+
+  const data = (await response.json()) as Array<{ name: string; slug: string; eventsCount: number }>
+  const leagues: DiscoveredLeague[] = data.map((l) => ({
+    name: l.name,
+    slug: l.slug,
+    eventsCount: l.eventsCount,
+    sport
+  }))
+
+  // Update cache - merge with existing for other sports
+  const existingOtherSports = lastDiscoveredLeagues.filter((l) => l.sport !== sport)
+  lastDiscoveredLeagues = [...existingOtherSports, ...leagues]
+
+  logInfo('deepScan.leagues.fetched', {
+    context: 'service:deepScan',
+    operation: 'fetchAvailableLeagues',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId,
+    durationMs: null,
+    errorCategory: null,
+    sport,
+    leaguesCount: leagues.length
+  } satisfies StructuredLogBase)
+
+  return leagues
+}
+
+// Story 7.9: Get cached sports (detailed with names)
+export function getAvailableSportsDetails(): DiscoveredSport[] {
+  return [...lastDiscoveredSportsDetails]
+}
+
+// Story 7.9: Get cached leagues
+export function getAvailableLeagues(): DiscoveredLeague[] {
+  return [...lastDiscoveredLeagues]
+}
+
+// Story 7.9: Get league presets
+export function getLeaguePresets(): LeaguePreset[] {
+  return [...LEAGUE_PRESETS]
+}
+
+// Story 7.9: Apply a league preset
+export function applyLeaguePreset(presetId: string): { success: boolean; error?: string } {
+  const preset = LEAGUE_PRESETS.find((p) => p.id === presetId)
+  if (!preset) {
+    return { success: false, error: `Preset '${presetId}' not found` }
+  }
+
+  // Set the scope to selected-leagues
+  scanScope = 'selected-leagues'
+
+  // Set the sports filter to the preset's sport
+  enabledSportsFilter = [preset.sport]
+
+  // Set the leagues filter to the preset's leagues
+  enabledLeaguesFilter = [...preset.leagues]
+
+  logInfo('deepScan.preset.applied', {
+    context: 'service:deepScan',
+    operation: 'applyLeaguePreset',
+    providerId: DEEP_SCAN_PROVIDER_ID,
+    correlationId: undefined,
+    durationMs: null,
+    errorCategory: null,
+    presetId: preset.id,
+    presetName: preset.name,
+    leaguesCount: preset.leagues.length
+  } satisfies StructuredLogBase)
+
+  return { success: true }
 }
 
 function isUpcomingEvent(event: DeepScanEvent, now: number): boolean {

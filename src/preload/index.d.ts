@@ -45,6 +45,38 @@ export interface DeepScanAPI {
   setIntervalMinutes: (minutes: number) => Promise<void>
   setConcurrentRequests: (count: number) => Promise<void>
   setScanScope: (scope: 'all-sports' | 'selected-sports' | 'selected-leagues') => Promise<void>
+  // Story 7.9: Sport/League filter methods
+  getEnabledSportsFilter: () => Promise<string[]>
+  setEnabledSportsFilter: (sports: string[]) => Promise<void>
+  getEnabledLeaguesFilter: () => Promise<string[]>
+  setEnabledLeaguesFilter: (leagues: string[]) => Promise<void>
+  fetchSports: () => Promise<DiscoveredSport[]>
+  getSportsDetails: () => Promise<DiscoveredSport[]>
+  fetchLeagues: (sport: string) => Promise<DiscoveredLeague[]>
+  getLeagues: () => Promise<DiscoveredLeague[]>
+  getLeaguePresets: () => Promise<LeaguePreset[]>
+  applyPreset: (presetId: string) => Promise<{ scanScope: string; enabledSports: string[]; enabledLeagues: string[] }>
+}
+
+// Story 7.9: Sport and League types
+export interface DiscoveredSport {
+  name: string
+  slug: string
+}
+
+export interface DiscoveredLeague {
+  name: string
+  slug: string
+  eventsCount: number
+  sport: string
+}
+
+export interface LeaguePreset {
+  id: string
+  name: string
+  description: string
+  sport: string
+  leagues: string[]
 }
 
 export interface DeepScanContinuousStatus {

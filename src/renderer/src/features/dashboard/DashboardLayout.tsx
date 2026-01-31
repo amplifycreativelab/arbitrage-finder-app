@@ -1,6 +1,7 @@
 import * as React from 'react'
 
 import ProviderSettings from '../settings/ProviderSettings'
+import CurrencySettings from '../settings/components/CurrencySettings'
 import FeedPane from './FeedPane'
 import SignalPreview from './SignalPreview'
 import BestOddsPanel from './BestOddsPanel'
@@ -291,6 +292,10 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
 
               <section className="rounded-md border border-ot-border bg-ot-background p-3">
                 <ProviderSettings />
+              </section>
+
+              <section className="rounded-md border border-ot-border bg-ot-background p-3">
+                <CurrencySettings />
               </section>
             </section>
           </>

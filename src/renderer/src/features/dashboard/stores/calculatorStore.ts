@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
 import type { ArbitrageOpportunity } from '../../../../../../shared/types'
+import type { Currency } from '../../../../../../shared/lib/currency'
 
 export type CalculatorMode = 'totalStake' | 'targetProfit'
 export type CalculatorDisplayMode = 'inline' | 'modal'
@@ -20,6 +21,11 @@ export interface CalculationHistoryEntry {
   totalStake: number
   profit: number
   roi: number
+  // NEW: Multi-currency fields (Story 8.5)
+  currencyA: Currency
+  currencyB: Currency
+  exchangeRateSnapshot: Record<Currency, number>
+  exchangeRateTimestamp: string
 }
 
 interface CalculatorState {
@@ -49,8 +55,12 @@ interface CalculatorState {
   // History (persisted)
   history: CalculationHistoryEntry[]
 
+  // NEW: Multi-currency fields (Story 8.5)
+  currencyA: Currency
+  currencyB: Currency
+
   // Actions
-  openCalculator: (opportunity: ArbitrageOpportunity) => void
+  openCalculator: (opportunity: ArbitrageOpportunity, baseCurrency?: Currency) => void
   closeCalculator: () => void
   setDisplayMode: (mode: CalculatorDisplayMode) => void
   setMode: (mode: CalculatorMode) => void
@@ -58,11 +68,13 @@ interface CalculatorState {
   setTargetProfit: (value: string) => void
   setStakeA: (value: string) => void
   setStakeB: (value: string) => void
+  setCurrencyA: (currency: Currency) => void
+  setCurrencyB: (currency: Currency) => void
   calculateFromTotalStake: () => void
   calculateFromTargetProfit: () => void
   calculateFromStakeA: () => void
   calculateFromStakeB: () => void
-  addToHistory: () => void
+  addToHistory: (exchangeRates?: Record<Currency, number>, ratesTimestamp?: string | null) => void
   clearHistory: () => void
   loadFromHistory: (entry: CalculationHistoryEntry) => void
   removeHistoryEntry: (id: string) => void
@@ -93,7 +105,12 @@ export function calculateStakesFromTargetProfit(
   targetProfit: number,
   oddsA: number,
   oddsB: number
-): { stakeA: number; stakeB: number; totalStake: number } {
+): { stakeA: number; stakeB: number; totalStake: number } | null {
+  // Guard: Check for valid arbitrage first
+  if (!isValidArbitrage(oddsA, oddsB)) {
+    return null
+  }
+
   // For pure arbitrage: stakeA * oddsA - totalStake = targetProfit
   // stakeA * oddsA - (stakeA + stakeB) = targetProfit
   // stakeA * (oddsA - 1) - stakeB = targetProfit
@@ -108,9 +125,20 @@ export function calculateStakesFromTargetProfit(
   // stakeA * [(oddsA - 1) - oddsA / oddsB] = targetProfit
 
   const termA = oddsA - 1 - oddsA / oddsB
+
+  // Guard: Check for division by zero or negative denominator
+  if (termA <= 0) {
+    return null
+  }
+
   const stakeA = targetProfit / termA
   const stakeB = stakeA * (oddsA / oddsB)
   const totalStake = stakeA + stakeB
+
+  // Guard: Ensure positive stakes
+  if (stakeA <= 0 || stakeB <= 0) {
+    return null
+  }
 
   return { stakeA, stakeB, totalStake }
 }
@@ -134,6 +162,26 @@ export function calculateProfit(
 export function calculateRoi(profit: number, totalStake: number): number {
   if (totalStake === 0) return 0
   return profit / totalStake
+}
+
+/**
+ * Checks if the given odds still form a valid arbitrage opportunity.
+ * Valid arbitrage: sum of implied probabilities < 1
+ */
+export function isValidArbitrage(oddsA: number, oddsB: number): boolean {
+  const probA = 1 / oddsA
+  const probB = 1 / oddsB
+  return probA + probB < 1
+}
+
+/**
+ * Calculates the arbitrage margin (how far below 1 the implied probability sum is)
+ * Positive margin = profitable arbitrage
+ */
+export function calculateArbitrageMargin(oddsA: number, oddsB: number): number {
+  const probA = 1 / oddsA
+  const probB = 1 / oddsB
+  return 1 - (probA + probB)
 }
 
 export function isOpportunityStale(opportunity: ArbitrageOpportunity): boolean {
@@ -166,8 +214,11 @@ export const useCalculatorStore = create<CalculatorState>()(
       profit: 0,
       roi: 0,
       history: [],
+      // NEW: Default currencies (Story 8.5)
+      currencyA: 'USD',
+      currencyB: 'USD',
 
-      openCalculator: (opportunity: ArbitrageOpportunity) => {
+      openCalculator: (opportunity: ArbitrageOpportunity, baseCurrency: Currency = 'USD') => {
         set({
           isOpen: true,
           opportunity,
@@ -179,7 +230,10 @@ export const useCalculatorStore = create<CalculatorState>()(
           calculatedStakeB: 0,
           totalInvestment: 0,
           profit: 0,
-          roi: opportunity.roi
+          roi: opportunity.roi,
+          // NEW: Initialize currencies from base currency (Story 8.5)
+          currencyA: baseCurrency,
+          currencyB: baseCurrency
         })
       },
 
@@ -219,6 +273,28 @@ export const useCalculatorStore = create<CalculatorState>()(
       setStakeB: (value: string) => {
         set({ stakeB: value })
         get().calculateFromStakeB()
+      },
+
+      setCurrencyA: (currency: Currency) => {
+        set({ currencyA: currency })
+        // Recalculate when currency changes
+        const { mode } = get()
+        if (mode === 'totalStake') {
+          get().calculateFromTotalStake()
+        } else {
+          get().calculateFromTargetProfit()
+        }
+      },
+
+      setCurrencyB: (currency: Currency) => {
+        set({ currencyB: currency })
+        // Recalculate when currency changes
+        const { mode } = get()
+        if (mode === 'totalStake') {
+          get().calculateFromTotalStake()
+        } else {
+          get().calculateFromTargetProfit()
+        }
       },
 
       calculateFromTotalStake: () => {
@@ -270,11 +346,19 @@ export const useCalculatorStore = create<CalculatorState>()(
         const oddsA = opportunity.legs[0].odds
         const oddsB = opportunity.legs[1].odds
 
-        const { stakeA, stakeB, totalStake } = calculateStakesFromTargetProfit(
-          target,
-          oddsA,
-          oddsB
-        )
+        const result = calculateStakesFromTargetProfit(target, oddsA, oddsB)
+        if (!result) {
+          set({
+            calculatedStakeA: 0,
+            calculatedStakeB: 0,
+            totalInvestment: 0,
+            profit: 0,
+            roi: 0
+          })
+          return
+        }
+
+        const { stakeA, stakeB, totalStake } = result
         const profit = calculateProfit(stakeA, stakeB, oddsA, oddsB)
         const roi = calculateRoi(profit, totalStake)
 
@@ -357,9 +441,17 @@ export const useCalculatorStore = create<CalculatorState>()(
         })
       },
 
-      addToHistory: () => {
-        const { opportunity, calculatedStakeA, calculatedStakeB, totalInvestment, profit, roi } =
-          get()
+      addToHistory: (exchangeRates?: Record<Currency, number>, ratesTimestamp?: string | null) => {
+        const { 
+          opportunity, 
+          calculatedStakeA, 
+          calculatedStakeB, 
+          totalInvestment, 
+          profit, 
+          roi,
+          currencyA,
+          currencyB
+        } = get()
 
         if (!opportunity || totalInvestment <= 0) return
 
@@ -376,7 +468,12 @@ export const useCalculatorStore = create<CalculatorState>()(
           stakeB: calculatedStakeB,
           totalStake: totalInvestment,
           profit,
-          roi
+          roi,
+          // NEW: Multi-currency fields (Story 8.5)
+          currencyA,
+          currencyB,
+          exchangeRateSnapshot: exchangeRates || { USD: 1, AUD: 1.52, EUR: 0.85 },
+          exchangeRateTimestamp: ratesTimestamp || new Date().toISOString()
         }
 
         set((state) => {
@@ -397,7 +494,10 @@ export const useCalculatorStore = create<CalculatorState>()(
           calculatedStakeB: entry.stakeB,
           totalInvestment: entry.totalStake,
           profit: entry.profit,
-          roi: entry.roi
+          roi: entry.roi,
+          // NEW: Restore currency selections (Story 8.5)
+          currencyA: entry.currencyA || 'USD',
+          currencyB: entry.currencyB || 'USD'
         })
       },
 
@@ -412,7 +512,10 @@ export const useCalculatorStore = create<CalculatorState>()(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         history: state.history,
-        displayMode: state.displayMode
+        displayMode: state.displayMode,
+        // NEW: Persist currency preferences (Story 8.5)
+        currencyA: state.currencyA,
+        currencyB: state.currencyB
       })
     }
   )

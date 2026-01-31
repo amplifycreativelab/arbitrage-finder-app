@@ -180,8 +180,8 @@ function FeedTable({ opportunities = [], initialSortBy = 'time', initialSortDire
             });
             return;
         }
-        // Story 8.3: Calculator keyboard shortcut
-        if (event.key === 'c' || event.key === 'C') {
+        // Story 8.3: Calculator keyboard shortcut (only if no modifier keys)
+        if ((event.key === 'c' || event.key === 'C') && !event.ctrlKey && !event.metaKey && !event.altKey) {
             if (!Array.isArray(sorted) || sorted.length === 0) {
                 return;
             }

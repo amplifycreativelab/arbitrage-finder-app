@@ -1248,6 +1248,61 @@ interface DeepScanConfig {
 
 ------------------------------------------------------------------------
 
+## **Story 7.9 -- Sport/League Filter Configuration**
+
+**As a User**\
+I want to configure specific sports and leagues for Deep Scan filtering\
+So that I can focus API quota on high-value leagues with good bookmaker coverage.
+
+### Acceptance Criteria
+
+- [x] **League Presets**: Predefined configurations for major league groupings:
+  - Top 5 European Leagues (Premier League, La Liga, Serie A, Bundesliga, Ligue 1)
+  - European Elite (Top 5 + Champions League, Europa League, Conference League)
+  - Major European (Top 5 + Portugal, Netherlands, Belgium, Turkey, Scotland)
+  - English Football (All English tiers + cups)
+  - International (World Cup, Euro, Nations League)
+- [x] Presets can be applied with a single click from the Deep Scan panel
+- [x] **Sport Filter UI**: When scan scope is 'selected-sports':
+  - Fetch available sports from `/v3/sports` API endpoint
+  - Multi-select with toggle buttons
+  - "Refresh Sports" button to fetch latest
+- [x] **League Filter UI**: When scan scope is 'selected-leagues':
+  - Fetch available leagues from `/v3/leagues` endpoint (per sport)
+  - Show league name and active events count
+  - Chip-based multi-select UI with removable selections
+  - Leagues sorted by events count (highest first)
+- [x] **Backend Integration**:
+  - TRPC endpoints for fetching sports/leagues and applying presets
+  - Preload API exposure for renderer access
+  - Filters integrated with existing scanScope logic in Deep Scan
+
+### Technical Notes
+
+- Extends Story 7.6's scan scope setting with actual filter configuration
+- Uses odds-api.io `/v3/sports` and `/v3/leagues` endpoints
+- League slugs match odds-api.io naming convention (e.g., "england-premier-league")
+- Preset application sets scanScope to 'selected-leagues' automatically
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `src/main/services/deepScan.ts` | Sport/league fetch functions, presets, state management |
+| `src/main/services/router.ts` | TRPC endpoints for sport/league operations |
+| `src/preload/index.ts` | DeepScanAPI methods for sport/league filters |
+| `src/preload/index.d.ts` | Type declarations |
+| `src/renderer/src/features/dashboard/SportLeagueFilter.tsx` | New UI component |
+| `src/renderer/src/features/dashboard/DeepScanPanel.tsx` | Integration |
+
+### Links
+
+- Story 7.6 (Continuous Deep Scan Settings)
+- Story 7.3 (Automatic Event Discovery)
+- FR8 (API rate limiting)
+
+------------------------------------------------------------------------
+
 # **Epic 8: Odds Browser & Surebet Tools**
 
 Goal: Provide a bookmaker-style odds browser with integrated surebet calculator and multi-currency support for professional betting workflows.

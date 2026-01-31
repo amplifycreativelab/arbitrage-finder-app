@@ -91,7 +91,7 @@ development_status:
   epic-8: in-progress
   8-1-odds-browser-tab-grid-view: review
   8-2-odds-selection-comparison-integration: done
-  8-3-surebet-calculator-core: review
-  8-4-currency-exchange-rate-service: backlog
-  8-5-multi-currency-surebet-calculator-integrated: backlog
+  8-3-surebet-calculator-core: done
+  8-4-currency-exchange-rate-service: done
+  8-5-multi-currency-surebet-calculator-integrated: done
   epic-8-retrospective: optional

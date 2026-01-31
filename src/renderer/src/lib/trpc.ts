@@ -57,7 +57,12 @@ function createTestTrpcClient(): TrpcClient {
     oddsApiIoGetSupportedBookmakers: { query: noopQuery },
     oddsApiIoGetSelectedBookmakers: { query: noopQuery },
     oddsApiIoSelectBookmakers: { mutate: noopMutation },
-    oddsApiIoClearSelectedBookmakers: { mutate: noopMutation }
+    oddsApiIoClearSelectedBookmakers: { mutate: noopMutation },
+    // Story 8.4: Currency Exchange Rate Service
+    currencyFetchRates: { mutate: noopMutation },
+    currencyGetRates: { query: noopQuery },
+    currencyGetLastFetchTime: { query: noopQuery },
+    currencyConvert: { query: noopQuery }
   } as unknown as TrpcClient
 
   return client

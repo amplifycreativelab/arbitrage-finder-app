@@ -1,10 +1,16 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.__test = exports.CONTINUOUS_SCAN_MIN_INTERVAL_MS = exports.CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE = exports.SCAN_CACHE_TTL_MS_DEFAULT = void 0;
+exports.__test = exports.LEAGUE_PRESETS = exports.CONTINUOUS_SCAN_MIN_INTERVAL_MS = exports.CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE = exports.SCAN_CACHE_TTL_MS_DEFAULT = void 0;
 exports.getAllRawOdds = getAllRawOdds;
 exports.clearRawOddsCache = clearRawOddsCache;
 exports.clearScanCache = clearScanCache;
 exports.shouldScanEvent = shouldScanEvent;
+exports.fetchAvailableSports = fetchAvailableSports;
+exports.fetchAvailableLeagues = fetchAvailableLeagues;
+exports.getAvailableSportsDetails = getAvailableSportsDetails;
+exports.getAvailableLeagues = getAvailableLeagues;
+exports.getLeaguePresets = getLeaguePresets;
+exports.applyLeaguePreset = applyLeaguePreset;
 exports.discoverAllEvents = discoverAllEvents;
 exports.getBatchOddsFetcher = getBatchOddsFetcher;
 exports.getLiveEventsFetcher = getLiveEventsFetcher;
@@ -58,6 +64,9 @@ const ODDS_API_IO_ODDS_PATH = '/v3/odds';
 const ODDS_API_IO_ODDS_MULTI_PATH = '/v3/odds/multi';
 const ODDS_API_IO_ODDS_UPDATED_PATH = '/v3/odds/updated';
 const ODDS_API_IO_EVENTS_LIVE_PATH = '/v3/events/live';
+// Story 7.9: Sports and leagues discovery endpoints
+const ODDS_API_IO_SPORTS_PATH = '/v3/sports';
+const ODDS_API_IO_LEAGUES_PATH = '/v3/leagues';
 const DEEP_SCAN_PROVIDER_ID = 'odds-api-io';
 // Story 7.8: Batch fetching constants
 const BATCH_SIZE_MAX = 10; // API limit for /v3/odds/multi
@@ -229,6 +238,85 @@ const SPORT_SLUG_ALIAS_MAP = {
     futbol: 'football',
     'association-football': 'football'
 };
+exports.LEAGUE_PRESETS = [
+    {
+        id: 'top-5-european',
+        name: 'Top 5 European Leagues',
+        description: 'Premier League, La Liga, Serie A, Bundesliga, Ligue 1',
+        sport: 'football',
+        leagues: [
+            'england-premier-league',
+            'spain-la-liga',
+            'italy-serie-a',
+            'germany-bundesliga',
+            'france-ligue-1'
+        ]
+    },
+    {
+        id: 'european-elite',
+        name: 'European Elite',
+        description: 'Top 5 + Champions League, Europa League, Conference League',
+        sport: 'football',
+        leagues: [
+            'england-premier-league',
+            'spain-la-liga',
+            'italy-serie-a',
+            'germany-bundesliga',
+            'france-ligue-1',
+            'europe-champions-league',
+            'europe-europa-league',
+            'europe-conference-league'
+        ]
+    },
+    {
+        id: 'major-european',
+        name: 'Major European',
+        description: 'Top 5 + Portugal, Netherlands, Belgium, Turkey, Scotland',
+        sport: 'football',
+        leagues: [
+            'england-premier-league',
+            'spain-la-liga',
+            'italy-serie-a',
+            'germany-bundesliga',
+            'france-ligue-1',
+            'portugal-primeira-liga',
+            'netherlands-eredivisie',
+            'belgium-first-division-a',
+            'turkey-super-lig',
+            'scotland-premiership'
+        ]
+    },
+    {
+        id: 'english-football',
+        name: 'English Football',
+        description: 'Premier League, Championship, League One, League Two',
+        sport: 'football',
+        leagues: [
+            'england-premier-league',
+            'england-championship',
+            'england-league-one',
+            'england-league-two',
+            'england-fa-cup',
+            'england-efl-cup'
+        ]
+    },
+    {
+        id: 'international',
+        name: 'International',
+        description: 'World Cup, Euro, Nations League, WC Qualifiers',
+        sport: 'football',
+        leagues: [
+            'world-world-cup',
+            'europe-euro',
+            'europe-nations-league',
+            'world-world-cup-qualification',
+            'south-america-copa-america',
+            'africa-africa-cup-of-nations'
+        ]
+    }
+];
+let lastDiscoveredLeagues = [];
+let lastDiscoveredSportsDetails = [];
 function nowMs() {
     return Date.now() + timeOffsetMs;
 }
@@ -586,6 +674,107 @@ const defaultEventsFetcher = async ({ apiKey, signal, correlationId, page, sport
 };
 function getEventsFetcher() {
     return eventsFetcherOverride ?? defaultEventsFetcher;
+}
+// Story 7.9: Fetch available sports from odds-api.io
+async function fetchAvailableSports(args) {
+    const { apiKey, signal, correlationId = 'fetch-sports' } = args;
+    const httpFetch = getHttpFetch();
+    const url = new URL(ODDS_API_IO_SPORTS_PATH, ODDS_API_IO_BASE_URL);
+    url.searchParams.set('apiKey', apiKey);
+    const response = await trackedRequest(async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }), correlationId, { mode: 'continuous' });
+    if (!response.ok) {
+        const message = await response.text().catch(() => `Sports request failed with status ${response.status}`);
+        throw createHttpError(response.status, message || `Sports request failed with status ${response.status}`);
+    }
+    const data = (await response.json());
+    const sports = data.map((s) => ({
+        name: s.name,
+        slug: s.slug
+    }));
+    // Cache for later use
+    lastDiscoveredSportsDetails = sports;
+    lastDiscoveredSports = sports.map((s) => s.slug);
+    (0, logger_1.logInfo)('deepScan.sports.fetched', {
+        context: 'service:deepScan',
+        operation: 'fetchAvailableSports',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId,
+        durationMs: null,
+        errorCategory: null,
+        sportsCount: sports.length
+    });
+    return sports;
+}
+// Story 7.9: Fetch available leagues for a sport from odds-api.io
+async function fetchAvailableLeagues(args) {
+    const { apiKey, sport, signal, correlationId = 'fetch-leagues' } = args;
+    const httpFetch = getHttpFetch();
+    const url = new URL(ODDS_API_IO_LEAGUES_PATH, ODDS_API_IO_BASE_URL);
+    url.searchParams.set('apiKey', apiKey);
+    url.searchParams.set('sport', sport);
+    const response = await trackedRequest(async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }), correlationId, { mode: 'continuous' });
+    if (!response.ok) {
+        const message = await response.text().catch(() => `Leagues request failed with status ${response.status}`);
+        throw createHttpError(response.status, message || `Leagues request failed with status ${response.status}`);
+    }
+    const data = (await response.json());
+    const leagues = data.map((l) => ({
+        name: l.name,
+        slug: l.slug,
+        eventsCount: l.eventsCount,
+        sport
+    }));
+    // Update cache - merge with existing for other sports
+    const existingOtherSports = lastDiscoveredLeagues.filter((l) => l.sport !== sport);
+    lastDiscoveredLeagues = [...existingOtherSports, ...leagues];
+    (0, logger_1.logInfo)('deepScan.leagues.fetched', {
+        context: 'service:deepScan',
+        operation: 'fetchAvailableLeagues',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId,
+        durationMs: null,
+        errorCategory: null,
+        sport,
+        leaguesCount: leagues.length
+    });
+    return leagues;
+}
+// Story 7.9: Get cached sports (detailed with names)
+function getAvailableSportsDetails() {
+    return [...lastDiscoveredSportsDetails];
+}
+// Story 7.9: Get cached leagues
+function getAvailableLeagues() {
+    return [...lastDiscoveredLeagues];
+}
+// Story 7.9: Get league presets
+function getLeaguePresets() {
+    return [...exports.LEAGUE_PRESETS];
+}
+// Story 7.9: Apply a league preset
+function applyLeaguePreset(presetId) {
+    const preset = exports.LEAGUE_PRESETS.find((p) => p.id === presetId);
+    if (!preset) {
+        return { success: false, error: `Preset '${presetId}' not found` };
+    }
+    // Set the scope to selected-leagues
+    scanScope = 'selected-leagues';
+    // Set the sports filter to the preset's sport
+    enabledSportsFilter = [preset.sport];
+    // Set the leagues filter to the preset's leagues
+    enabledLeaguesFilter = [...preset.leagues];
+    (0, logger_1.logInfo)('deepScan.preset.applied', {
+        context: 'service:deepScan',
+        operation: 'applyLeaguePreset',
+        providerId: DEEP_SCAN_PROVIDER_ID,
+        correlationId: undefined,
+        durationMs: null,
+        errorCategory: null,
+        presetId: preset.id,
+        presetName: preset.name,
+        leaguesCount: preset.leagues.length
+    });
+    return { success: true };
 }
 function isUpcomingEvent(event, now) {
     if (!event.date) {

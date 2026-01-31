@@ -42,6 +42,7 @@ const React = __importStar(require("react"));
 const button_1 = require("../../../components/ui/button");
 const utils_1 = require("../../../lib/utils");
 const calculatorStore_1 = require("../stores/calculatorStore");
+const copyBetSlip_1 = require("../lib/copyBetSlip");
 const SurebetCalculator_1 = __importDefault(require("./SurebetCalculator"));
 const CalculatorHistory_1 = __importDefault(require("./CalculatorHistory"));
 // Icons as SVG components since lucide-react may not be available
@@ -49,18 +50,8 @@ const CopyIcon = () => ((0, jsx_runtime_1.jsxs)("svg", { xmlns: "http://www.w3.o
 const XIcon = () => ((0, jsx_runtime_1.jsxs)("svg", { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", children: [(0, jsx_runtime_1.jsx)("path", { d: "M18 6 6 18" }), (0, jsx_runtime_1.jsx)("path", { d: "m6 6 12 12" })] }));
 const Maximize2Icon = () => ((0, jsx_runtime_1.jsxs)("svg", { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", children: [(0, jsx_runtime_1.jsx)("path", { d: "M15 3h6v6" }), (0, jsx_runtime_1.jsx)("path", { d: "m21 3-7 7" }), (0, jsx_runtime_1.jsx)("path", { d: "m3 21 7-7" })] }));
 const PanelLeftIcon = () => ((0, jsx_runtime_1.jsxs)("svg", { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", children: [(0, jsx_runtime_1.jsx)("rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", ry: "2" }), (0, jsx_runtime_1.jsx)("path", { d: "M9 3v18" })] }));
-function formatBetSlip(opportunity, calculatedStakeA, calculatedStakeB, totalInvestment, profit, roi) {
-    if (!opportunity)
-        return '';
-    const legA = opportunity.legs[0];
-    const legB = opportunity.legs[1];
-    return (`${legA.bookmaker}: $${calculatedStakeA.toFixed(2)} @ ${legA.odds.toFixed(2)} | ` +
-        `${legB.bookmaker}: $${calculatedStakeB.toFixed(2)} @ ${legB.odds.toFixed(2)} | ` +
-        `Total: $${totalInvestment.toFixed(2)} | ` +
-        `Profit: $${profit.toFixed(2)} (${(roi * 100).toFixed(2)}%)`);
-}
 function CalculatorPanel({ className }) {
-    const { isOpen, closeCalculator, displayMode, setDisplayMode, opportunity, calculatedStakeA, calculatedStakeB, totalInvestment, profit, roi, addToHistory } = (0, calculatorStore_1.useCalculatorStore)();
+    const { isOpen, closeCalculator, displayMode, setDisplayMode, opportunity, calculatedStakeA, calculatedStakeB, totalInvestment, profit, addToHistory } = (0, calculatorStore_1.useCalculatorStore)();
     const [copyState, setCopyState] = React.useState('idle');
     // Handle ESC key
     React.useEffect(() => {
@@ -75,15 +66,15 @@ function CalculatorPanel({ className }) {
     const handleCopyBetSlip = async () => {
         if (!opportunity)
             return;
-        const text = formatBetSlip(opportunity, calculatedStakeA, calculatedStakeB, totalInvestment, profit, roi);
-        try {
-            await navigator.clipboard.writeText(text);
+        const data = (0, copyBetSlip_1.createBetSlipData)(opportunity, calculatedStakeA, calculatedStakeB, profit);
+        const success = await (0, copyBetSlip_1.copyBetSlipToClipboard)(data);
+        if (success) {
             setCopyState('copied');
             window.setTimeout(() => setCopyState('idle'), 1500);
         }
-        catch {
-            // Copy failed silently
-        }
+    };
+    const handleSaveToHistory = () => {
+        addToHistory();
     };
     const handleToggleMode = () => {
         setDisplayMode(displayMode === 'inline' ? 'modal' : 'inline');
@@ -99,7 +90,7 @@ function CalculatorPanel({ className }) {
     if (!isOpen || !opportunity) {
         return ((0, jsx_runtime_1.jsx)("div", { className: (0, utils_1.cn)('flex h-full flex-col items-center justify-center p-4 text-center', className), "data-testid": "calculator-panel-empty", children: (0, jsx_runtime_1.jsx)("div", { className: "text-[12px] text-ot-muted", children: "Select a surebet opportunity and click \"Calculate Stakes\" to use the calculator." }) }));
     }
-    const panelContent = ((0, jsx_runtime_1.jsxs)("div", { className: "flex h-full flex-col bg-slate-900", children: [(0, jsx_runtime_1.jsxs)("div", { className: "flex items-center justify-between border-b border-slate-700 p-3", children: [(0, jsx_runtime_1.jsx)("div", { className: "flex items-center gap-2", children: (0, jsx_runtime_1.jsx)("span", { className: "text-[12px] font-semibold text-ot-foreground", children: "\u26A1 Surebet Calculator" }) }), (0, jsx_runtime_1.jsxs)("div", { className: "flex items-center gap-1", children: [(0, jsx_runtime_1.jsx)(button_1.Button, { variant: "ghost", size: "icon", onClick: handleToggleMode, className: "h-7 w-7", title: displayMode === 'inline' ? 'Switch to modal' : 'Switch to inline', "data-testid": "toggle-display-mode", children: displayMode === 'inline' ? (0, jsx_runtime_1.jsx)(Maximize2Icon, {}) : (0, jsx_runtime_1.jsx)(PanelLeftIcon, {}) }), (0, jsx_runtime_1.jsx)(button_1.Button, { variant: "ghost", size: "icon", onClick: handleClose, className: "h-7 w-7", "data-testid": "close-calculator", children: (0, jsx_runtime_1.jsx)(XIcon, {}) })] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex-1 overflow-y-auto p-3", children: [(0, jsx_runtime_1.jsx)(SurebetCalculator_1.default, { opportunity: opportunity }), (0, jsx_runtime_1.jsx)("div", { className: "mt-4", children: (0, jsx_runtime_1.jsxs)(button_1.Button, { variant: "outline", size: "sm", onClick: handleCopyBetSlip, className: (0, utils_1.cn)('w-full gap-2 text-[11px]', copyState === 'copied' && 'bg-emerald-500 text-black hover:bg-emerald-400 border-emerald-500'), disabled: totalInvestment <= 0, "data-testid": "copy-bet-slip-button", children: [(0, jsx_runtime_1.jsx)(CopyIcon, {}), copyState === 'copied' ? 'Copied!' : 'Copy Bet Slip'] }) }), (0, jsx_runtime_1.jsx)("div", { className: "mt-4", children: (0, jsx_runtime_1.jsx)(CalculatorHistory_1.default, {}) })] })] }));
+    const panelContent = ((0, jsx_runtime_1.jsxs)("div", { className: "flex h-full flex-col bg-slate-900", children: [(0, jsx_runtime_1.jsxs)("div", { className: "flex items-center justify-between border-b border-slate-700 p-3", children: [(0, jsx_runtime_1.jsx)("div", { className: "flex items-center gap-2", children: (0, jsx_runtime_1.jsx)("span", { className: "text-[12px] font-semibold text-ot-foreground", children: "\u26A1 Surebet Calculator" }) }), (0, jsx_runtime_1.jsxs)("div", { className: "flex items-center gap-1", children: [(0, jsx_runtime_1.jsx)(button_1.Button, { variant: "ghost", size: "icon", onClick: handleToggleMode, className: "h-7 w-7", title: displayMode === 'inline' ? 'Switch to modal' : 'Switch to inline', "data-testid": "toggle-display-mode", children: displayMode === 'inline' ? (0, jsx_runtime_1.jsx)(Maximize2Icon, {}) : (0, jsx_runtime_1.jsx)(PanelLeftIcon, {}) }), (0, jsx_runtime_1.jsx)(button_1.Button, { variant: "ghost", size: "icon", onClick: handleClose, className: "h-7 w-7", "data-testid": "close-calculator", children: (0, jsx_runtime_1.jsx)(XIcon, {}) })] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex-1 overflow-y-auto p-3", children: [(0, jsx_runtime_1.jsx)(SurebetCalculator_1.default, { opportunity: opportunity }), (0, jsx_runtime_1.jsxs)("div", { className: "mt-4 space-y-2", children: [(0, jsx_runtime_1.jsxs)(button_1.Button, { variant: "outline", size: "sm", onClick: handleCopyBetSlip, className: (0, utils_1.cn)('w-full gap-2 text-[11px]', copyState === 'copied' && 'bg-emerald-500 text-black hover:bg-emerald-400 border-emerald-500'), disabled: totalInvestment <= 0, "data-testid": "copy-bet-slip-button", children: [(0, jsx_runtime_1.jsx)(CopyIcon, {}), copyState === 'copied' ? 'Copied!' : 'Copy Bet Slip'] }), (0, jsx_runtime_1.jsx)(button_1.Button, { variant: "outline", size: "sm", onClick: handleSaveToHistory, className: "w-full text-[11px]", disabled: totalInvestment <= 0, "data-testid": "save-to-history-button", children: "Save to History" })] }), (0, jsx_runtime_1.jsx)("div", { className: "mt-4", children: (0, jsx_runtime_1.jsx)(CalculatorHistory_1.default, {}) })] })] }));
     // Modal mode: centered overlay
     if (displayMode === 'modal') {
         return ((0, jsx_runtime_1.jsx)("div", { className: "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4", onClick: (e) => {

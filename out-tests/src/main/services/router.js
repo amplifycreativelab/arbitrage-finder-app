@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.appRouter = void 0;
 const server_1 = require("@trpc/server");
 const zod_1 = require("zod");
+const currencyService_1 = require("./currencyService");
 const storage_1 = require("./storage");
 const schemas_1 = require("../../../shared/schemas");
 const poller_1 = require("./poller");
@@ -374,6 +375,48 @@ exports.appRouter = t.router({
         (0, deepScan_1.clearRawOddsCache)();
         return { ok: true };
     }),
+    // Story 7.9: Sports and Leagues Discovery
+    deepScanFetchSports: t.procedure.mutation(async () => {
+        const apiKey = await (0, credentials_1.getApiKeyForAdapter)('odds-api-io');
+        if (!apiKey) {
+            throw new Error('API key not configured for provider odds-api-io');
+        }
+        const sports = await (0, deepScan_1.fetchAvailableSports)({ apiKey });
+        return { sports };
+    }),
+    deepScanGetSportsDetails: t.procedure.query(() => {
+        return { sports: (0, deepScan_1.getAvailableSportsDetails)() };
+    }),
+    deepScanFetchLeagues: t.procedure
+        .input(zod_1.z.object({ sport: zod_1.z.string().min(1) }))
+        .mutation(async ({ input }) => {
+        const apiKey = await (0, credentials_1.getApiKeyForAdapter)('odds-api-io');
+        if (!apiKey) {
+            throw new Error('API key not configured for provider odds-api-io');
+        }
+        const leagues = await (0, deepScan_1.fetchAvailableLeagues)({ apiKey, sport: input.sport });
+        return { leagues };
+    }),
+    deepScanGetLeagues: t.procedure.query(() => {
+        return { leagues: (0, deepScan_1.getAvailableLeagues)() };
+    }),
+    deepScanGetLeaguePresets: t.procedure.query(() => {
+        return { presets: (0, deepScan_1.getLeaguePresets)() };
+    }),
+    deepScanApplyPreset: t.procedure
+        .input(zod_1.z.object({ presetId: zod_1.z.string().min(1) }))
+        .mutation(({ input }) => {
+        const result = (0, deepScan_1.applyLeaguePreset)(input.presetId);
+        if (!result.success) {
+            throw new Error(result.error ?? 'Failed to apply preset');
+        }
+        return {
+            ok: true,
+            scanScope: (0, deepScan_1.getScanScope)(),
+            enabledSports: (0, deepScan_1.getEnabledSportsFilter)(),
+            enabledLeagues: (0, deepScan_1.getEnabledLeaguesFilter)()
+        };
+    }),
     // ============================================================
     // Utility procedures
     // ============================================================
@@ -421,5 +464,57 @@ exports.appRouter = t.router({
         await (0, odds_api_io_bookmakers_1.clearSelectedBookmakers)(apiKey);
         (0, deepScan_1.clearScanCache)('bookmakers_cleared');
         return { ok: true };
+    }),
+    // ============================================================
+    // Currency Exchange Rate Procedures (Story 8.4)
+    // ============================================================
+    /**
+     * Fetch fresh exchange rates from Frankfurter API
+     */
+    currencyFetchRates: t.procedure.mutation(async () => {
+        const rates = await (0, currencyService_1.fetchRatesFromAPI)();
+        return {
+            rates: rates.rates,
+            base: rates.base,
+            date: rates.date,
+            fetchedAt: new Date().toISOString()
+        };
+    }),
+    /**
+     * Get cached exchange rates
+     */
+    currencyGetRates: t.procedure.query(() => {
+        const rates = (0, currencyService_1.getCachedRates)();
+        return {
+            rates: rates?.rates ?? null,
+            base: rates?.base ?? 'USD',
+            date: rates?.date ?? null
+        };
+    }),
+    /**
+     * Get last fetch timestamp
+     */
+    currencyGetLastFetchTime: t.procedure.query(() => {
+        const timestamp = (0, currencyService_1.getLastFetchTimestamp)();
+        return { timestamp };
+    }),
+    /**
+     * Convert amount between currencies
+     */
+    currencyConvert: t.procedure
+        .input(zod_1.z.object({
+        amount: zod_1.z.number().positive(),
+        from: zod_1.z.enum(['USD', 'AUD', 'EUR']),
+        to: zod_1.z.enum(['USD', 'AUD', 'EUR'])
+    }))
+        .query(({ input }) => {
+        // Zod enum validation ensures input.from/input.to are valid Currency values
+        const result = (0, currencyService_1.convert)(input.amount, input.from, input.to);
+        return {
+            amount: input.amount,
+            from: input.from,
+            to: input.to,
+            result
+        };
     })
 });

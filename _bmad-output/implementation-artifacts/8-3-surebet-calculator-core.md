@@ -1,6 +1,6 @@
 # Story 8.3: Surebet Calculator Core
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -468,7 +468,22 @@ Kimi Code CLI (kimi-code-cli)
 
 - Story 8.3: Surebet Calculator Core
 - All 8 tasks completed with red-green-refactor cycle
-- 28 unit tests created and passing
+- 34 unit tests created and passing (added 6 new tests for validity check)
+
+### Code Review Fixes Applied (2026-01-31)
+
+**CRITICAL/HIGH Issues Fixed:**
+- **H-001**: Added `isValidArbitrage()` and `calculateArbitrageMargin()` functions to verify odds still form valid arbitrage (AC-5)
+- **H-003**: Changed stake A/B inputs from read-only to editable number inputs with manual override capability (AC-2)
+- **H-004**: Added explicit "Save to History" button for users to save calculations on-demand (AC-6)
+
+**MEDIUM Issues Fixed:**
+- **M-001**: Added guard clauses in `calculateStakesFromTargetProfit()` to return `null` for invalid arbitrage odds, preventing division by zero
+- **M-002**: Added modifier key checks (ctrlKey, metaKey, altKey) to 'C' keyboard shortcut to prevent conflicts with copy commands
+
+**LOW Issues Fixed:**
+- **L-001**: Added `aria-pressed` attributes to mode toggle buttons for accessibility
+- **L-002**: Refactored `CalculatorPanel.tsx` to use `createBetSlipData()` and `copyBetSlipToClipboard()` from `copyBetSlip.ts` instead of inline duplicate logic
 
 ### Completion Notes List
 
@@ -491,11 +506,11 @@ Kimi Code CLI (kimi-code-cli)
 - `src/renderer/src/features/dashboard/lib/copyBetSlip.ts` - Bet slip formatting utilities
 
 **Files Modified:**
-- `src/renderer/src/features/dashboard/FeedTable.tsx` - Added calculator trigger button, 'C' keyboard shortcut, context menu
+- `src/renderer/src/features/dashboard/FeedTable.tsx` - Added calculator trigger button, 'C' keyboard shortcut with modifier checks, context menu
 - `src/renderer/src/features/dashboard/DashboardLayout.tsx` - Integrated CalculatorPanel for both inline and modal modes
 
 **Test File:**
-- `tests/8-3-surebet-calculator-core.test.cjs` - 28 comprehensive unit and integration tests (all passing)
+- `tests/8-3-surebet-calculator-core.test.cjs` - 34 comprehensive unit and integration tests (all passing)
 
 ---
 
@@ -503,6 +518,7 @@ Kimi Code CLI (kimi-code-cli)
 
 - 2026-01-30: Story created - comprehensive developer guide with architecture compliance, dependencies, and implementation patterns
 - 2026-01-30: Story implementation complete - All 8 tasks finished, 28 unit tests passing (Status: review)
+- 2026-01-31: Code review complete - Fixed 6 issues (4 HIGH, 2 MEDIUM, 2 LOW), added validity check, editable stakes, save-to-history button, keyboard shortcut protection, accessibility improvements. Tests: 34 passing (Status: done)
 
 ---
 

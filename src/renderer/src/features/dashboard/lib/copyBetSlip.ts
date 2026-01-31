@@ -1,4 +1,6 @@
 import type { ArbitrageOpportunity } from '../../../../../../shared/types'
+import type { Currency } from '../../../../../../shared/lib/currency'
+import { CURRENCY_DETAILS } from '../../../../../../shared/lib/currency'
 
 export interface BetSlipData {
   bookmakerA: string
@@ -10,11 +12,16 @@ export interface BetSlipData {
   totalStake: number
   profit: number
   roi: number
+  // NEW: Multi-currency fields (Story 8.5)
+  currencyA: Currency
+  currencyB: Currency
+  baseCurrency: Currency
 }
 
 /**
  * Formats bet slip data into a readable string for copying.
  * Format: "Bookmaker A: Stake $X @ Odds Y | Bookmaker B: Stake $X @ Odds Y | Total: $X | Profit: $X (X%)"
+ * NEW (Story 8.5): Includes currency symbols for each stake
  */
 export function formatBetSlip(data: BetSlipData): string {
   const {
@@ -26,25 +33,36 @@ export function formatBetSlip(data: BetSlipData): string {
     oddsB,
     totalStake,
     profit,
-    roi
+    roi,
+    currencyA,
+    currencyB,
+    baseCurrency
   } = data
 
+  const symbolA = CURRENCY_DETAILS[currencyA]?.symbol || '$'
+  const symbolB = CURRENCY_DETAILS[currencyB]?.symbol || '$'
+  const baseSymbol = CURRENCY_DETAILS[baseCurrency]?.symbol || '$'
+
   return (
-    `${bookmakerA}: $${stakeA.toFixed(2)} @ ${oddsA.toFixed(2)} | ` +
-    `${bookmakerB}: $${stakeB.toFixed(2)} @ ${oddsB.toFixed(2)} | ` +
-    `Total: $${totalStake.toFixed(2)} | ` +
-    `Profit: $${profit.toFixed(2)} (${(roi * 100).toFixed(2)}%)`
+    `${bookmakerA}: ${symbolA}${stakeA.toFixed(2)} @ ${oddsA.toFixed(2)} | ` +
+    `${bookmakerB}: ${symbolB}${stakeB.toFixed(2)} @ ${oddsB.toFixed(2)} | ` +
+    `Total: ${baseSymbol}${totalStake.toFixed(2)} ${baseCurrency} | ` +
+    `Profit: ${baseSymbol}${profit.toFixed(2)} ${baseCurrency} (${(roi * 100).toFixed(2)}%)`
   )
 }
 
 /**
  * Creates bet slip data from an opportunity and calculated stakes.
+ * NEW (Story 8.5): Includes currency information
  */
 export function createBetSlipData(
   opportunity: ArbitrageOpportunity,
   stakeA: number,
   stakeB: number,
-  profit: number
+  profit: number,
+  currencyA: Currency = 'USD',
+  currencyB: Currency = 'USD',
+  baseCurrency: Currency = 'USD'
 ): BetSlipData {
   const legA = opportunity.legs[0]
   const legB = opportunity.legs[1]
@@ -59,7 +77,10 @@ export function createBetSlipData(
     oddsB: legB.odds,
     totalStake,
     profit,
-    roi: totalStake > 0 ? profit / totalStake : 0
+    roi: totalStake > 0 ? profit / totalStake : 0,
+    currencyA,
+    currencyB,
+    baseCurrency
   }
 }
 

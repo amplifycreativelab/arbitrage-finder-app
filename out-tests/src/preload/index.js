@@ -137,6 +137,49 @@ const deepScanApi = {
     },
     async setScanScope(scanScope) {
         await trpcClient.deepScanSetScope.mutate({ scanScope });
+    },
+    // Story 7.9: Sport/League filter methods
+    async getEnabledSportsFilter() {
+        const result = await trpcClient.deepScanGetEnabledSportsFilter.query();
+        return result.sports;
+    },
+    async setEnabledSportsFilter(sports) {
+        await trpcClient.deepScanSetEnabledSportsFilter.mutate({ sports });
+    },
+    async getEnabledLeaguesFilter() {
+        const result = await trpcClient.deepScanGetEnabledLeaguesFilter.query();
+        return result.leagues;
+    },
+    async setEnabledLeaguesFilter(leagues) {
+        await trpcClient.deepScanSetEnabledLeaguesFilter.mutate({ leagues });
+    },
+    async fetchSports() {
+        const result = await trpcClient.deepScanFetchSports.mutate();
+        return result.sports;
+    },
+    async getSportsDetails() {
+        const result = await trpcClient.deepScanGetSportsDetails.query();
+        return result.sports;
+    },
+    async fetchLeagues(sport) {
+        const result = await trpcClient.deepScanFetchLeagues.mutate({ sport });
+        return result.leagues;
+    },
+    async getLeagues() {
+        const result = await trpcClient.deepScanGetLeagues.query();
+        return result.leagues;
+    },
+    async getLeaguePresets() {
+        const result = await trpcClient.deepScanGetLeaguePresets.query();
+        return result.presets;
+    },
+    async applyPreset(presetId) {
+        const result = await trpcClient.deepScanApplyPreset.mutate({ presetId });
+        return {
+            scanScope: result.scanScope,
+            enabledSports: result.enabledSports,
+            enabledLeagues: result.enabledLeagues
+        };
     }
 };
 // Custom APIs for renderer

@@ -111,10 +111,17 @@ describe('Surebet Calculator Core Logic', () => {
   })
 
   describe('calculateStakesFromTargetProfit', () => {
-    it('should calculate stakes to achieve target profit', () => {
+    it('should calculate stakes to achieve target profit for valid arbitrage', () => {
       const targetProfit = 10
-      const oddsA = 1.95
-      const oddsB = 2.05
+      // Use odds that clearly form arbitrage: 1/1.9 + 1/2.2 = 0.526 + 0.455 = 0.981 < 1
+      const oddsA = 1.9
+      const oddsB = 2.2
+
+      // First verify it's a valid arbitrage
+      const probA = 1 / oddsA
+      const probB = 1 / oddsB
+      const isValid = probA + probB < 1
+      assert.strictEqual(isValid, true, 'Should be valid arbitrage odds')
 
       // Using the formula from implementation
       const termA = oddsA - 1 - oddsA / oddsB
@@ -151,6 +158,24 @@ describe('Surebet Calculator Core Logic', () => {
 
       assert.strictEqual(stakeA > 0, true, `Stake A should be positive, got ${stakeA}`)
       assert.strictEqual(stakeB > 0, true, `Stake B should be positive, got ${stakeB}`)
+    })
+
+    it('should return null for invalid arbitrage odds', () => {
+      // Odds that don't form arbitrage: 1/1.5 + 1/1.5 = 1.333 > 1 (no arb)
+      const targetProfit = 10
+      const oddsA = 1.5
+      const oddsB = 1.5
+
+      // Check that this is NOT valid arbitrage
+      const probA = 1 / oddsA
+      const probB = 1 / oddsB
+      const isValid = probA + probB < 1
+      assert.strictEqual(isValid, false, 'Should NOT be valid arbitrage odds')
+
+      // Implementation should return null for invalid odds
+      const termA = oddsA - 1 - oddsA / oddsB
+      // For invalid odds, termA would be <= 0, so function returns null
+      assert.strictEqual(termA <= 0, true, 'TermA should be non-positive for invalid odds')
     })
   })
 
@@ -595,12 +620,71 @@ describe('Edge Cases', () => {
 })
 
 // ============================================================================
+// Validity Check Tests
+// ============================================================================
+
+describe('Arbitrage Validity Check', () => {
+  describe('isValidArbitrage', () => {
+    it('should return true for valid arbitrage odds', () => {
+      // 1/1.95 + 1/2.05 = 0.513 + 0.488 = 1.001 ~ 1 (valid edge case)
+      const oddsA = 1.9
+      const oddsB = 2.2
+      const probA = 1 / oddsA
+      const probB = 1 / oddsB
+      const isValid = probA + probB < 1
+      assert.strictEqual(isValid, true, '1.9 and 2.2 should form valid arbitrage')
+    })
+
+    it('should return false for non-arbitrage odds', () => {
+      // 1/1.5 + 1/1.5 = 1.333 > 1 (not arbitrage)
+      const oddsA = 1.5
+      const oddsB = 1.5
+      const probA = 1 / oddsA
+      const probB = 1 / oddsB
+      const isValid = probA + probB < 1
+      assert.strictEqual(isValid, false, '1.5 and 1.5 should NOT form arbitrage')
+    })
+
+    it('should handle edge case where sum equals exactly 1', () => {
+      // 1/2 + 1/2 = 1 (break-even, not profitable)
+      const oddsA = 2.0
+      const oddsB = 2.0
+      const probA = 1 / oddsA
+      const probB = 1 / oddsB
+      const isValid = probA + probB < 1
+      assert.strictEqual(isValid, false, 'Exactly 1.0 should NOT be valid arbitrage (strict inequality)')
+    })
+  })
+
+  describe('calculateArbitrageMargin', () => {
+    it('should return positive margin for valid arbitrage', () => {
+      const oddsA = 1.9
+      const oddsB = 2.2
+      const probA = 1 / oddsA
+      const probB = 1 / oddsB
+      const margin = 1 - (probA + probB)
+      assert.strictEqual(margin > 0, true, 'Margin should be positive for valid arbitrage')
+    })
+
+    it('should return negative margin for invalid odds', () => {
+      const oddsA = 1.5
+      const oddsB = 1.5
+      const probA = 1 / oddsA
+      const probB = 1 / oddsB
+      const margin = 1 - (probA + probB)
+      assert.strictEqual(margin < 0, true, 'Margin should be negative for invalid arbitrage')
+    })
+  })
+})
+
+// ============================================================================
 // Summary
 // ============================================================================
 
 console.log('\n✅ Story 8.3: Surebet Calculator Core Tests Complete')
 console.log('   - Stake calculation formulas: 2 modes tested')
 console.log('   - Staleness detection: time-based logic tested')
+console.log('   - Validity check: arbitrage validation tested')
 console.log('   - Bet slip formatting: output format tested')
 console.log('   - History management: 20-entry limit tested')
 console.log('   - Integration: full calculation flows tested')

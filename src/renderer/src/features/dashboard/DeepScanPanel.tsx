@@ -3,6 +3,7 @@ import * as React from 'react'
 import type { DeepScanStatus } from '../../../../../shared/types'
 import DeepScanButton from './DeepScanButton'
 import DeepScanConfigDialog from './DeepScanConfigDialog'
+import { SportLeagueFilter } from './SportLeagueFilter'
 import { useDeepScanStore } from './stores/deepScanStore'
 import { useFeedFiltersStore } from './stores/feedFiltersStore'
 
@@ -301,6 +302,56 @@ export function DeepScanPanel(): React.JSX.Element {
     }
   }
 
+  // Story 7.9: Sport/League filter state
+  const [enabledSports, setEnabledSports] = React.useState<string[]>([])
+  const [enabledLeagues, setEnabledLeagues] = React.useState<string[]>([])
+
+  // Load enabled sports/leagues on mount
+  React.useEffect(() => {
+    void (async () => {
+      try {
+        const [sports, leagues] = await Promise.all([
+          window.api.deepScan.getEnabledSportsFilter(),
+          window.api.deepScan.getEnabledLeaguesFilter()
+        ])
+        setEnabledSports(sports)
+        setEnabledLeagues(leagues)
+      } catch {
+        // Silent fail
+      }
+    })()
+  }, [])
+
+  const handleSportsChange = async (sports: string[]): Promise<void> => {
+    setEnabledSports(sports)
+    try {
+      await window.api.deepScan.setEnabledSportsFilter(sports)
+    } catch {
+      // Best-effort sync
+    }
+  }
+
+  const handleLeaguesChange = async (leagues: string[]): Promise<void> => {
+    setEnabledLeagues(leagues)
+    try {
+      await window.api.deepScan.setEnabledLeaguesFilter(leagues)
+    } catch {
+      // Best-effort sync
+    }
+  }
+
+  const handleApplyPreset = async (presetId: string): Promise<void> => {
+    try {
+      const result = await window.api.deepScan.applyPreset(presetId)
+      // Update local state with the result
+      setScanScopeLocal(result.scanScope as 'all-sports' | 'selected-sports' | 'selected-leagues')
+      setEnabledSports(result.enabledSports)
+      setEnabledLeagues(result.enabledLeagues)
+    } catch {
+      // Best-effort sync
+    }
+  }
+
   const handleClearCache = async (): Promise<void> => {
     try {
       await window.api.deepScan.clearCache('user_request')
@@ -424,6 +475,16 @@ export function DeepScanPanel(): React.JSX.Element {
           </select>
         </div>
       </div>
+
+      {/* Story 7.9: Sport/League Filter Panel */}
+      <SportLeagueFilter
+        scanScope={scanScope}
+        enabledSports={enabledSports}
+        enabledLeagues={enabledLeagues}
+        onSportsChange={(sports) => void handleSportsChange(sports)}
+        onLeaguesChange={(leagues) => void handleLeaguesChange(leagues)}
+        onApplyPreset={(presetId) => void handleApplyPreset(presetId)}
+      />
 
       <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
         <div className="flex items-center justify-between gap-3 rounded border border-ot-border/60 bg-ot-border/10 p-2">
@@ -645,8 +706,8 @@ export function DeepScanPanel(): React.JSX.Element {
             onClick={() => void handlePauseResume()}
             disabled={isPausing}
             className={`rounded border px-3 py-1 text-[10px] font-semibold transition-colors ${continuousStatus.isPaused
-                ? 'border-emerald-400/60 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20'
-                : 'border-amber-400/60 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20'
+              ? 'border-emerald-400/60 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20'
+              : 'border-amber-400/60 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20'
               } disabled:opacity-50`}
           >
             {isPausing ? '...' : continuousStatus.isPaused ? '▶ Resume' : '⏸ Pause'}
@@ -660,8 +721,8 @@ export function DeepScanPanel(): React.JSX.Element {
       {/* Story 7.6: Quota Status */}
       {showQuotaWarning && (
         <div className={`mt-2 rounded border px-2 py-1 text-[10px] ${showQuotaDanger
-            ? 'border-red-400/60 bg-red-400/10 text-red-200'
-            : 'border-amber-400/60 bg-amber-400/10 text-amber-200'
+          ? 'border-red-400/60 bg-red-400/10 text-red-200'
+          : 'border-amber-400/60 bg-amber-400/10 text-amber-200'
           }`}>
           <div className="flex items-center gap-2">
             <span>⚠️</span>

@@ -477,3 +477,69 @@ Story 8.1 implementation is complete with:
 
 *Story implementation complete. All acceptance criteria met. Ready for review.*
 *Last updated: 2026-01-30*  
+
+### UI/UX Enhancements (2026-01-31)
+
+**OddsBrowserTable Component - Complete Redesign:**
+
+1. **Sport-Colored Badges**
+   - Soccer/Football: Emerald green
+   - Basketball: Orange
+   - Tennis: Yellow
+   - Baseball: Red
+   - Hockey: Blue
+   - Default: Accent color
+
+2. **Live Event Indicators**
+   - Pulsing red "LIVE" badge for in-play events
+   - Compact time badge showing date (MMM d) and time (HH:mm) in stacked format
+
+3. **Enhanced Odds Display**
+   - Prominent odds pill with rounded background
+   - Hover animation: transitions from accent/10 to solid accent with inverted text
+   - Tabular-nums for consistent digit width
+
+4. **Freshness Indicators**
+   - Amber dot for stale data (>10 minutes old)
+   - Tooltip showing exact last update timestamp
+
+5. **Visual Improvements**
+   - Alternating row backgrounds for better scanability
+   - Row hover with subtle translate effect (translate-x-0.5)
+   - Selected row with ring highlight and shadow
+   - Gradient header row for depth
+   - Custom scrollbar styling (scrollbar-thin)
+
+6. **Accessibility**
+   - Proper ARIA roles and attributes
+   - Keyboard navigation preserved (Arrow keys, Enter/Space)
+   - Focus indicators
+
+**OddsBrowserFilters Component - Collapsible Sections:**
+
+1. **Collapsible Sections**
+   - Smooth expand/collapse animations (max-h transition)
+   - Section badges showing count of active filters per category
+   - Animated chevron rotation for section state
+
+2. **Filter Header**
+   - Filter icon with active filter indicator pill
+   - Shows "{n} active" when filters are applied
+   - Enhanced clear button with rotate animation on hover
+
+3. **Search Improvements**
+   - Search always visible at top
+   - Icon-based search with proper SVG icons
+   - Clear button with hover effect
+
+4. **Quick Stats Footer**
+   - Shows counts: sports | leagues | markets | bookmakers
+   - Provides at-a-glance data availability info
+
+5. **Sections Default State**
+   - Sports section expanded by default
+   - Other sections collapsed for compact initial view
+
+**Files Modified:**
+- `src/renderer/src/features/odds-browser/components/OddsBrowserTable.tsx` - Complete rewrite
+- `src/renderer/src/features/odds-browser/components/OddsBrowserFilters.tsx` - Complete rewrite

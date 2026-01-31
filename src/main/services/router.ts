@@ -1,6 +1,12 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
 import {
+  fetchRatesFromAPI,
+  getCachedRates,
+  getLastFetchTimestamp,
+  convert
+} from './currencyService'
+import {
   getEnabledProviders,
   toggleProvider,
   getAllProvidersWithStatus
@@ -75,7 +81,14 @@ import {
   setScanIntervalMinutes,
   setScanScope,
   startContinuousDeepScan,
-  startDeepScan
+  startDeepScan,
+  // Story 7.9: Sports and leagues discovery
+  fetchAvailableSports,
+  fetchAvailableLeagues,
+  getAvailableSportsDetails,
+  getAvailableLeagues,
+  getLeaguePresets,
+  applyLeaguePreset
 } from './deepScan'
 
 const t = initTRPC.create()
@@ -513,6 +526,54 @@ export const appRouter = t.router({
     return { ok: true }
   }),
 
+  // Story 7.9: Sports and Leagues Discovery
+  deepScanFetchSports: t.procedure.mutation(async () => {
+    const apiKey = await getApiKeyForAdapter('odds-api-io')
+    if (!apiKey) {
+      throw new Error('API key not configured for provider odds-api-io')
+    }
+    const sports = await fetchAvailableSports({ apiKey })
+    return { sports }
+  }),
+
+  deepScanGetSportsDetails: t.procedure.query(() => {
+    return { sports: getAvailableSportsDetails() }
+  }),
+
+  deepScanFetchLeagues: t.procedure
+    .input(z.object({ sport: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      const apiKey = await getApiKeyForAdapter('odds-api-io')
+      if (!apiKey) {
+        throw new Error('API key not configured for provider odds-api-io')
+      }
+      const leagues = await fetchAvailableLeagues({ apiKey, sport: input.sport })
+      return { leagues }
+    }),
+
+  deepScanGetLeagues: t.procedure.query(() => {
+    return { leagues: getAvailableLeagues() }
+  }),
+
+  deepScanGetLeaguePresets: t.procedure.query(() => {
+    return { presets: getLeaguePresets() }
+  }),
+
+  deepScanApplyPreset: t.procedure
+    .input(z.object({ presetId: z.string().min(1) }))
+    .mutation(({ input }) => {
+      const result = applyLeaguePreset(input.presetId)
+      if (!result.success) {
+        throw new Error(result.error ?? 'Failed to apply preset')
+      }
+      return {
+        ok: true,
+        scanScope: getScanScope(),
+        enabledSports: getEnabledSportsFilter(),
+        enabledLeagues: getEnabledLeaguesFilter()
+      }
+    }),
+
   // ============================================================
   // Utility procedures
   // ============================================================
@@ -566,7 +627,66 @@ export const appRouter = t.router({
     await clearSelectedBookmakers(apiKey)
     clearScanCache('bookmakers_cleared')
     return { ok: true }
-  })
+  }),
+
+  // ============================================================
+  // Currency Exchange Rate Procedures (Story 8.4)
+  // ============================================================
+
+  /**
+   * Fetch fresh exchange rates from Frankfurter API
+   */
+  currencyFetchRates: t.procedure.mutation(async () => {
+    const rates = await fetchRatesFromAPI()
+    return {
+      rates: rates.rates,
+      base: rates.base,
+      date: rates.date,
+      fetchedAt: new Date().toISOString()
+    }
+  }),
+
+  /**
+   * Get cached exchange rates
+   */
+  currencyGetRates: t.procedure.query(() => {
+    const rates = getCachedRates()
+    return {
+      rates: rates?.rates ?? null,
+      base: rates?.base ?? 'USD',
+      date: rates?.date ?? null
+    }
+  }),
+
+  /**
+   * Get last fetch timestamp
+   */
+  currencyGetLastFetchTime: t.procedure.query(() => {
+    const timestamp = getLastFetchTimestamp()
+    return { timestamp }
+  }),
+
+  /**
+   * Convert amount between currencies
+   */
+  currencyConvert: t.procedure
+    .input(
+      z.object({
+        amount: z.number().positive(),
+        from: z.enum(['USD', 'AUD', 'EUR']),
+        to: z.enum(['USD', 'AUD', 'EUR'])
+      })
+    )
+    .query(({ input }) => {
+      // Zod enum validation ensures input.from/input.to are valid Currency values
+      const result = convert(input.amount, input.from, input.to)
+      return {
+        amount: input.amount,
+        from: input.from,
+        to: input.to,
+        result
+      }
+    })
 })
 
 export type AppRouter = typeof appRouter

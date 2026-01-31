@@ -1,12 +1,68 @@
 import * as React from 'react'
-// Story 8.2: Icon components (emoji fallbacks for now, lucide-react can be added later)
-const Pin = ({ className }: { className?: string }): React.JSX.Element => <span className={className}>📌</span>
-const X = ({ className }: { className?: string }): React.JSX.Element => <span className={className}>✕</span>
-const PanelLeft = ({ className }: { className?: string }): React.JSX.Element => <span className={className}>◀</span>
-const Maximize2 = ({ className }: { className?: string }): React.JSX.Element => <span className={className}>⛶</span>
-const Copy = ({ className }: { className?: string }): React.JSX.Element => <span className={className}>📋</span>
-const Loader2 = ({ className }: { className?: string }): React.JSX.Element => <span className={className}>⟳</span>
-const RefreshCw = ({ className }: { className?: string }): React.JSX.Element => <span className={className}>↻</span>
+
+// Proper SVG icon components for professional UI
+const Pin = ({ className }: { className?: string }): React.JSX.Element => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <line x1="12" x2="12" y1="17" y2="22" />
+    <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
+  </svg>
+)
+
+const X = ({ className }: { className?: string }): React.JSX.Element => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M18 6 6 18" />
+    <path d="m6 6 12 12" />
+  </svg>
+)
+
+const PanelLeft = ({ className }: { className?: string }): React.JSX.Element => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+    <line x1="9" x2="9" y1="3" y2="21" />
+  </svg>
+)
+
+const Maximize2 = ({ className }: { className?: string }): React.JSX.Element => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <polyline points="15 3 21 3 21 9" />
+    <polyline points="9 21 3 21 3 15" />
+    <line x1="21" x2="14" y1="3" y2="10" />
+    <line x1="3" x2="10" y1="21" y2="14" />
+  </svg>
+)
+
+const Copy = ({ className }: { className?: string }): React.JSX.Element => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+  </svg>
+)
+
+const Loader2 = ({ className }: { className?: string }): React.JSX.Element => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+  </svg>
+)
+
+const RefreshCw = ({ className }: { className?: string }): React.JSX.Element => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+    <path d="M21 3v5h-5" />
+    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+    <path d="M8 16H3v5" />
+  </svg>
+)
+
+const Trophy = ({ className }: { className?: string }): React.JSX.Element => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+    <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+    <path d="M4 22h16" />
+    <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+    <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+    <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+  </svg>
+)
 
 import { cn } from '../../../lib/utils'
 import { Button } from '../../../components/ui/button'
@@ -95,7 +151,7 @@ export function OddsComparisonPanel({
 
     try {
       const result = await window.api.deepScanGetBestOdds({ eventId })
-      
+
       // Transform the data to include isBest flag
       const transformedData: BestOddsData[] = result.bestOdds?.map((market) => ({
         eventId: market.eventId,
@@ -191,7 +247,7 @@ export function OddsComparisonPanel({
     if (!market) return
 
     const eventName = `${selectedRow.event.home} vs ${selectedRow.event.away}`
-    const outcomesText = market.outcomes.map(o => 
+    const outcomesText = market.outcomes.map(o =>
       `Best ${o.outcome} @ ${o.bestBookmaker} (${o.bestOdds.toFixed(2)})`
     ).join(', ')
 
@@ -222,7 +278,7 @@ export function OddsComparisonPanel({
     return Date.now() - state.lastUpdated.getTime() > 5 * 60 * 1000
   }, [state.lastUpdated])
 
-  
+
 
   // Story 8.2: Render header
   const renderHeader = (): React.JSX.Element => (
@@ -319,11 +375,11 @@ export function OddsComparisonPanel({
       </div>
       {selectedOddsRank && (
         <div className="mt-2 flex items-center gap-2">
-          <span 
+          <span
             className={cn(
               'rounded px-1.5 py-0.5 text-[10px] font-medium',
-              selectedOddsRank === 1 
-                ? 'bg-emerald-500/20 text-emerald-400' 
+              selectedOddsRank === 1
+                ? 'bg-emerald-500/20 text-emerald-400'
                 : 'bg-ot-accent/10 text-ot-accent'
             )}
           >
@@ -369,7 +425,7 @@ export function OddsComparisonPanel({
   const renderEmpty = (): React.JSX.Element => (
     <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
       <div className="mb-3 rounded-full bg-ot-muted/10 p-3">
-        <span className="text-lg text-ot-muted">📊</span>
+        <Trophy className="h-5 w-5 text-ot-muted" />
       </div>
       <span className="text-[11px] text-ot-muted">No comparison data available</span>
     </div>
@@ -400,7 +456,7 @@ export function OddsComparisonPanel({
     return (
       <div className="relative flex-1 overflow-auto p-3">
         {renderStaleOverlay()}
-        
+
         {/* Market header */}
         <div className="mb-3 text-xs font-medium text-ot-foreground">
           {market.marketLabel}
@@ -419,7 +475,7 @@ export function OddsComparisonPanel({
               </div>
 
               {/* Best odds highlight */}
-              <div 
+              <div
                 className={cn(
                   'mb-2 flex items-center justify-between rounded p-2',
                   outcome.bestBookmaker === selectedRow.bookmaker
@@ -481,7 +537,7 @@ export function OddsComparisonPanel({
 
   // Story 8.2: Main render
   return (
-    <div 
+    <div
       className={cn(
         'flex flex-col bg-ot-background',
         displayMode === 'floating' && 'h-full rounded-lg shadow-xl'

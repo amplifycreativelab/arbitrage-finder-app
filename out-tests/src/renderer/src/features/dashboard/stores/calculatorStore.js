@@ -5,6 +5,8 @@ exports.calculateStakesFromTotal = calculateStakesFromTotal;
 exports.calculateStakesFromTargetProfit = calculateStakesFromTargetProfit;
 exports.calculateProfit = calculateProfit;
 exports.calculateRoi = calculateRoi;
+exports.isValidArbitrage = isValidArbitrage;
+exports.calculateArbitrageMargin = calculateArbitrageMargin;
 exports.isOpportunityStale = isOpportunityStale;
 exports.getStalenessMinutes = getStalenessMinutes;
 const zustand_1 = require("zustand");
@@ -23,6 +25,10 @@ function calculateStakesFromTotal(totalStake, oddsA, oddsB) {
     };
 }
 function calculateStakesFromTargetProfit(targetProfit, oddsA, oddsB) {
+    // Guard: Check for valid arbitrage first
+    if (!isValidArbitrage(oddsA, oddsB)) {
+        return null;
+    }
     // For pure arbitrage: stakeA * oddsA - totalStake = targetProfit
     // stakeA * oddsA - (stakeA + stakeB) = targetProfit
     // stakeA * (oddsA - 1) - stakeB = targetProfit
@@ -36,9 +42,17 @@ function calculateStakesFromTargetProfit(targetProfit, oddsA, oddsB) {
     // stakeA * (oddsA - 1) - stakeA * oddsA / oddsB = targetProfit
     // stakeA * [(oddsA - 1) - oddsA / oddsB] = targetProfit
     const termA = oddsA - 1 - oddsA / oddsB;
+    // Guard: Check for division by zero or negative denominator
+    if (termA <= 0) {
+        return null;
+    }
     const stakeA = targetProfit / termA;
     const stakeB = stakeA * (oddsA / oddsB);
     const totalStake = stakeA + stakeB;
+    // Guard: Ensure positive stakes
+    if (stakeA <= 0 || stakeB <= 0) {
+        return null;
+    }
     return { stakeA, stakeB, totalStake };
 }
 function calculateProfit(stakeA, stakeB, oddsA, oddsB) {
@@ -54,6 +68,24 @@ function calculateRoi(profit, totalStake) {
     if (totalStake === 0)
         return 0;
     return profit / totalStake;
+}
+/**
+ * Checks if the given odds still form a valid arbitrage opportunity.
+ * Valid arbitrage: sum of implied probabilities < 1
+ */
+function isValidArbitrage(oddsA, oddsB) {
+    const probA = 1 / oddsA;
+    const probB = 1 / oddsB;
+    return probA + probB < 1;
+}
+/**
+ * Calculates the arbitrage margin (how far below 1 the implied probability sum is)
+ * Positive margin = profitable arbitrage
+ */
+function calculateArbitrageMargin(oddsA, oddsB) {
+    const probA = 1 / oddsA;
+    const probB = 1 / oddsB;
+    return 1 - (probA + probB);
 }
 function isOpportunityStale(opportunity) {
     const foundAt = new Date(opportunity.foundAt).getTime();
@@ -171,7 +203,18 @@ exports.useCalculatorStore = (0, zustand_1.create)()((0, middleware_1.persist)((
         }
         const oddsA = opportunity.legs[0].odds;
         const oddsB = opportunity.legs[1].odds;
-        const { stakeA, stakeB, totalStake } = calculateStakesFromTargetProfit(target, oddsA, oddsB);
+        const result = calculateStakesFromTargetProfit(target, oddsA, oddsB);
+        if (!result) {
+            set({
+                calculatedStakeA: 0,
+                calculatedStakeB: 0,
+                totalInvestment: 0,
+                profit: 0,
+                roi: 0
+            });
+            return;
+        }
+        const { stakeA, stakeB, totalStake } = result;
         const profit = calculateProfit(stakeA, stakeB, oddsA, oddsB);
         const roi = calculateRoi(profit, totalStake);
         set({
