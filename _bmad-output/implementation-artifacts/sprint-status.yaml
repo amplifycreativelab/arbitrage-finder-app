@@ -86,12 +86,13 @@ development_status:
   7-5-exhaustive-arbitrage-detection-engine: done
   7-6-continuous-deep-scan-settings-status-ui: done
   7-7-odds-comparison-view: done
-  7-8-api-efficiency-advanced-features: review
+  7-8-api-efficiency-advanced-features: done
   epic-7-retrospective: optional
   epic-8: in-progress
-  8-1-odds-browser-tab-grid-view: review
+  8-1-odds-browser-tab-grid-view: done
   8-2-odds-selection-comparison-integration: done
   8-3-surebet-calculator-core: done
   8-4-currency-exchange-rate-service: done
   8-5-multi-currency-surebet-calculator-integrated: done
+  8-6-dedicated-settings-tab: in-progress
   epic-8-retrospective: optional
