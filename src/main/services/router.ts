@@ -9,7 +9,12 @@ import {
 import {
   getEnabledProviders,
   toggleProvider,
-  getAllProvidersWithStatus
+  getAllProvidersWithStatus,
+  getBookmakerCardRules,
+  getBookmakerCardRule,
+  setBookmakerCardRule,
+  removeBookmakerCardRule,
+  getConfiguredBookmakers
 } from './storage'
 import {
   copySignalToClipboardInputSchema,
@@ -27,7 +32,7 @@ import {
   registerAdapters,
   registerPollCompleteListener
 } from './poller'
-import type { ArbitrageOpportunity, ProviderId } from '../../../shared/types'
+import type { ArbitrageOpportunity, ProviderId, CardCountingRule } from '../../../shared/types'
 import {
   acknowledgeFallbackWarning,
   getApiKeyForAdapter,
@@ -686,7 +691,59 @@ export const appRouter = t.router({
         to: input.to,
         result
       }
-    })
+    }),
+
+  // ============================================================
+  // Card Counting Rules Procedures (Story 1.5)
+  // ============================================================
+
+  /**
+   * Get all bookmaker card counting rules.
+   */
+  getBookmakerCardRules: t.procedure.query(() => {
+    return { rules: getBookmakerCardRules() }
+  }),
+
+  /**
+   * Get the card counting rule for a specific bookmaker.
+   */
+  getBookmakerCardRule: t.procedure
+    .input(z.object({ bookmaker: z.string().min(1) }))
+    .query(({ input }) => {
+      return { rule: getBookmakerCardRule(input.bookmaker) }
+    }),
+
+  /**
+   * Set the card counting rule for a specific bookmaker.
+   */
+  setBookmakerCardRule: t.procedure
+    .input(
+      z.object({
+        bookmaker: z.string().min(1),
+        rule: z.enum(['conservative', 'standard'])
+      })
+    )
+    .mutation(({ input }) => {
+      setBookmakerCardRule(input.bookmaker, input.rule as CardCountingRule)
+      return { ok: true, bookmaker: input.bookmaker, rule: input.rule }
+    }),
+
+  /**
+   * Remove the card counting rule for a specific bookmaker.
+   */
+  removeBookmakerCardRule: t.procedure
+    .input(z.object({ bookmaker: z.string().min(1) }))
+    .mutation(({ input }) => {
+      removeBookmakerCardRule(input.bookmaker)
+      return { ok: true, bookmaker: input.bookmaker }
+    }),
+
+  /**
+   * Get all bookmakers with explicit card counting rules.
+   */
+  getConfiguredBookmakers: t.procedure.query(() => {
+    return { bookmakers: getConfiguredBookmakers() }
+  })
 })
 
 export type AppRouter = typeof appRouter

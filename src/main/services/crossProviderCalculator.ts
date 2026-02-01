@@ -11,7 +11,8 @@
 
 import type { ArbitrageOpportunity, MarketQuote, ProviderId } from '../../../shared/types'
 import { arbitrageOpportunitySchema } from '../../../shared/schemas'
-import { calculateTwoLegArbitrageRoi } from './calculator'
+import { calculateTwoLegArbitrageRoi, detectCardRulesMismatch } from './calculator'
+import { inferMarketMetadata } from '../../../shared/types'
 import { logInfo, logWarn, type StructuredLogBase } from './logger'
 
 /**
@@ -111,6 +112,14 @@ function createCrossProviderOpportunity(
   // Infer sport from event key (first team name suggests soccer for now)
   const sport = 'soccer' // Default for soccer-focused app
 
+  // Story 6.5: Detect card rules mismatch for cards market group
+  const metadata = inferMarketMetadata(homeQuote.market)
+  const cardRulesWarning = detectCardRulesMismatch(
+    homeQuote.bookmaker,
+    awayQuote.bookmaker,
+    metadata.group
+  )
+
   return {
     id,
     sport,
@@ -137,7 +146,9 @@ function createCrossProviderOpportunity(
     foundAt: oldestFoundAt,
     providerId: mergedFrom[0], // Primary provider
     mergedFrom: mergedFrom.length > 1 ? mergedFrom : undefined,
-    isCrossProvider: true
+    isCrossProvider: true,
+    // Story 6.5: Include card rules warning if present (only for cards market group)
+    ...(cardRulesWarning?.mismatch && { cardRulesWarning })
   }
 }
 

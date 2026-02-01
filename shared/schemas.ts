@@ -88,6 +88,22 @@ const arbitrageLegSchema = z.object({
 
 const opportunitySourceSchema = z.enum(['feed', 'deepScan'])
 
+// Story 6.5: Card counting rule type for schema validation
+const cardCountingRuleSchema = z.enum(['conservative', 'standard'])
+
+// Story 6.5: Card rules warning schema
+const cardRulesWarningSchema = z.object({
+  bookmakerA: z.object({
+    name: z.string(),
+    rule: cardCountingRuleSchema
+  }),
+  bookmakerB: z.object({
+    name: z.string(),
+    rule: cardCountingRuleSchema
+  }),
+  mismatch: z.boolean()
+})
+
 export const arbitrageOpportunitySchema = z
   .object({
     id: z.string(),
@@ -103,7 +119,8 @@ export const arbitrageOpportunitySchema = z
     source: opportunitySourceSchema.optional(),
     providerId: providerIdSchema.optional(), // Multi-provider source tracking (Story 5.1)
     mergedFrom: z.array(providerIdSchema).optional(), // All source providers after deduplication (Story 5.2)
-    isCrossProvider: z.boolean().optional() // Cross-provider arbitrage indicator (Story 5.4)
+    isCrossProvider: z.boolean().optional(), // Cross-provider arbitrage indicator (Story 5.4)
+    cardRulesWarning: cardRulesWarningSchema.optional() // Story 6.5: Card rules mismatch warning
   })
   .refine(
     (value) => value.legs[0].bookmaker !== value.legs[1].bookmaker,

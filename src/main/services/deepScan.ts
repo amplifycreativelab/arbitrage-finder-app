@@ -17,7 +17,7 @@ import { getApiKeyForAdapter } from '../credentials'
 import { scheduleProviderRequest } from './poller'
 import { getSelectedBookmakers } from './odds-api-io-bookmakers'
 import { createCorrelationId, logDebug, logInfo, logWarn, type StructuredLogBase } from './logger'
-import { calculateTwoLegArbitrageRoi } from './calculator'
+import { calculateTwoLegArbitrageRoi, detectCardRulesMismatch, clearCardRulesCache } from './calculator'
 
 const ODDS_API_IO_BASE_URL = 'https://api.odds-api.io'
 const ODDS_API_IO_EVENTS_PATH = '/v3/events'
@@ -2556,6 +2556,13 @@ function buildOpportunitiesFromRawOdds(
     const legOdds: [number, number] = [bestPair.a.odds, bestPair.b.odds]
     const oddsHistory = updateOddsHistory(id, bestPair.roi, legOdds, foundAt)
 
+    // Story 6.5: Detect card rules mismatch for cards market group
+    const cardRulesWarning = detectCardRulesMismatch(
+      bestPair.a.bookmaker,
+      bestPair.b.bookmaker,
+      metadata.group
+    )
+
     opportunities.push({
       id,
       providerId: DEEP_SCAN_PROVIDER_ID,
@@ -2590,7 +2597,9 @@ function buildOpportunitiesFromRawOdds(
       ...(mostRecentMarketUpdate && { marketUpdatedAt: mostRecentMarketUpdate }),
       // Story 7.8: Odds movement tracking
       oddsTrend,
-      oddsHistory
+      oddsHistory,
+      // Story 6.5: Include card rules warning if present (only for cards market group)
+      ...(cardRulesWarning?.mismatch && { cardRulesWarning })
     })
   }
 
@@ -2888,6 +2897,9 @@ async function runScanForEvents(args: {
   }
 }): Promise<void> {
   const { mode, config, apiKey, signal, correlationId, events, bookmakers, discoverySummary } = args
+
+  // Story 6.5: Clear card rules cache at start of each scan for fresh lookups
+  clearCardRulesCache()
 
   currentScanMode = mode
 

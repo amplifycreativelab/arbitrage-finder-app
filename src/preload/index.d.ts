@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId, ScanHistoryEntry, DeepScanQuotaStatus } from '../../shared/types'
+import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId, ScanHistoryEntry, DeepScanQuotaStatus, CardCountingRule, BookmakerCardRules } from '../../shared/types'
 
 export interface CredentialsStorageStatus {
   isUsingFallbackStorage: boolean
@@ -111,6 +111,15 @@ export interface OddsApiIoAPI {
   clearSelectedBookmakers: () => Promise<void>
 }
 
+// Story 1.5: Card Counting Rules API
+export interface CardRulesAPI {
+  getAllRules: () => Promise<BookmakerCardRules>
+  getRule: (bookmaker: string) => Promise<CardCountingRule>
+  setRule: (bookmaker: string, rule: CardCountingRule) => Promise<void>
+  removeRule: (bookmaker: string) => Promise<void>
+  getConfiguredBookmakers: () => Promise<string[]>
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -119,6 +128,7 @@ declare global {
       oddsApiIo: OddsApiIoAPI
       feed: FeedAPI
       deepScan: DeepScanAPI
+      cardRules: CardRulesAPI
       // Story 7.7: Best Odds Comparison & copy utilities
       deepScanGetBestOdds: (input: { eventId: string }) => Promise<{
         bestOdds: Array<{

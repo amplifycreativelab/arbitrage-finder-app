@@ -1,6 +1,6 @@
 import ElectronStore from 'electron-store'
 import { safeStorage } from 'electron'
-import { DEFAULT_PROVIDER_ID, isProviderId, PROVIDER_IDS, type ProviderId } from '../../../shared/types'
+import { DEFAULT_PROVIDER_ID, isProviderId, PROVIDER_IDS, type ProviderId, type CardCountingRule, type BookmakerCardRules, DEFAULT_CARD_COUNTING_RULE } from '../../../shared/types'
 
 type ProviderSecrets = Partial<Record<ProviderId, string>>
 
@@ -9,6 +9,7 @@ interface StorageSchema {
   fallbackWarningShown?: boolean
   activeProviderId?: ProviderId // Legacy field, kept for backward compatibility
   enabledProviders?: ProviderId[] // New multi-provider field
+  bookmakerCardRules?: BookmakerCardRules // Story 1.5: Card counting rules per bookmaker
 }
 
 type StorageStore = {
@@ -264,4 +265,53 @@ export async function getApiKey(providerId: string): Promise<string | null> {
   }
 
   return null
+}
+
+// ============================================================
+// Card Counting Rules (Story 1.5)
+// ============================================================
+
+/**
+ * Get all bookmaker card counting rules.
+ */
+export function getBookmakerCardRules(): BookmakerCardRules {
+  return store.get('bookmakerCardRules') ?? {}
+}
+
+/**
+ * Get the card counting rule for a specific bookmaker.
+ * Returns the default rule if not explicitly configured.
+ */
+export function getBookmakerCardRule(bookmaker: string): CardCountingRule {
+  const rules = getBookmakerCardRules()
+  return rules[bookmaker] ?? DEFAULT_CARD_COUNTING_RULE
+}
+
+/**
+ * Set the card counting rule for a specific bookmaker.
+ */
+export function setBookmakerCardRule(bookmaker: string, rule: CardCountingRule): void {
+  const currentRules = getBookmakerCardRules()
+  store.set('bookmakerCardRules', {
+    ...currentRules,
+    [bookmaker]: rule
+  })
+}
+
+/**
+ * Remove the card counting rule for a specific bookmaker.
+ * The bookmaker will then use the default rule.
+ */
+export function removeBookmakerCardRule(bookmaker: string): void {
+  const currentRules = getBookmakerCardRules()
+  const { [bookmaker]: _, ...rest } = currentRules
+  store.set('bookmakerCardRules', rest)
+}
+
+/**
+ * Get all bookmakers that have explicit card counting rules set.
+ */
+export function getConfiguredBookmakers(): string[] {
+  const rules = getBookmakerCardRules()
+  return Object.keys(rules)
 }

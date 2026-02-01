@@ -48,6 +48,8 @@ We follow a **Walking Skeleton** approach:
   FR13   Staleness Indicator
   FR14   One-click copy to clipboard
   FR15   Deep Scan all markets (raw odds)
+  FR16   Configure bookmaker card counting rules
+  FR17   Warn on card rules mismatch in arbitrage opportunities
 
 ------------------------------------------------------------------------
 
@@ -55,14 +57,14 @@ We follow a **Walking Skeleton** approach:
 
   Epic                    Covers
   ----------------------- ---------------------------------------
-  Epic 1 -- Foundation    FR1, FR2, NFR3, NFR4
+  Epic 1 -- Foundation    FR1, FR2, FR16, NFR3, NFR4
   Epic 2 -- Data Engine   FR5, FR6, FR7, FR8, NFR1, NFR2
   Epic 3 -- Dashboard     FR3, FR4, FR9, FR10, FR11, FR12, FR13
   Epic 4 -- Interaction   FR14
   Epic 5 -- Multi-Provider & Advanced Markets   FR3, FR4, FR5, FR6, FR7, FR9, FR10, FR11
-  Epic 6 -- Enhanced Filtering & Desktop UX     FR3, FR6, FR9, FR10, FR11, FR13
+  Epic 6 -- Enhanced Filtering & Desktop UX     FR3, FR6, FR9, FR10, FR11, FR13, FR17
   Epic 7 -- Deep Scan (All Markets)             FR5, FR6, FR7, FR8, FR9, FR10, FR11, FR15
-  Epic 8 -- Odds Browser & Surebet Tools        FR14, FR16, FR17, FR18
+  Epic 8 -- Odds Browser & Surebet Tools        FR1, FR3, FR8, FR14, FR16, FR17, FR18
 
 ------------------------------------------------------------------------
 
@@ -182,6 +184,46 @@ So that keys are never exposed in the UI layer or logs.
 
 - FR2 (Securely save API keys)
 - Architecture: "Security and API Credential Handling"
+
+------------------------------------------------------------------------
+
+## **Story 1.5 -- Bookmaker Card Counting Rules Configuration**
+
+**As a User**\
+I want to configure card counting rules for each bookmaker\
+So that I know when arbitrage opportunities may be at risk due to different booking counting policies.
+
+### Background
+
+Different bookmakers use different rules for counting cards in Over/Under card markets:
+- **Sportsbet ("Conservative")**: 2 yellows + 1 red = 2 cards total (counts both yellows and the resulting red as just the red)
+- **Others ("Standard")**: 2 yellows + 1 red = 3 cards total (counts each card shown)
+
+This discrepancy can turn an apparent arbitrage into a loss if the user doesn't know which counting rules apply.
+
+### Acceptance Criteria
+
+- A **"Card Rules"** section exists in the Bookmaker Settings panel
+- Each configured bookmaker displays a dropdown/select for card counting rule:
+  - **"Conservative (2 cards max)"** - Sportsbet style: 2 yellows + red = 2 cards
+  - **"Standard (3 cards)"** - Others: 2 yellows + red = 3 cards
+- Default selection is "Standard (3 cards)" for new bookmakers
+- Selection is persisted per bookmaker in app settings store
+- A tooltip or info icon explains the difference with examples:
+  - "Player receives two yellows then a red: Conservative = 2 cards, Standard = 3 cards"
+
+### Technical Notes
+
+- Extend `appSettingsStore.ts` with:
+  ```typescript
+  bookmakerCardRules: Record<string, 'conservative' | 'standard'>
+  ```
+- Key is bookmaker ID/name (matching the provider's bookmaker identifier)
+- Default value: `'standard'` for all bookmakers not explicitly configured
+
+### Links
+
+- FR16 (Configure bookmaker card counting rules)
 
 ------------------------------------------------------------------------
 
@@ -776,6 +818,59 @@ So that I can see more data and work efficiently on my desktop monitor.
 
 - Story 3.1 (Main Layout & Split Pane)
 - Architecture: "Implementation Patterns – Naming/Structure"
+
+------------------------------------------------------------------------
+
+## **Story 6.5 -- Card Rules Mismatch Warning Indicator**
+
+**As a User**\
+I want to see a warning when an arbitrage opportunity involves bookmakers with different card counting rules\
+So that I don't place bets that could result in a loss due to rule discrepancies.
+
+### Background
+
+When an arbitrage opportunity appears in Cards Over/Under markets (e.g., Over 4.5 cards vs Under 4.5 cards), the "guaranteed profit" assumes both bookmakers count cards the same way. However:
+- Bookmaker A might count 2 yellows + 1 red as 2 cards (Sportsbet style)
+- Bookmaker B might count the same scenario as 3 cards
+
+In edge cases where the final card count lands between these definitions (e.g., exactly 2 cards in the match), one bet wins while the other loses—turning an "arb" into a loss.
+
+### Acceptance Criteria
+
+- For every arbitrage opportunity in the **Cards** market group (`marketGroup: 'cards'`):
+  - Check if the participating bookmakers have different card counting rules configured (Story 1.5)
+  - If rules differ, display a **warning icon** (⚠️ or similar) in the opportunity row
+- **Tooltip/overlay** on hover shows:
+  - "Card counting rules differ between bookmakers"
+  - Bookmaker A: [Conservative/Standard] - [X cards for YY+R]
+  - Bookmaker B: [Conservative/Standard] - [X cards for YY+R]
+- The warning is **non-blocking**—the opportunity still appears in the feed but is visually flagged
+- Clicking the warning icon opens a modal or expanded view explaining:
+  - The exact rule difference
+  - Example scenario where this could cause a loss
+  - Suggestion to verify both bookmakers' settlement before placing bets
+- Warning respects the user's configured rules per bookmaker (falls back to "Standard" if not configured)
+
+### Technical Notes
+
+- Extend `ArbitrageOpportunity` type to include:
+  ```typescript
+  cardRulesWarning?: {
+    bookmakerA: { name: string; rule: 'conservative' | 'standard' };
+    bookmakerB: { name: string; rule: 'conservative' | 'standard' };
+    mismatch: boolean;
+  }
+  ```
+- Warning logic runs during opportunity normalization (after arb detection)
+- Only applies when `marketGroup === 'cards'`
+- Read card rules from `appSettingsStore.bookmakerCardRules`
+- Consider performance: cache bookmaker rule lookups per feed refresh
+
+### Links
+
+- FR17 (Warn on card rules mismatch in arbitrage opportunities)
+- Story 1.5 (Bookmaker Card Counting Rules Configuration)
+- Story 7.4 (Comprehensive Market Normalization - Cards support)
 
 ------------------------------------------------------------------------
 
@@ -1525,6 +1620,62 @@ So that I can calculate stakes accurately when bookmakers use different account 
 
 ------------------------------------------------------------------------
 
+## **Story 8.6 -- Dedicated Settings Tab**
+
+**As a User**\
+I want all configuration settings consolidated in a dedicated Settings tab\
+So that the Arbitrage Feed and Odds Browser remain focused on data while settings are organized in one place.
+
+### Background
+
+Currently, settings are mixed into the right pane of the Arbitrage Feed tab:
+- Provider settings share space with Signal Preview
+- Bookmaker selection is nested under provider config
+- Currency settings appear below provider settings
+- Deep Scan configuration lives in a dialog
+- Auto-refresh controls are scattered
+
+This creates a cluttered UX where operational data competes with configuration UI for screen space.
+
+### Acceptance Criteria
+
+- A **third tab "Settings"** appears in the main tab navigation after "Odds Browser"
+- Tab order: Arbitrage Feed | Odds Browser | Settings
+- Settings tab uses a **gear icon** alongside the label
+- Tab selection persists across app restarts
+- Settings tab displays a **full-width settings page** (no split pane) with collapsible sections:
+  - **API Providers** - Enable/disable providers, API keys, test connection
+  - **Bookmaker Selection** - Region filters, search, bulk select/deselect
+  - **Deep Scan Configuration** - Continuous scan toggle, interval, cache TTL, scan mode
+  - **Currency & Display** - Base currency, exchange rates, fetch rates
+  - **Auto-Refresh & Polling** - Auto-refresh toggle, interval, manual refresh
+- Sections can be expanded/collapsed independently with state persisted
+- Right pane of Arbitrage Feed is cleaned up: only Signal Preview and Best Odds remain
+- Filter bar has a "Settings" shortcut link for quick access
+- Unsaved changes warning when navigating away with pending edits
+
+### Technical Notes
+
+- Create `SettingsPage.tsx` as main container for the Settings tab
+- Create reusable section components in `features/settings/sections/`
+  - `ApiProvidersSection.tsx`
+  - `BookmakerSelectionSection.tsx`
+  - `DeepScanConfigSection.tsx`
+  - `CurrencyDisplaySection.tsx`
+  - `AutoRefreshSection.tsx`
+- Modify `DashboardLayout.tsx` to add third tab
+- Remove `ProviderSettings` and `CurrencySettings` from right pane
+- Reuse existing store logic: `appSettingsStore`, `deepScanStore`, `feedFiltersStore`
+
+### Links
+
+- Story 1.3 (Settings Interface & Provider Selection)
+- Story 5.1 (Multi-Provider Configuration)
+- Story 7.6 (Continuous Deep Scan Settings)
+- Story 8.4 (Currency Exchange Rate Service)
+
+------------------------------------------------------------------------
+
 # **New Functional Requirements**
 
   ID     Description
@@ -1561,6 +1712,8 @@ So that I can calculate stakes accurately when bookmakers use different account 
   FR18          8.4, 8.5
   FR19          7.8
   FR20          7.8
+  FR1, FR3      8.6
+  FR8           8.6
 
 ------------------------------------------------------------------------
 
@@ -1575,7 +1728,7 @@ This epic breakdown ensures:
 - **Epic 5** – expanded provider coverage and advanced market support for richer arbitrage opportunities
 - **Epic 6** – enhanced filtering UX, granular bookmaker selection, and full-width desktop optimization
 - **Epic 7** – **Continuous Deep Scan** as the primary arbitrage discovery mechanism, automatically scanning all events and markets to maximize opportunity detection
-- **Epic 8** – **Odds Browser & Surebet Tools** - Surebet calculator integrated into the main feed for immediate stake calculation; separate view-only Odds Browser for systematic odds exploration; multi-currency support via Frankfurt API
+- **Epic 8** – **Odds Browser & Surebet Tools** - Surebet calculator integrated into the main feed for immediate stake calculation; separate view-only Odds Browser for systematic odds exploration; multi-currency support via Frankfurt API; dedicated Settings tab consolidating all configuration
 
 ## Epic 7 Architecture Overview
 

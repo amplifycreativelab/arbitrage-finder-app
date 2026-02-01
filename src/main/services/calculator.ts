@@ -1,5 +1,6 @@
-import type { ArbitrageOpportunity, ProviderId } from '../../../shared/types'
+import type { ArbitrageOpportunity, ProviderId, CardRulesWarning, MarketGroup } from '../../../shared/types'
 import { arbitrageOpportunityListSchema } from '../../../shared/schemas'
+import { getBookmakerCardRule } from './storage'
 
 export function calculateTwoLegArbitrageRoi(oddsA: number, oddsB: number): number {
   if (!Number.isFinite(oddsA) || !Number.isFinite(oddsB)) {
@@ -211,6 +212,101 @@ export function getDeduplicationStats(
     totalOpportunities: originalCount,
     uniqueOpportunities: deduplicatedCount,
     duplicatesRemoved: originalCount - deduplicatedCount
+  }
+}
+
+// ============================================================
+// Card Rules Mismatch Detection (Story 6.5)
+// ============================================================
+
+/**
+ * Cache for bookmaker card rules to avoid repeated store reads per feed refresh.
+ * This is cleared at the start of each feed refresh cycle.
+ */
+let cardRulesCache: Map<string, ReturnType<typeof getBookmakerCardRule>> | null = null
+
+/**
+ * Clear the card rules cache. Should be called at the start of each feed refresh.
+ */
+export function clearCardRulesCache(): void {
+  cardRulesCache = null
+}
+
+/**
+ * Get the card counting rule for a bookmaker, using cache if available.
+ */
+function getCachedBookmakerCardRule(bookmaker: string): ReturnType<typeof getBookmakerCardRule> {
+  if (!cardRulesCache) {
+    cardRulesCache = new Map()
+  }
+  
+  const cached = cardRulesCache.get(bookmaker)
+  if (cached) {
+    return cached
+  }
+  
+  const rule = getBookmakerCardRule(bookmaker)
+  cardRulesCache.set(bookmaker, rule)
+  return rule
+}
+
+/**
+ * Detect if there's a card counting rules mismatch between bookmakers.
+ * Only applies to opportunities in the 'cards' market group.
+ * 
+ * @param bookmakerA - First bookmaker name
+ * @param bookmakerB - Second bookmaker name
+ * @param marketGroup - The market group (e.g., 'cards', 'goals', etc.)
+ * @returns CardRulesWarning if market is cards and rules differ, null otherwise
+ */
+export function detectCardRulesMismatch(
+  bookmakerA: string,
+  bookmakerB: string,
+  marketGroup: MarketGroup
+): CardRulesWarning | null {
+  // Only apply to cards market group
+  if (marketGroup !== 'cards') {
+    return null
+  }
+  
+  const ruleA = getCachedBookmakerCardRule(bookmakerA)
+  const ruleB = getCachedBookmakerCardRule(bookmakerB)
+  
+  const mismatch = ruleA !== ruleB
+  
+  return {
+    bookmakerA: { name: bookmakerA, rule: ruleA },
+    bookmakerB: { name: bookmakerB, rule: ruleB },
+    mismatch
+  }
+}
+
+/**
+ * Format card counting rule for display.
+ * Shows the card count for "2 yellows + 1 red" scenario.
+ */
+export function formatCardRuleDescription(rule: ReturnType<typeof getBookmakerCardRule>): string {
+  switch (rule) {
+    case 'conservative':
+      return '2 cards for YY+R (counts only the red)'
+    case 'standard':
+      return '3 cards for YY+R (counts each card)'
+    default:
+      return 'Unknown rule'
+  }
+}
+
+/**
+ * Get display label for card counting rule.
+ */
+export function getCardRuleLabel(rule: ReturnType<typeof getBookmakerCardRule>): string {
+  switch (rule) {
+    case 'conservative':
+      return 'Conservative'
+    case 'standard':
+      return 'Standard'
+    default:
+      return 'Unknown'
   }
 }
 

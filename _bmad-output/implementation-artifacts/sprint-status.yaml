@@ -37,11 +37,12 @@ story_location: _bmad-output/implementation-artifacts
 # Refreshed: 2026-01-30 - Added Epic 8 stories, preserved all existing statuses
 
 development_status:
-  epic-1: done
+  epic-1: in-progress
   1-1-project-initialization-ui-scaffolding: done
   1-2-secure-storage-service: done
   1-3-settings-interface-provider-selection: done
   1-4-security-hardening-api-boundaries: done
+  1-5-bookmaker-card-counting-rules-configuration: done
   epic-1-retrospective: done
   epic-2: done
   2-1-adapter-pattern-shared-types: done
@@ -72,11 +73,12 @@ development_status:
   5-4-cross-provider-arbitrage-aggregator-advanced: done
   5-5-advanced-soccer-markets-ui-selector: superseded
   epic-5-retrospective: optional
-  epic-6: done
+  epic-6: in-progress
   6-1-expanded-two-way-market-types: done
   6-2-scalable-market-filter-ui: done
   6-3-cascading-bookmaker-selection-by-region: done
   6-4-full-width-desktop-layout: done
+  6-5-card-rules-mismatch-warning: done
   epic-6-retrospective: optional
   epic-7: in-progress
   7-1-deep-scan-mode-hybrid-feed: done
@@ -94,5 +96,5 @@ development_status:
   8-3-surebet-calculator-core: done
   8-4-currency-exchange-rate-service: done
   8-5-multi-currency-surebet-calculator-integrated: done
-  8-6-dedicated-settings-tab: in-progress
+  8-6-dedicated-settings-tab: review
   epic-8-retrospective: optional

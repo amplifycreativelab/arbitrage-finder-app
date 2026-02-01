@@ -10,6 +10,8 @@ import type { FeedSortDirection, FeedSortKey } from './stores/feedStore'
 import { useFeedStore } from './stores/feedStore'
 import { useCalculatorStore } from './stores/calculatorStore'
 import { getStalenessInfo } from './staleness'
+import { CardRulesWarningIcon } from './CardRulesWarningIcon'
+import { CardRulesWarningModal } from './CardRulesWarningModal'
 
 const isServerEnvironment = typeof document === 'undefined'
 
@@ -409,6 +411,10 @@ function FeedRow({
   const isCrossProvider = opportunity.isCrossProvider === true
   const isDeepScan = opportunity.source === 'deepScan'
 
+  // Story 6.5: Card rules warning
+  const hasCardRulesWarning = opportunity.cardRulesWarning?.mismatch === true
+  const [cardRulesModalOpen, setCardRulesModalOpen] = React.useState(false)
+
   const openCalculator = useCalculatorStore((state) => state.openCalculator)
   const [contextMenuOpen, setContextMenuOpen] = React.useState(false)
 
@@ -427,6 +433,10 @@ function FeedRow({
     setContextMenuOpen(false)
   }
 
+  const handleCardRulesWarningClick = (): void => {
+    setCardRulesModalOpen(true)
+  }
+
   return (
     <div
       id={`feed-row-${opportunity.id}`}
@@ -443,6 +453,7 @@ function FeedRow({
       data-merged={isMerged ? 'true' : 'false'}
       data-cross-provider={isCrossProvider ? 'true' : 'false'}
       data-deep-scan={isDeepScan ? 'true' : 'false'}
+      data-card-rules-warning={hasCardRulesWarning ? 'true' : 'false'}
       onClick={onSelect}
       onContextMenu={handleContextMenu}
       role="option"
@@ -501,6 +512,15 @@ function FeedRow({
           aria-label={`Source: ${opportunity.providerId}`}
         >
           {providerBadge}
+        </div>
+      )}
+      {/* Story 6.5: Card rules warning icon */}
+      {hasCardRulesWarning && opportunity.cardRulesWarning && (
+        <div className="mx-1" data-testid="feed-row-card-rules-warning">
+          <CardRulesWarningIcon 
+            warning={opportunity.cardRulesWarning} 
+            onClick={handleCardRulesWarningClick}
+          />
         </div>
       )}
       <div
@@ -568,6 +588,13 @@ function FeedRow({
           </div>
         </>
       )}
+
+      {/* Story 6.5: Card Rules Warning Modal */}
+      <CardRulesWarningModal
+        warning={opportunity.cardRulesWarning ?? null}
+        isOpen={cardRulesModalOpen}
+        onClose={() => setCardRulesModalOpen(false)}
+      />
     </div>
   )
 }

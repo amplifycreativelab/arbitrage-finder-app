@@ -686,6 +686,16 @@ export interface ArbitrageLeg {
   impliedProbability?: number
 }
 
+/**
+ * Card counting rule for a bookmaker in an arbitrage opportunity.
+ * Story 6.5: Card Rules Mismatch Warning Indicator
+ */
+export interface CardRulesWarning {
+  bookmakerA: { name: string; rule: CardCountingRule }
+  bookmakerB: { name: string; rule: CardCountingRule }
+  mismatch: boolean
+}
+
 export interface ArbitrageOpportunity {
   id: string
   sport: string
@@ -735,6 +745,11 @@ export interface ArbitrageOpportunity {
    * Contains up to 3 most recent ROI values with timestamps.
    */
   oddsHistory?: OddsSnapshot[]
+  /**
+   * Story 6.5: Card counting rules warning for cards market group.
+   * Only present when marketGroup is 'cards' and bookmakers have different rules.
+   */
+  cardRulesWarning?: CardRulesWarning
 }
 
 // ============================================================================
@@ -950,3 +965,42 @@ export const DEFAULT_PROVIDER_ID: ProviderId = 'the-odds-api'
 export function isProviderId(value: unknown): value is ProviderId {
   return typeof value === 'string' && (PROVIDER_IDS as readonly string[]).includes(value)
 }
+
+// ============================================================================
+// Card Counting Rules (Story 1.5)
+// ============================================================================
+
+/**
+ * Card counting rule type for bookmakers.
+ * - 'conservative': 2 yellows + 1 red = 2 cards total (Sportsbet style)
+ * - 'standard': 2 yellows + 1 red = 3 cards total (default)
+ */
+export type CardCountingRule = 'conservative' | 'standard'
+
+/**
+ * Record of bookmaker card counting rules.
+ * Key is the bookmaker identifier from feed data.
+ * Value is the counting rule for that bookmaker.
+ */
+export type BookmakerCardRules = Record<string, CardCountingRule>
+
+/**
+ * Display metadata for card counting rules.
+ */
+export const CARD_COUNTING_RULE_DISPLAY: Record<CardCountingRule, { label: string; description: string; example: string }> = {
+  conservative: {
+    label: 'Conservative (2 cards max)',
+    description: 'Counts both yellows and the resulting red as just the red',
+    example: '2 yellows + red = 2 cards total'
+  },
+  standard: {
+    label: 'Standard (3 cards)',
+    description: 'Counts each card shown individually',
+    example: '2 yellows + red = 3 cards total'
+  }
+}
+
+/**
+ * Default card counting rule for new/unconfigured bookmakers.
+ */
+export const DEFAULT_CARD_COUNTING_RULE: CardCountingRule = 'standard'

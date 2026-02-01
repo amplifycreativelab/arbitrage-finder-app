@@ -122,6 +122,10 @@ The system must implement a strict internal `ArbitrageOpportunity` model. All in
 **Actions**
 * **FR14:** Users can copy complete bet details to the clipboard with a single click.
 
+**Bookmaker-Specific Rules**
+* **FR16:** Users can configure card counting rules per bookmaker (Conservative: 2 yellows + red = 2 cards; Standard: 2 yellows + red = 3 cards).
+* **FR17:** System displays a warning indicator on arbitrage opportunities in Cards markets when participating bookmakers have different card counting rules.
+
 
 ---
 
@@ -176,10 +180,11 @@ This section maps PRD requirements to the architecture (`_bmad-output/architectu
 
 ### PRD ↔ Epics
 
-- **Epic 1 – Foundation & Secure Configuration** → FR1, FR2, NFR3, NFR4.  
+- **Epic 1 – Foundation & Secure Configuration** → FR1, FR2, FR16, NFR3, NFR4.  
 - **Epic 2 – Data Engine** → FR5–FR8, NFR1, NFR2.  
 - **Epic 3 – Dashboard** → FR3, FR4, FR9–FR13.  
-- **Epic 4 – Interaction** → FR14 and keyboard-first workflows.  
+- **Epic 4 – Interaction** → FR14 and keyboard-first workflows.
+- **Epic 6 – Enhanced Filtering & Desktop UX** → FR3, FR6, FR9–FR11, FR13, FR17.  
 
 Any new requirement added to this PRD must be linked to:
 - One or more architecture touchpoints (files/patterns in `_bmad-output/architecture.md`), and  

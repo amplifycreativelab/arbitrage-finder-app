@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import type { Currency } from '../../../../../../shared/lib/currency'
+import type { CardCountingRule, BookmakerCardRules } from '../../../../../../shared/types'
+import { DEFAULT_CARD_COUNTING_RULE } from '../../../../../../shared/types'
 
 interface AppSettingsState {
   // Auto-refresh settings
@@ -15,6 +17,12 @@ interface AppSettingsState {
   ratesLastFetched: string | null
   setBaseCurrency: (currency: Currency) => void
   setExchangeRates: (rates: Record<Currency, number>, timestamp: string) => void
+
+  // Card counting rules (Story 1.5)
+  bookmakerCardRules: BookmakerCardRules
+  setBookmakerCardRule: (bookmaker: string, rule: CardCountingRule) => void
+  getBookmakerCardRule: (bookmaker: string) => CardCountingRule
+  removeBookmakerCardRule: (bookmaker: string) => void
 }
 
 const DEFAULT_RATES: Record<Currency, number> = {
@@ -25,7 +33,7 @@ const DEFAULT_RATES: Record<Currency, number> = {
 
 export const useAppSettingsStore = create<AppSettingsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       // Auto-refresh settings
       autoRefreshEnabled: false,
       refreshIntervalMs: 30000, // Default 30s
@@ -38,7 +46,26 @@ export const useAppSettingsStore = create<AppSettingsState>()(
       ratesLastFetched: null,
       setBaseCurrency: (currency: Currency) => set({ baseCurrency: currency }),
       setExchangeRates: (rates: Record<Currency, number>, timestamp: string) =>
-        set({ exchangeRates: rates, ratesLastFetched: timestamp })
+        set({ exchangeRates: rates, ratesLastFetched: timestamp }),
+
+      // Card counting rules (Story 1.5)
+      bookmakerCardRules: {},
+      setBookmakerCardRule: (bookmaker: string, rule: CardCountingRule) =>
+        set((state) => ({
+          bookmakerCardRules: {
+            ...state.bookmakerCardRules,
+            [bookmaker]: rule
+          }
+        })),
+      getBookmakerCardRule: (bookmaker: string): CardCountingRule => {
+        const state = get()
+        return state.bookmakerCardRules[bookmaker] ?? DEFAULT_CARD_COUNTING_RULE
+      },
+      removeBookmakerCardRule: (bookmaker: string) =>
+        set((state) => {
+          const { [bookmaker]: _, ...rest } = state.bookmakerCardRules
+          return { bookmakerCardRules: rest }
+        })
     }),
     {
       name: 'app-settings-storage',
