@@ -10,7 +10,7 @@ import { PROVIDERS } from '../../../../../../shared/types'
 import { trpcClient } from '../../../lib/trpc'
 import { useDashboardErrorStore } from './dashboardErrorStore'
 
-export type FeedSortKey = 'time' | 'roi'
+export type FeedSortKey = 'time' | 'roi' | 'trend'
 export type FeedSortDirection = 'asc' | 'desc'
 
 export interface FeedSnapshot {

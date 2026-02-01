@@ -1178,3 +1178,63 @@ test('[P1][7.8-TREND-010] Multiple opportunities track history independently', (
   assert.ok(h2hOpp.oddsHistory.length >= 1, 'h2h should have history');
   assert.ok(totalsOpp.oddsHistory.length >= 1, 'totals should have history');
 });
+
+// =============================================================================
+// Task 8: Rate Limit Headers Tests (AC #7)
+// =============================================================================
+
+test('[P1][7.8-RATE-001] API rate limit state is null by default', () => {
+  deepScan.__test.resetState();
+  assert.strictEqual(deepScan.__test.getApiRateLimit(), null);
+});
+
+test('[P1][7.8-RATE-002] setApiRateLimit stores rate limit values', () => {
+  deepScan.__test.setApiRateLimit(5000, 4500, '2026-01-30T13:00:00Z');
+  const rateLimit = deepScan.__test.getApiRateLimit();
+  assert.ok(rateLimit, 'Rate limit should be set');
+  assert.strictEqual(rateLimit.limit, 5000);
+  assert.strictEqual(rateLimit.remaining, 4500);
+  assert.strictEqual(rateLimit.resetAt, '2026-01-30T13:00:00Z');
+});
+
+test('[P1][7.8-RATE-003] clearApiRateLimit clears rate limit state', () => {
+  deepScan.__test.setApiRateLimit(5000, 4500, '2026-01-30T13:00:00Z');
+  assert.ok(deepScan.__test.getApiRateLimit(), 'Rate limit should exist');
+  
+  deepScan.__test.clearApiRateLimit();
+  assert.strictEqual(deepScan.__test.getApiRateLimit(), null);
+});
+
+test('[P1][7.8-RATE-004] resetState clears API rate limit', () => {
+  deepScan.__test.setApiRateLimit(5000, 4500, '2026-01-30T13:00:00Z');
+  assert.ok(deepScan.__test.getApiRateLimit(), 'Rate limit should exist');
+  
+  deepScan.__test.resetState();
+  assert.strictEqual(deepScan.__test.getApiRateLimit(), null);
+});
+
+test('[P1][7.8-RATE-005] getHourlyQuotaStatus returns estimated values when no API rate limit', () => {
+  deepScan.__test.resetState();
+  deepScan.__test.clearApiRateLimit();
+  
+  const quota = deepScan.__test.getHourlyQuotaStatus();
+  assert.strictEqual(quota.isApiQuota, false, 'Should indicate estimated quota');
+  assert.ok(typeof quota.used === 'number', 'Should have used count');
+  assert.ok(typeof quota.limit === 'number', 'Should have limit');
+  assert.ok(typeof quota.percentUsed === 'number', 'Should have percentUsed');
+});
+
+test('[P1][7.8-RATE-006] getHourlyQuotaStatus returns API values when rate limit is set', () => {
+  deepScan.__test.resetState();
+  deepScan.__test.setApiRateLimit(5000, 4000, '2026-01-30T13:00:00Z');
+  
+  const quota = deepScan.__test.getHourlyQuotaStatus();
+  assert.strictEqual(quota.isApiQuota, true, 'Should indicate API quota');
+  assert.strictEqual(quota.limit, 5000);
+  // used = limit - remaining = 5000 - 4000 = 1000
+  assert.strictEqual(quota.used, 1000);
+  // percentUsed = used / limit = 1000 / 5000 = 0.2
+  assert.strictEqual(quota.percentUsed, 0.2);
+  assert.ok(quota.apiRateLimit, 'Should include apiRateLimit object');
+  assert.strictEqual(quota.apiRateLimit.remaining, 4000);
+});

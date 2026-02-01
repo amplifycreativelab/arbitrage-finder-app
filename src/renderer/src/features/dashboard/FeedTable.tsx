@@ -46,6 +46,21 @@ function formatRoi(roi: number): string {
   return `${(roi * 100).toFixed(1)}%`
 }
 
+/**
+ * Story 7.8: Get trend indicator for odds movement
+ */
+function getTrendIndicator(trend: string | undefined): { icon: string; label: string; colorClass: string } {
+  switch (trend) {
+    case 'improving':
+      return { icon: '↑', label: 'Improving', colorClass: 'text-emerald-400' }
+    case 'worsening':
+      return { icon: '↓', label: 'Worsening', colorClass: 'text-rose-400' }
+    case 'stable':
+    default:
+      return { icon: '→', label: 'Stable', colorClass: 'text-ot-muted' }
+  }
+}
+
 function getAriaSort(sortBy: FeedSortKey, current: FeedSortKey, direction: FeedSortDirection): React.AriaAttributes['aria-sort'] {
   if (sortBy !== current) return 'none'
   return direction === 'asc' ? 'ascending' : 'descending'
@@ -256,6 +271,21 @@ export function FeedTable({
           data-testid="feed-header-event"
         >
           <span>Event</span>
+        </button>
+        {/* Story 7.8: Movement column header */}
+        <button
+          type="button"
+          className={cn(
+            'mr-3 flex items-center gap-1 text-right',
+            sortBy === 'trend' ? 'text-ot-foreground' : 'text-ot-muted'
+          )}
+          aria-label="Sort by trend"
+          aria-sort={getAriaSort(sortBy, 'trend', sortDirection)}
+          data-testid="feed-header-trend"
+          onClick={() => handleSortChange('trend')}
+        >
+          <span className="w-16">Move</span>
+          <span aria-hidden="true">{sortBy === 'trend' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}</span>
         </button>
         <button
           type="button"
@@ -529,6 +559,16 @@ function FeedRow({
         title={eventLabel}
       >
         {eventLabel}
+      </div>
+      {/* Story 7.8: Movement column showing odds trend */}
+      <div
+        className="w-[64px] shrink-0 text-right"
+        data-testid="feed-cell-trend"
+        aria-label={`Odds trend: ${getTrendIndicator(opportunity.oddsTrend).label}`}
+      >
+        <span className={cn('text-[11px] font-medium', getTrendIndicator(opportunity.oddsTrend).colorClass)}>
+          {getTrendIndicator(opportunity.oddsTrend).icon}
+        </span>
       </div>
       <div
         className="w-[64px] shrink-0 text-right font-semibold text-ot-accent"

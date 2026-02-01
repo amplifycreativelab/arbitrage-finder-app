@@ -39,21 +39,274 @@ export interface MarketMetadata {
 }
 
 /**
- * Market group display metadata for UI.
+ * Market subcategory for more granular market organization.
+ * Each subcategory belongs to a parent MarketGroup.
+ */
+export interface MarketSubcategory {
+  id: string
+  label: string
+  description: string
+  periods: MarketPeriod[]
+  teamScope: ('match' | 'home' | 'away')[]
+  hasLine: boolean
+}
+
+/**
+ * Market group display metadata for UI with subcategories.
  */
 export interface MarketGroupDisplay {
   group: MarketGroup
   label: string
   description: string
+  icon?: string
+  subcategories: MarketSubcategory[]
 }
 
+/**
+ * Comprehensive market group displays with subcategories.
+ * Organized for soccer/football arbitrage betting.
+ */
 export const MARKET_GROUP_DISPLAYS: MarketGroupDisplay[] = [
-  { group: 'goals', label: 'Goals', description: 'Totals, BTTS, team goals, clean sheets' },
-  { group: 'handicap', label: 'Handicaps', description: 'Asian handicaps, spreads' },
-  { group: 'corners', label: 'Corners', description: 'Corner totals, handicaps, races' },
-  { group: 'cards', label: 'Cards', description: 'Card totals, red cards, bookings' },
-  { group: 'shots', label: 'Shots', description: 'Shot totals, shots on target' },
-  { group: 'other', label: 'Other', description: 'Offsides, fouls, penalties' }
+  {
+    group: 'goals',
+    label: 'Goals',
+    description: 'Goal-related markets including totals, BTTS, team goals',
+    icon: '⚽',
+    subcategories: [
+      {
+        id: 'goals_total_ou',
+        label: 'Goals Over/Under',
+        description: 'Total match goals over/under a line',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: true
+      },
+      {
+        id: 'btts',
+        label: 'Both Teams To Score',
+        description: 'Yes/No on both teams scoring',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: false
+      },
+      {
+        id: 'team_goals_ou',
+        label: 'Team Goals Over/Under',
+        description: 'Home or away team goals over/under',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['home', 'away'],
+        hasLine: true
+      },
+      {
+        id: 'clean_sheet',
+        label: 'Clean Sheet',
+        description: 'Team to keep a clean sheet',
+        periods: ['ft'],
+        teamScope: ['home', 'away'],
+        hasLine: false
+      },
+      {
+        id: 'moneyline',
+        label: 'Match Winner (1X2)',
+        description: 'Three-way result betting',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: false
+      },
+      {
+        id: 'draw_no_bet',
+        label: 'Draw No Bet',
+        description: 'Two-way result, stake returned on draw',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: false
+      }
+    ]
+  },
+  {
+    group: 'handicap',
+    label: 'Handicaps',
+    description: 'Asian handicap and spread betting markets',
+    icon: '📊',
+    subcategories: [
+      {
+        id: 'asian_handicap',
+        label: 'Asian Handicap',
+        description: 'Two-way handicap with quarter/half lines',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: true
+      },
+      {
+        id: 'european_handicap',
+        label: 'European Handicap',
+        description: 'Three-way handicap including draw',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: true
+      }
+    ]
+  },
+  {
+    group: 'corners',
+    label: 'Corners',
+    description: 'Corner kick totals, handicaps, and team corners',
+    icon: '🚩',
+    subcategories: [
+      {
+        id: 'corners_total_ou',
+        label: 'Corners Over/Under',
+        description: 'Total match corners over/under',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: true
+      },
+      {
+        id: 'team_corners_ou',
+        label: 'Team Corners Over/Under',
+        description: 'Home or away team corners over/under',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['home', 'away'],
+        hasLine: true
+      },
+      {
+        id: 'corners_handicap',
+        label: 'Corners Handicap',
+        description: 'Asian handicap on corners',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: true
+      }
+    ]
+  },
+  {
+    group: 'cards',
+    label: 'Cards',
+    description: 'Booking points, card totals, red cards',
+    icon: '🟨',
+    subcategories: [
+      {
+        id: 'cards_total_ou',
+        label: 'Cards Over/Under',
+        description: 'Total match cards over/under',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: true
+      },
+      {
+        id: 'team_cards_ou',
+        label: 'Team Cards Over/Under',
+        description: 'Home or away team cards over/under',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['home', 'away'],
+        hasLine: true
+      },
+      {
+        id: 'red_card',
+        label: 'Red Card Yes/No',
+        description: 'Red card to be shown in match',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: false
+      },
+      {
+        id: 'booking_points',
+        label: 'Booking Points',
+        description: 'Total booking points (10 yellow, 25 red)',
+        periods: ['ft'],
+        teamScope: ['match'],
+        hasLine: true
+      }
+    ]
+  },
+  {
+    group: 'shots',
+    label: 'Shots',
+    description: 'Shot totals, shots on target',
+    icon: '🎯',
+    subcategories: [
+      {
+        id: 'shots_total_ou',
+        label: 'Shots Over/Under',
+        description: 'Total match shots over/under',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: true
+      },
+      {
+        id: 'team_shots_ou',
+        label: 'Team Shots Over/Under',
+        description: 'Home or away team shots over/under',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['home', 'away'],
+        hasLine: true
+      },
+      {
+        id: 'shots_on_target_ou',
+        label: 'Shots on Target Over/Under',
+        description: 'Total shots on target over/under',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: true
+      },
+      {
+        id: 'team_sot_ou',
+        label: 'Team Shots on Target O/U',
+        description: 'Home or away team SOT over/under',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['home', 'away'],
+        hasLine: true
+      }
+    ]
+  },
+  {
+    group: 'other',
+    label: 'Other',
+    description: 'Offsides, fouls, penalties, and miscellaneous',
+    icon: '📋',
+    subcategories: [
+      {
+        id: 'offsides_total_ou',
+        label: 'Offsides Over/Under',
+        description: 'Total match offsides over/under',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: true
+      },
+      {
+        id: 'team_offsides_ou',
+        label: 'Team Offsides Over/Under',
+        description: 'Home or away team offsides over/under',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['home', 'away'],
+        hasLine: true
+      },
+      {
+        id: 'fouls_total_ou',
+        label: 'Fouls Over/Under',
+        description: 'Total match fouls over/under',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: true
+      },
+      {
+        id: 'team_fouls_ou',
+        label: 'Team Fouls Over/Under',
+        description: 'Home or away team fouls over/under',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['home', 'away'],
+        hasLine: true
+      },
+      {
+        id: 'penalty_awarded',
+        label: 'Penalty Awarded Yes/No',
+        description: 'Penalty to be awarded in match',
+        periods: ['ft', '1h', '2h'],
+        teamScope: ['match'],
+        hasLine: false
+      }
+    ]
+  }
 ]
 
 /**
@@ -857,6 +1110,19 @@ export interface DeepScanQuotaStatus {
   percentUsed: number
   isThrottled: boolean
   throttleResumeAt?: string
+  /**
+   * Story 7.8: Actual rate limit values from API response headers.
+   * When present, these override the estimated values above.
+   */
+  apiRateLimit?: {
+    limit: number
+    remaining: number
+    resetAt: string // ISO timestamp when quota resets
+  }
+  /**
+   * Story 7.8: Whether quota is from API headers (true) or estimated (false).
+   */
+  isApiQuota?: boolean
 }
 
 export interface DeepScanProgress {
