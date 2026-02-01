@@ -9,15 +9,16 @@ import { Checkbox } from '../../components/ui/checkbox'
 import { cn } from '../../lib/utils'
 import { useFeedFiltersStore } from './stores/feedFiltersStore'
 import { ALL_MARKET_GROUPS, type MarketGroup } from './filters'
-import { MARKET_GROUP_DISPLAYS, type MarketGroupDisplay } from '../../../../../shared/types'
+import { MARKET_GROUP_DISPLAYS, type MarketGroupDisplay, type MarketSubcategory } from '../../../../../shared/types'
 
 /**
  * Market filter popover component for Story 6.2.
- * Provides a searchable, grouped interface for filtering markets.
+ * Provides a searchable, grouped interface for filtering markets with subcategories.
  */
 export function MarketFilterPopover(): React.JSX.Element {
     const [open, setOpen] = React.useState(false)
     const [searchQuery, setSearchQuery] = React.useState('')
+    const [expandedGroups, setExpandedGroups] = React.useState<Set<MarketGroup>>(new Set())
 
     // Store access
     const marketGroups = useFeedFiltersStore((state) => state.marketGroups ?? ALL_MARKET_GROUPS)
@@ -34,7 +35,7 @@ export function MarketFilterPopover(): React.JSX.Element {
         return () => clearTimeout(timer)
     }, [searchQuery])
 
-    // Filter groups based on search
+    // Filter groups and subcategories based on search
     const filteredGroups = React.useMemo(() => {
         if (!debouncedSearch) {
             return MARKET_GROUP_DISPLAYS
@@ -44,8 +45,32 @@ export function MarketFilterPopover(): React.JSX.Element {
             const matchesLabel = display.label.toLowerCase().includes(debouncedSearch)
             const matchesDescription = display.description.toLowerCase().includes(debouncedSearch)
             const matchesGroup = display.group.toLowerCase().includes(debouncedSearch)
-            return matchesLabel || matchesDescription || matchesGroup
+            // Also search subcategories
+            const matchesSubcategory = display.subcategories?.some(
+                (sub) =>
+                    sub.label.toLowerCase().includes(debouncedSearch) ||
+                    sub.description.toLowerCase().includes(debouncedSearch)
+            )
+            return matchesLabel || matchesDescription || matchesGroup || matchesSubcategory
         })
+    }, [debouncedSearch])
+
+    // Auto-expand groups when searching
+    React.useEffect(() => {
+        if (debouncedSearch) {
+            const groupsToExpand = new Set<MarketGroup>()
+            MARKET_GROUP_DISPLAYS.forEach((display) => {
+                const matchesSubcategory = display.subcategories?.some(
+                    (sub) =>
+                        sub.label.toLowerCase().includes(debouncedSearch) ||
+                        sub.description.toLowerCase().includes(debouncedSearch)
+                )
+                if (matchesSubcategory) {
+                    groupsToExpand.add(display.group)
+                }
+            })
+            setExpandedGroups(groupsToExpand)
+        }
     }, [debouncedSearch])
 
     // Count selected groups
@@ -66,11 +91,44 @@ export function MarketFilterPopover(): React.JSX.Element {
         toggleMarketGroup(group)
     }
 
+    const handleToggleExpand = (group: MarketGroup, e: React.MouseEvent): void => {
+        e.stopPropagation()
+        setExpandedGroups((prev) => {
+            const next = new Set(prev)
+            if (next.has(group)) {
+                next.delete(group)
+            } else {
+                next.add(group)
+            }
+            return next
+        })
+    }
+
     const isGroupSelected = (group: MarketGroup): boolean => {
         return marketGroups.includes(group)
     }
 
+    const isGroupExpanded = (group: MarketGroup): boolean => {
+        return expandedGroups.has(group)
+    }
 
+    // Format period display
+    const formatPeriods = (periods: string[]): string => {
+        return periods
+            .map((p) => {
+                switch (p) {
+                    case 'ft':
+                        return 'FT'
+                    case '1h':
+                        return '1H'
+                    case '2h':
+                        return '2H'
+                    default:
+                        return p.toUpperCase()
+                }
+            })
+            .join(', ')
+    }
 
     // Summary text for trigger
     const getSummaryText = (): string => {
@@ -135,7 +193,7 @@ export function MarketFilterPopover(): React.JSX.Element {
                 </PopoverTrigger>
 
                 <PopoverContent
-                    className="w-[320px] p-0"
+                    className="w-[380px] p-0"
                     align="start"
                     sideOffset={4}
                     data-testid="market-filter-popover"
@@ -176,9 +234,9 @@ export function MarketFilterPopover(): React.JSX.Element {
                             </div>
                         </div>
 
-                        {/* Simple scrollable list - bypasses cmdk click issues */}
+                        {/* Scrollable list with subcategories */}
                         <div
-                            className="max-h-[300px] overflow-y-auto overflow-x-hidden p-1"
+                            className="max-h-[400px] overflow-y-auto overflow-x-hidden p-1"
                             role="listbox"
                             aria-label="Market groups"
                         >
@@ -190,38 +248,131 @@ export function MarketFilterPopover(): React.JSX.Element {
 
                             {filteredGroups.map((display: MarketGroupDisplay, index: number) => (
                                 <React.Fragment key={display.group}>
-                                    {index > 0 && <div className="-mx-1 h-px bg-ot-border" />}
-                                    <button
-                                        type="button"
-                                        role="option"
-                                        aria-selected={isGroupSelected(display.group)}
-                                        onClick={() => handleToggleGroup(display.group)}
+                                    {index > 0 && <div className="-mx-1 h-px bg-ot-border/50" />}
+
+                                    {/* Group Header */}
+                                    <div
                                         className={cn(
-                                            'flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-left text-sm outline-none',
-                                            'hover:bg-ot-accent/20 hover:text-ot-accent',
-                                            'focus:bg-ot-accent/20 focus:text-ot-accent',
-                                            isGroupSelected(display.group) && 'bg-ot-accent/10'
+                                            'flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-left outline-none',
+                                            'hover:bg-ot-accent/10',
+                                            isGroupSelected(display.group) && 'bg-ot-accent/5'
                                         )}
-                                        data-testid={`market-filter-group-${display.group}`}
                                     >
-                                        <Checkbox
-                                            checked={isGroupSelected(display.group)}
-                                            tabIndex={-1}
-                                            aria-hidden="true"
-                                            className="pointer-events-none"
-                                        />
-                                        <div className="flex flex-col gap-0.5">
-                                            <span className="text-sm font-medium">{display.label}</span>
-                                            <span className="text-[10px] text-ot-foreground/50">{display.description}</span>
+                                        {/* Expand/Collapse button */}
+                                        <button
+                                            type="button"
+                                            onClick={(e) => handleToggleExpand(display.group, e)}
+                                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded hover:bg-ot-border/50"
+                                            aria-label={isGroupExpanded(display.group) ? 'Collapse' : 'Expand'}
+                                        >
+                                            <svg
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                className={cn(
+                                                    'h-3 w-3 text-ot-foreground/50 transition-transform',
+                                                    isGroupExpanded(display.group) && 'rotate-90'
+                                                )}
+                                            >
+                                                <path d="m9 18 6-6-6-6" />
+                                            </svg>
+                                        </button>
+
+                                        {/* Checkbox and label - clickable area for toggle */}
+                                        <button
+                                            type="button"
+                                            role="option"
+                                            aria-selected={isGroupSelected(display.group)}
+                                            onClick={() => handleToggleGroup(display.group)}
+                                            className="flex flex-1 items-center gap-2"
+                                            data-testid={`market-filter-group-${display.group}`}
+                                        >
+                                            <Checkbox
+                                                checked={isGroupSelected(display.group)}
+                                                tabIndex={-1}
+                                                aria-hidden="true"
+                                                className="pointer-events-none"
+                                            />
+                                            <div className="flex flex-1 items-center gap-2">
+                                                {display.icon && (
+                                                    <span className="text-base">{display.icon}</span>
+                                                )}
+                                                <div className="flex flex-col gap-0">
+                                                    <span className="text-sm font-medium">{display.label}</span>
+                                                    <span className="text-[10px] text-ot-foreground/50">
+                                                        {display.description}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            {display.subcategories && (
+                                                <span className="rounded bg-ot-border/50 px-1.5 py-0.5 text-[9px] text-ot-foreground/40">
+                                                    {display.subcategories.length} types
+                                                </span>
+                                            )}
+                                        </button>
+                                    </div>
+
+                                    {/* Subcategories (collapsible) */}
+                                    {isGroupExpanded(display.group) && display.subcategories && (
+                                        <div className="ml-7 border-l border-ot-border/30 pl-2">
+                                            {display.subcategories.map((sub: MarketSubcategory) => (
+                                                <div
+                                                    key={sub.id}
+                                                    className={cn(
+                                                        'flex items-start gap-2 rounded-sm px-2 py-1.5 text-left',
+                                                        'text-ot-foreground/70',
+                                                        !isGroupSelected(display.group) && 'opacity-50'
+                                                    )}
+                                                >
+                                                    <div className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ot-accent/40" />
+                                                    <div className="flex flex-1 flex-col gap-0.5">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[11px] font-medium">
+                                                                {sub.label}
+                                                            </span>
+                                                            <div className="flex gap-1">
+                                                                {sub.periods.length > 0 && (
+                                                                    <span className="rounded bg-ot-border/40 px-1 py-0.5 text-[8px] text-ot-foreground/50">
+                                                                        {formatPeriods(sub.periods)}
+                                                                    </span>
+                                                                )}
+                                                                {sub.teamScope.includes('home') && (
+                                                                    <span className="rounded bg-blue-500/20 px-1 py-0.5 text-[8px] text-blue-400">
+                                                                        H/A
+                                                                    </span>
+                                                                )}
+                                                                {sub.hasLine && (
+                                                                    <span className="rounded bg-green-500/20 px-1 py-0.5 text-[8px] text-green-400">
+                                                                        Line
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <span className="text-[9px] text-ot-foreground/40">
+                                                            {sub.description}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
-                                    </button>
+                                    )}
                                 </React.Fragment>
                             ))}
+                        </div>
+
+                        {/* Footer hint */}
+                        <div className="border-t border-ot-border/50 px-3 py-2">
+                            <p className="text-[9px] text-ot-foreground/40">
+                                Click arrows to see market types. Filtering is by group (all subtypes included).
+                            </p>
                         </div>
                     </Command>
                 </PopoverContent>
             </Popover>
-
         </div>
     )
 }

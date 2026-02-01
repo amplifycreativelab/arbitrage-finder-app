@@ -14,6 +14,7 @@ exports.findCrossProviderArbitrages = findCrossProviderArbitrages;
 exports.logCrossProviderStats = logCrossProviderStats;
 const schemas_1 = require("../../../shared/schemas");
 const calculator_1 = require("./calculator");
+const types_1 = require("../../../shared/types");
 const logger_1 = require("./logger");
 /**
  * Group key for quotes: eventKey + market + outcome
@@ -91,6 +92,9 @@ function createCrossProviderOpportunity(quote1, quote2, roi) {
     const id = `xprov:${homeQuote.eventKey}:${homeQuote.market}:${homeQuote.bookmaker}:${awayQuote.bookmaker}`;
     // Infer sport from event key (first team name suggests soccer for now)
     const sport = 'soccer'; // Default for soccer-focused app
+    // Story 6.5: Detect card rules mismatch for cards market group
+    const metadata = (0, types_1.inferMarketMetadata)(homeQuote.market);
+    const cardRulesWarning = (0, calculator_1.detectCardRulesMismatch)(homeQuote.bookmaker, awayQuote.bookmaker, metadata.group);
     return {
         id,
         sport,
@@ -117,7 +121,9 @@ function createCrossProviderOpportunity(quote1, quote2, roi) {
         foundAt: oldestFoundAt,
         providerId: mergedFrom[0], // Primary provider
         mergedFrom: mergedFrom.length > 1 ? mergedFrom : undefined,
-        isCrossProvider: true
+        isCrossProvider: true,
+        // Story 6.5: Include card rules warning if present (only for cards market group)
+        ...(cardRulesWarning?.mismatch && { cardRulesWarning })
     };
 }
 /**

@@ -266,3 +266,108 @@ Gemini 2.5 Pro (Antigravity) via BMad Master
 - No critical or blocking issues found
 - Code follows shadcn/ui patterns and Orange Terminal theme
 
+---
+
+## Enhancement: Market Subcategories (2026-02-01)
+
+### Context
+
+User requested better organization of market types with subcategories for each market group. This enhancement adds comprehensive market subcategory definitions and an enhanced UI with expandable/collapsible groups.
+
+### Changes Made
+
+#### 1. Enhanced `MarketGroupDisplay` Interface (shared/types.ts)
+
+Added new types for market subcategories:
+
+```typescript
+export interface MarketSubcategory {
+  id: string              // e.g., 'goals_total_ou'
+  label: string           // e.g., 'Goals Over/Under'
+  description: string     // e.g., 'Total match goals over/under a line'
+  periods: MarketPeriod[] // ['ft', '1h', '2h']
+  teamScope: ('match' | 'home' | 'away')[]
+  hasLine: boolean        // Whether it has an O/U line value
+}
+
+export interface MarketGroupDisplay {
+  group: MarketGroup
+  label: string
+  description: string
+  icon?: string           // NEW: Emoji icon for visual identification
+  subcategories: MarketSubcategory[]  // NEW: Detailed market types
+}
+```
+
+#### 2. Comprehensive Subcategory Definitions
+
+| Group | Icon | Subcategories |
+|-------|------|---------------|
+| **Goals** | ⚽ | Goals O/U, BTTS, Team Goals O/U, Clean Sheet, Match Winner (1X2), Draw No Bet |
+| **Handicaps** | 📊 | Asian Handicap, European Handicap |
+| **Corners** | 🚩 | Corners O/U, Team Corners O/U, Corners Handicap |
+| **Cards** | 🟨 | Cards O/U, Team Cards O/U, Red Card Y/N, Booking Points |
+| **Shots** | 🎯 | Shots O/U, Team Shots O/U, SOT O/U, Team SOT O/U |
+| **Other** | 📋 | Offsides O/U, Team Offsides O/U, Fouls O/U, Team Fouls O/U, Penalty Awarded |
+
+Each subcategory specifies:
+- Supported periods (FT, 1H, 2H)
+- Team scope (match-level, home/away specific)
+- Whether it has a line value (for O/U markets)
+
+#### 3. Enhanced MarketFilterPopover UI
+
+**New Features:**
+- **Expandable groups** - Click arrow to reveal subcategories
+- **Group icons** - Visual identification with emojis
+- **Subcategory badges**:
+  - Period badge (FT, 1H, 2H)
+  - H/A badge for team-specific markets
+  - Line badge for O/U markets
+- **Auto-expand on search** - Groups expand when search matches subcategories
+- **Type count badge** - Shows "N types" per group
+
+**Updated UI Layout:**
+```
+┌─────────────────────────────────────────┐
+│ 🔍 Search markets...                     │
+│ ─────────────────────────────────────── │
+│ 4 of 6 selected    [Select All] [Clear] │
+│ ─────────────────────────────────────── │
+│ ▶ ⚽ Goals                    [6 types] │
+│   ☑ Goal-related markets...              │
+│ ─────────────────────────────────────── │
+│ ▼ 🚩 Corners                  [3 types] │
+│   ☑ Corner kick totals...                │
+│   │ • Corners Over/Under    [FT,1H,2H]  │
+│   │ • Team Corners O/U      [H/A][Line] │
+│   │ • Corners Handicap      [Line]      │
+│ ─────────────────────────────────────── │
+│ ▶ 🟨 Cards                    [4 types] │
+│ ▶ 🎯 Shots                    [4 types] │
+│ ▶ 📋 Other                    [5 types] │
+├─────────────────────────────────────────┤
+│ Click arrows to see market types.       │
+│ Filtering is by group (all subtypes).   │
+└─────────────────────────────────────────┘
+```
+
+### API Quota Note
+
+**Important:** The odds-api.io `/v3/odds` endpoint does NOT have a `markets` parameter. It returns ALL available markets for an event in a single request. Therefore:
+- Filtering by market group does NOT save API quota
+- All filtering is client-side after fetching
+- This feature improves UX by letting users focus on relevant markets
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `shared/types.ts` | Added `MarketSubcategory` interface, enhanced `MarketGroupDisplay` with `icon` and `subcategories` fields, added comprehensive subcategory definitions for all 6 market groups |
+| `src/renderer/src/features/dashboard/MarketFilterPopover.tsx` | Added expand/collapse state, subcategory rendering, period/scope/line badges, auto-expand on search, footer hint |
+
+### Testing
+
+- TypeScript compiles with zero errors (`npm run typecheck` passes)
+- Existing tests continue to pass (backward compatible change)
+

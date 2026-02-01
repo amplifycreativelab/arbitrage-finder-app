@@ -93,7 +93,13 @@ import {
   getAvailableSportsDetails,
   getAvailableLeagues,
   getLeaguePresets,
-  applyLeaguePreset
+  applyLeaguePreset,
+  // Story 8.7: Aggressive scan exports
+  startAggressiveScan,
+  stopAggressiveScan,
+  setAggressiveScanConfig,
+  getAggressiveScanConfig,
+  getAggressiveScanStats
 } from './deepScan'
 
 const t = initTRPC.create()
@@ -743,6 +749,45 @@ export const appRouter = t.router({
    */
   getConfiguredBookmakers: t.procedure.query(() => {
     return { bookmakers: getConfiguredBookmakers() }
+  }),
+
+  // ============================================================
+  // Aggressive Pre-Match Scanning (Story 8.7)
+  // ============================================================
+
+  setAggressiveScanConfig: t.procedure
+    .input(z.object({
+      enabled: z.boolean().optional(),
+      quotaTargetPercent: z.number().min(50).max(90).optional(),
+      scanHorizonHours: z.number().min(12).max(72).optional(),
+      imminentPollIntervalSeconds: z.number().min(15).max(120).optional(),
+      arbBoostDurationMinutes: z.number().min(1).max(30).optional(),
+      arbBoostPollIntervalSeconds: z.number().min(10).max(60).optional(),
+      maxBoostedEvents: z.number().min(1).max(50).optional(),
+      maxCachedEvents: z.number().min(100).max(10000).optional(),
+      eventDiscoveryIntervalMinutes: z.number().min(10).max(120).optional()
+    }))
+    .mutation(({ input }) => {
+      setAggressiveScanConfig(input)
+      return { ok: true, config: getAggressiveScanConfig() }
+    }),
+
+  getAggressiveScanConfig: t.procedure.query(() => {
+    return getAggressiveScanConfig()
+  }),
+
+  getAggressiveScanStats: t.procedure.query(() => {
+    return getAggressiveScanStats()
+  }),
+
+  startAggressiveScan: t.procedure.mutation(async () => {
+    await startAggressiveScan()
+    return { ok: true }
+  }),
+
+  stopAggressiveScan: t.procedure.mutation(() => {
+    stopAggressiveScan()
+    return { ok: true }
   })
 })
 

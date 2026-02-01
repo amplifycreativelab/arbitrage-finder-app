@@ -12,6 +12,9 @@ import {
   type MarketGroup,
   type SportFilterValue
 } from '../filters'
+// Story 8.7: Aggressive scan imports
+import type { TierBoundaries, TierWeights } from '../../../../../../shared/types'
+import { DEFAULT_TIER_BOUNDARIES, DEFAULT_TIER_WEIGHTS, DEFAULT_AGGRESSIVE_SCAN_CONFIG } from '../../../../../../shared/types'
 
 interface StorageLike {
   getItem: (key: string) => string | null
@@ -60,6 +63,18 @@ export interface FeedFiltersState extends DashboardFilterState {
   deepScanIntervalMinutes: number
   deepScanConcurrentRequests: number
   deepScanScope: 'all-sports' | 'selected-sports' | 'selected-leagues'
+  // Story 8.7: Aggressive scan settings
+  aggressiveScanEnabled: boolean
+  aggressiveScanQuotaTargetPercent: number
+  aggressiveScanHorizonHours: number
+  aggressiveScanImminentIntervalSeconds: number
+  aggressiveScanTierBoundaries: TierBoundaries
+  aggressiveScanTierWeights: TierWeights
+  aggressiveScanBoostDurationMinutes: number
+  aggressiveScanBoostIntervalSeconds: number
+  aggressiveScanMaxBoostedEvents: number
+  aggressiveScanMaxCachedEvents: number
+  aggressiveScanDiscoveryIntervalMinutes: number
   setRegions: (regions: RegionCode[]) => void
   setSports: (sports: SportFilterValue[]) => void
   setMarkets: (markets: MarketFilterValue[]) => void
@@ -75,6 +90,18 @@ export interface FeedFiltersState extends DashboardFilterState {
   setDeepScanIntervalMinutes: (minutes: number) => void
   setDeepScanConcurrentRequests: (concurrentRequests: number) => void
   setDeepScanScope: (scope: 'all-sports' | 'selected-sports' | 'selected-leagues') => void
+  // Story 8.7: Aggressive scan setters
+  setAggressiveScanEnabled: (enabled: boolean) => void
+  setAggressiveScanQuotaTargetPercent: (percent: number) => void
+  setAggressiveScanHorizonHours: (hours: number) => void
+  setAggressiveScanImminentIntervalSeconds: (seconds: number) => void
+  setAggressiveScanTierBoundaries: (boundaries: TierBoundaries) => void
+  setAggressiveScanTierWeights: (weights: TierWeights) => void
+  setAggressiveScanBoostDurationMinutes: (minutes: number) => void
+  setAggressiveScanBoostIntervalSeconds: (seconds: number) => void
+  setAggressiveScanMaxBoostedEvents: (count: number) => void
+  setAggressiveScanMaxCachedEvents: (count: number) => void
+  setAggressiveScanDiscoveryIntervalMinutes: (minutes: number) => void
   toggleRegion: (region: RegionCode) => void
   toggleSport: (sport: SportFilterValue) => void
   toggleMarket: (market: MarketFilterValue) => void
@@ -101,7 +128,19 @@ const defaultState = {
   },
   deepScanIntervalMinutes: 5,
   deepScanConcurrentRequests: 2,
-  deepScanScope: 'all-sports' as const
+  deepScanScope: 'all-sports' as const,
+  // Story 8.7: Aggressive scan defaults
+  aggressiveScanEnabled: DEFAULT_AGGRESSIVE_SCAN_CONFIG.enabled,
+  aggressiveScanQuotaTargetPercent: DEFAULT_AGGRESSIVE_SCAN_CONFIG.quotaTargetPercent,
+  aggressiveScanHorizonHours: DEFAULT_AGGRESSIVE_SCAN_CONFIG.scanHorizonHours,
+  aggressiveScanImminentIntervalSeconds: DEFAULT_AGGRESSIVE_SCAN_CONFIG.imminentPollIntervalSeconds,
+  aggressiveScanTierBoundaries: DEFAULT_TIER_BOUNDARIES,
+  aggressiveScanTierWeights: DEFAULT_TIER_WEIGHTS,
+  aggressiveScanBoostDurationMinutes: DEFAULT_AGGRESSIVE_SCAN_CONFIG.arbBoostDurationMinutes,
+  aggressiveScanBoostIntervalSeconds: DEFAULT_AGGRESSIVE_SCAN_CONFIG.arbBoostPollIntervalSeconds,
+  aggressiveScanMaxBoostedEvents: DEFAULT_AGGRESSIVE_SCAN_CONFIG.maxBoostedEvents,
+  aggressiveScanMaxCachedEvents: DEFAULT_AGGRESSIVE_SCAN_CONFIG.maxCachedEvents,
+  aggressiveScanDiscoveryIntervalMinutes: DEFAULT_AGGRESSIVE_SCAN_CONFIG.eventDiscoveryIntervalMinutes
 }
 
 const getRegionKey = (regions: RegionCode[]): string => {
@@ -223,6 +262,48 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
           deepScanScope: scope
         })
       },
+      // Story 8.7: Aggressive scan setters
+      setAggressiveScanEnabled: (enabled: boolean) => {
+        set({ aggressiveScanEnabled: Boolean(enabled) })
+      },
+      setAggressiveScanQuotaTargetPercent: (percent: number) => {
+        const normalized = Number.isFinite(percent) ? Math.max(50, Math.min(90, Math.floor(percent))) : 75
+        set({ aggressiveScanQuotaTargetPercent: normalized })
+      },
+      setAggressiveScanHorizonHours: (hours: number) => {
+        const normalized = Number.isFinite(hours) ? Math.max(12, Math.min(72, Math.floor(hours))) : 48
+        set({ aggressiveScanHorizonHours: normalized })
+      },
+      setAggressiveScanImminentIntervalSeconds: (seconds: number) => {
+        const normalized = Number.isFinite(seconds) ? Math.max(15, Math.min(120, Math.floor(seconds))) : 45
+        set({ aggressiveScanImminentIntervalSeconds: normalized })
+      },
+      setAggressiveScanTierBoundaries: (boundaries: TierBoundaries) => {
+        set({ aggressiveScanTierBoundaries: boundaries })
+      },
+      setAggressiveScanTierWeights: (weights: TierWeights) => {
+        set({ aggressiveScanTierWeights: weights })
+      },
+      setAggressiveScanBoostDurationMinutes: (minutes: number) => {
+        const normalized = Number.isFinite(minutes) ? Math.max(1, Math.min(30, Math.floor(minutes))) : 5
+        set({ aggressiveScanBoostDurationMinutes: normalized })
+      },
+      setAggressiveScanBoostIntervalSeconds: (seconds: number) => {
+        const normalized = Number.isFinite(seconds) ? Math.max(10, Math.min(60, Math.floor(seconds))) : 20
+        set({ aggressiveScanBoostIntervalSeconds: normalized })
+      },
+      setAggressiveScanMaxBoostedEvents: (count: number) => {
+        const normalized = Number.isFinite(count) ? Math.max(1, Math.min(50, Math.floor(count))) : 10
+        set({ aggressiveScanMaxBoostedEvents: normalized })
+      },
+      setAggressiveScanMaxCachedEvents: (count: number) => {
+        const normalized = Number.isFinite(count) ? Math.max(100, Math.min(10000, Math.floor(count))) : 3000
+        set({ aggressiveScanMaxCachedEvents: normalized })
+      },
+      setAggressiveScanDiscoveryIntervalMinutes: (minutes: number) => {
+        const normalized = Number.isFinite(minutes) ? Math.max(10, Math.min(120, Math.floor(minutes))) : 30
+        set({ aggressiveScanDiscoveryIntervalMinutes: normalized })
+      },
       toggleRegion: (region: RegionCode) => {
         const { regions, bookmakerSelections } = get()
         let newRegions: RegionCode[]
@@ -316,7 +397,19 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
         deepScanRoiThresholds: state.deepScanRoiThresholds,
         deepScanIntervalMinutes: state.deepScanIntervalMinutes,
         deepScanConcurrentRequests: state.deepScanConcurrentRequests,
-        deepScanScope: state.deepScanScope
+        deepScanScope: state.deepScanScope,
+        // Story 8.7: Persist aggressive scan settings
+        aggressiveScanEnabled: state.aggressiveScanEnabled,
+        aggressiveScanQuotaTargetPercent: state.aggressiveScanQuotaTargetPercent,
+        aggressiveScanHorizonHours: state.aggressiveScanHorizonHours,
+        aggressiveScanImminentIntervalSeconds: state.aggressiveScanImminentIntervalSeconds,
+        aggressiveScanTierBoundaries: state.aggressiveScanTierBoundaries,
+        aggressiveScanTierWeights: state.aggressiveScanTierWeights,
+        aggressiveScanBoostDurationMinutes: state.aggressiveScanBoostDurationMinutes,
+        aggressiveScanBoostIntervalSeconds: state.aggressiveScanBoostIntervalSeconds,
+        aggressiveScanMaxBoostedEvents: state.aggressiveScanMaxBoostedEvents,
+        aggressiveScanMaxCachedEvents: state.aggressiveScanMaxCachedEvents,
+        aggressiveScanDiscoveryIntervalMinutes: state.aggressiveScanDiscoveryIntervalMinutes
       })
     }
   )

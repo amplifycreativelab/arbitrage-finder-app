@@ -97,4 +97,5 @@ development_status:
   8-4-currency-exchange-rate-service: done
   8-5-multi-currency-surebet-calculator-integrated: done
   8-6-dedicated-settings-tab: review
+  8-7-wide-fetch-incremental-update-mode: done
   epic-8-retrospective: optional

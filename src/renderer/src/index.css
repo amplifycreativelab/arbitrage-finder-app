@@ -6,51 +6,387 @@
   :root {
     color-scheme: light;
 
-    /* Swiss Clarity - Ultra Light Theme */
-    --ot-background: #FFFFFF;
+    /* ========================================
+       SWISS CLARITY 2.0 - LIGHT THEME
+       ======================================== */
+    
+    /* Core backgrounds */
+    --ot-background: #FAFAFA;
     --ot-surface: #FFFFFF;
-    --ot-border: #E2E8F0;
-    --ot-foreground: #0F172A;
-    --ot-muted: #475569;
+    --ot-surface-elevated: #FFFFFF;
+    --ot-surface-hover: #F3F4F6;
+    
+    /* Borders */
+    --ot-border: #E5E7EB;
+    --ot-border-subtle: #F3F4F6;
+    --ot-border-strong: #D1D5DB;
+    
+    /* Text colors */
+    --ot-foreground: #111827;
+    --ot-foreground-secondary: #374151;
+    --ot-muted: #6B7280;
+    --ot-muted-subtle: #9CA3AF;
+    
+    /* Accent - Keep the Orange! */
     --ot-accent: #F97316;
-    --ot-accent-foreground: #FFFFFF;
-
-    /* Additional tokens for enhanced UX */
-    --ot-card: #FAFAFA;
+    --ot-accent-hover: #EA580C;
+    --ot-accent-subtle: rgba(249, 115, 22, 0.1);
+    --ot-accent-glow: rgba(249, 115, 22, 0.25);
+    
+    /* Semantic colors */
     --ot-success: #10B981;
+    --ot-success-dim: rgba(16, 185, 129, 0.12);
+    --ot-success-glow: rgba(16, 185, 129, 0.3);
     --ot-warning: #F59E0B;
+    --ot-warning-dim: rgba(245, 158, 11, 0.12);
     --ot-error: #EF4444;
+    --ot-error-dim: rgba(239, 68, 68, 0.12);
+    --ot-info: #3B82F6;
+    --ot-info-dim: rgba(59, 130, 246, 0.12);
+    
+    /* Special accents */
+    --ot-cross-provider: #8B5CF6;
+    --ot-cross-provider-dim: rgba(139, 92, 246, 0.15);
+    --ot-deep-scan: #06B6D4;
+    --ot-deep-scan-dim: rgba(6, 182, 212, 0.15);
+    --ot-merged: #A855F7;
+    --ot-merged-dim: rgba(168, 85, 247, 0.15);
+    
+    /* Shadows */
+    --ot-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --ot-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.08);
+    --ot-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.08);
+    --ot-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.08);
+    --ot-shadow-glow: 0 0 20px -5px var(--ot-accent-glow);
+    
+    /* Radius */
+    --ot-radius-sm: 4px;
+    --ot-radius: 8px;
+    --ot-radius-md: 10px;
+    --ot-radius-lg: 12px;
+    --ot-radius-xl: 16px;
+    
+    /* Transitions */
+    --ot-transition-fast: 100ms ease;
+    --ot-transition-base: 150ms ease;
+    --ot-transition-slow: 250ms ease;
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    /* ========================================
+       DEEP SPACE - DARK THEME
+       ======================================== */
+    
+    /* Core backgrounds */
+    --ot-background: #0B0F19;
+    --ot-surface: #111827;
+    --ot-surface-elevated: #1F2937;
+    --ot-surface-hover: #374151;
+    
+    /* Borders */
+    --ot-border: #374151;
+    --ot-border-subtle: #1F2937;
+    --ot-border-strong: #4B5563;
+    
+    /* Text colors */
+    --ot-foreground: #F9FAFB;
+    --ot-foreground-secondary: #E5E7EB;
+    --ot-muted: #9CA3AF;
+    --ot-muted-subtle: #6B7280;
+    
+    /* Accent - Keep the Orange! */
+    --ot-accent: #F97316;
+    --ot-accent-hover: #FB923C;
+    --ot-accent-subtle: rgba(249, 115, 22, 0.15);
+    --ot-accent-glow: rgba(249, 115, 22, 0.4);
+    
+    /* Semantic colors - brighter for dark mode */
+    --ot-success: #34D399;
+    --ot-success-dim: rgba(52, 211, 153, 0.15);
+    --ot-success-glow: rgba(52, 211, 153, 0.4);
+    --ot-warning: #FBBF24;
+    --ot-warning-dim: rgba(251, 191, 36, 0.15);
+    --ot-error: #F87171;
+    --ot-error-dim: rgba(248, 113, 113, 0.15);
+    --ot-info: #60A5FA;
+    --ot-info-dim: rgba(96, 165, 250, 0.15);
+    
+    /* Special accents - brighter for dark mode */
+    --ot-cross-provider: #A78BFA;
+    --ot-cross-provider-dim: rgba(167, 139, 250, 0.2);
+    --ot-deep-scan: #22D3EE;
+    --ot-deep-scan-dim: rgba(34, 211, 238, 0.2);
+    --ot-merged: #C084FC;
+    --ot-merged-dim: rgba(192, 132, 252, 0.2);
+    
+    /* Shadows - more subtle in dark mode */
+    --ot-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+    --ot-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.4);
+    --ot-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+    --ot-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+    --ot-shadow-glow: 0 0 30px -5px var(--ot-accent-glow);
+  }
+
+  /* Smooth theme transitions */
+  *,
+  *::before,
+  *::after {
+    transition: background-color var(--ot-transition-base),
+                border-color var(--ot-transition-base),
+                color var(--ot-transition-fast),
+                fill var(--ot-transition-fast),
+                stroke var(--ot-transition-fast),
+                opacity var(--ot-transition-fast),
+                transform var(--ot-transition-fast),
+                box-shadow var(--ot-transition-base);
   }
 
   body {
-    @apply min-h-screen bg-ot-background text-ot-foreground font-mono antialiased;
+    @apply min-h-screen bg-ot-background text-ot-foreground antialiased;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 
   #root {
     @apply min-h-screen min-w-[900px];
   }
+
+  /* Monospace for data/numbers */
+  .font-mono {
+    font-family: 'JetBrains Mono', 'SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 @layer components {
-
-  /* Filter chip animations */
-  .filter-chip {
-    @apply transition-all duration-150 ease-out;
+  /* ========================================
+     CARD COMPONENTS
+     ======================================== */
+  
+  .ot-card {
+    @apply bg-ot-surface border border-ot-border rounded-lg;
+    box-shadow: var(--ot-shadow);
   }
 
-  .filter-chip:active {
-    @apply scale-95;
+  .ot-card-elevated {
+    @apply bg-ot-surface-elevated border border-ot-border rounded-xl;
+    box-shadow: var(--ot-shadow-md);
   }
 
-  /* Smooth scrollbar styling */
+  .ot-card-hover {
+    @apply transition-all duration-150;
+  }
+
+  .ot-card-hover:hover {
+    box-shadow: var(--ot-shadow-lg);
+    transform: translateY(-1px);
+  }
+
+  /* Glass effect for headers/overlays */
+  .ot-glass {
+    @apply backdrop-blur-md;
+    background: color-mix(in srgb, var(--ot-surface) 85%, transparent);
+    border-bottom: 1px solid var(--ot-border);
+  }
+
+  .dark .ot-glass {
+    background: rgba(17, 24, 39, 0.8);
+  }
+
+  /* ========================================
+     BUTTON COMPONENTS
+     ======================================== */
+  
+  .ot-btn {
+    @apply inline-flex items-center justify-center rounded-md font-medium transition-all duration-150;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2;
+    @apply focus-visible:ring-ot-accent focus-visible:ring-offset-ot-background;
+    @apply disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .ot-btn-primary {
+    background: linear-gradient(135deg, var(--ot-accent) 0%, var(--ot-accent-hover) 100%);
+    color: white;
+    box-shadow: 0 1px 3px var(--ot-accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+
+  .ot-btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--ot-accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+
+  .ot-btn-primary:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px var(--ot-accent-glow), inset 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+
+  .ot-btn-secondary {
+    @apply bg-ot-surface-elevated text-ot-foreground border border-ot-border;
+    box-shadow: var(--ot-shadow-sm);
+  }
+
+  .ot-btn-secondary:hover {
+    @apply bg-ot-surface-hover border-ot-border-strong;
+    box-shadow: var(--ot-shadow);
+  }
+
+  .ot-btn-ghost {
+    @apply text-ot-muted bg-transparent;
+  }
+
+  .ot-btn-ghost:hover {
+    @apply text-ot-foreground bg-ot-surface-hover;
+  }
+
+  .ot-btn-outline {
+    @apply border border-ot-border text-ot-foreground bg-transparent;
+  }
+
+  .ot-btn-outline:hover {
+    @apply border-ot-accent bg-ot-accent-subtle;
+  }
+
+  /* Button sizes */
+  .ot-btn-sm {
+    @apply px-3 py-1.5 text-xs gap-1.5;
+  }
+
+  .ot-btn-md {
+    @apply px-4 py-2 text-sm gap-2;
+  }
+
+  .ot-btn-lg {
+    @apply px-6 py-2.5 text-base gap-2;
+  }
+
+  /* ========================================
+     FILTER CHIPS
+     ======================================== */
+  
+  .ot-chip {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium;
+    @apply border transition-all duration-150;
+    @apply border-ot-border bg-ot-surface text-ot-muted;
+  }
+
+  .ot-chip:hover {
+    @apply border-ot-border-strong text-ot-foreground;
+    box-shadow: var(--ot-shadow-sm);
+  }
+
+  .ot-chip-active {
+    @apply text-white border-transparent;
+    background: linear-gradient(135deg, var(--ot-accent) 0%, var(--ot-accent-hover) 100%);
+    box-shadow: 0 1px 3px var(--ot-accent-glow);
+  }
+
+  .ot-chip-active:hover {
+    box-shadow: 0 2px 8px var(--ot-accent-glow);
+  }
+
+  /* ========================================
+     FEED TABLE STYLES
+     ======================================== */
+  
+  .feed-table-header {
+    @apply flex items-center border-b border-ot-border pb-2 text-xs font-semibold uppercase tracking-wider text-ot-muted;
+  }
+
+  .feed-row {
+    @apply flex cursor-pointer items-center justify-between border-b border-ot-border py-2 text-sm;
+    @apply transition-all duration-150;
+    border-left: 3px solid transparent;
+  }
+
+  .feed-row:hover {
+    background: var(--ot-surface-hover);
+  }
+
+  .feed-row.selected {
+    background: var(--ot-accent-subtle);
+    border-left-color: var(--ot-accent);
+  }
+
+  .dark .feed-row.selected {
+    box-shadow: inset 2px 0 8px -2px var(--ot-accent-glow);
+  }
+
+  .feed-row.processed {
+    opacity: 0.6;
+  }
+
+  .feed-row.stale {
+    opacity: 0.5;
+  }
+
+  /* ========================================
+     BADGES
+     ======================================== */
+  
+  .ot-badge {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
+  }
+
+  .ot-badge-cross-provider {
+    @apply text-violet-300;
+    background: var(--ot-cross-provider-dim);
+    border: 1px solid color-mix(in srgb, var(--ot-cross-provider) 50%, transparent);
+    box-shadow: 0 0 8px -2px var(--ot-cross-provider-dim);
+  }
+
+  .ot-badge-deep-scan {
+    @apply text-cyan-300;
+    background: var(--ot-deep-scan-dim);
+    border: 1px solid color-mix(in srgb, var(--ot-deep-scan) 50%, transparent);
+    box-shadow: 0 0 8px -2px var(--ot-deep-scan-dim);
+  }
+
+  .ot-badge-merged {
+    @apply text-purple-300;
+    background: var(--ot-merged-dim);
+    border: 1px solid color-mix(in srgb, var(--ot-merged) 50%, transparent);
+  }
+
+  .ot-badge-provider {
+    @apply text-ot-accent;
+    background: var(--ot-accent-subtle);
+    border: 1px solid color-mix(in srgb, var(--ot-accent) 40%, transparent);
+  }
+
+  /* ========================================
+     FORM ELEMENTS
+     ======================================== */
+  
+  .ot-input {
+    @apply flex w-full rounded-md border border-ot-border bg-ot-surface px-3 py-2 text-sm;
+    @apply text-ot-foreground placeholder:text-ot-muted-subtle;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ot-accent focus-visible:ring-offset-2;
+    @apply focus-visible:ring-offset-ot-background;
+    @apply transition-all duration-150;
+  }
+
+  .ot-input:hover {
+    @apply border-ot-border-strong;
+  }
+
+  .ot-input:focus {
+    @apply border-ot-accent;
+    box-shadow: 0 0 0 3px var(--ot-accent-subtle);
+  }
+
+  /* ========================================
+     SCROLLBAR STYLING
+     ======================================== */
+  
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: var(--ot-border) transparent;
   }
 
   .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
 
   .scrollbar-thin::-webkit-scrollbar-track {
@@ -59,60 +395,157 @@
 
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background-color: var(--ot-border);
-    border-radius: 3px;
+    border-radius: 4px;
+    border: 2px solid var(--ot-background);
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background-color: var(--ot-muted);
   }
 
-  /* Dropdown select custom arrow */
+  /* ========================================
+     DROPDOWN SELECT
+     ======================================== */
+  
   select {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
-    background-position: right 8px center;
-    background-size: 12px;
-    padding-right: 28px;
+    background-position: right 10px center;
+    background-size: 14px;
+    padding-right: 32px;
     appearance: none;
   }
 
-  /* Focus ring consistency */
+  .dark select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+
+  /* ========================================
+     FOCUS RING
+     ======================================== */
+  
   .focus-ring {
-    @apply focus:outline-none focus:ring-2 focus:ring-ot-accent/30 focus:ring-offset-1 focus:ring-offset-ot-background;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ot-accent/30 focus-visible:ring-offset-1 focus-visible:ring-offset-ot-background;
+  }
+}
+
+@layer utilities {
+  /* ========================================
+     GLASS EFFECTS
+     ======================================== */
+  
+  .glass {
+    @apply backdrop-blur-sm;
+    background: color-mix(in srgb, var(--ot-surface) 80%, transparent);
   }
 
-  /* Hover card effect */
-  .hover-card {
-    @apply transition-all duration-150;
+  .glass-strong {
+    @apply backdrop-blur-md;
+    background: color-mix(in srgb, var(--ot-surface) 90%, transparent);
   }
 
-  .hover-card:hover {
-    @apply shadow-sm border-ot-accent/30;
+  /* ========================================
+     SHADOWS
+     ======================================== */
+  
+  .shadow-subtle {
+    box-shadow: var(--ot-shadow);
   }
 
-  /* Gradient text accent */
+  .shadow-elevated {
+    box-shadow: var(--ot-shadow-md);
+  }
+
+  .shadow-glow {
+    box-shadow: var(--ot-shadow-glow);
+  }
+
+  /* ========================================
+     TEXT GRADIENTS
+     ======================================== */
+  
   .text-gradient {
-    @apply bg-gradient-to-r from-ot-accent to-orange-400 bg-clip-text text-transparent;
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, var(--ot-accent) 0%, #FB923C 100%);
   }
 
-  /* Pulse animation for active indicators */
+  .text-gradient-success {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, var(--ot-success) 0%, #34D399 100%);
+  }
+
+  /* ========================================
+     ANIMATIONS
+     ======================================== */
+  
   @keyframes soft-pulse {
-
-    0%,
-    100% {
-      opacity: 1;
-    }
-
-    50% {
-      opacity: 0.5;
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 
   .animate-soft-pulse {
     animation: soft-pulse 2s ease-in-out infinite;
   }
 
-  /* Number input spinner removal */
+  @keyframes pulse-live {
+    0%, 100% { 
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% { 
+      opacity: 0.6;
+      transform: scale(1.1);
+    }
+  }
+
+  .animate-pulse-live {
+    animation: pulse-live 2s ease-in-out infinite;
+  }
+
+  @keyframes slide-in {
+    from { 
+      opacity: 0; 
+      transform: translateY(-8px);
+    }
+    to { 
+      opacity: 1; 
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-in {
+    animation: slide-in 250ms ease-out;
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 200ms ease-out;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--ot-surface) 25%,
+      var(--ot-surface-hover) 50%,
+      var(--ot-surface) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+  }
+
+  /* ========================================
+     NUMBER INPUT RESET
+     ======================================== */
+  
   input[type="number"]::-webkit-inner-spin-button,
   input[type="number"]::-webkit-outer-spin-button {
     -webkit-appearance: none;
@@ -121,18 +554,5 @@
 
   input[type="number"] {
     -moz-appearance: textfield;
-  }
-}
-
-@layer utilities {
-
-  /* Glass effect for overlays */
-  .glass {
-    @apply bg-ot-surface/80 backdrop-blur-sm;
-  }
-
-  /* Subtle shadow for elevated elements */
-  .shadow-subtle {
-    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04);
   }
 }

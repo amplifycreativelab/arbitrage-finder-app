@@ -73,6 +73,26 @@ const oddsApiIoApi = {
         await trpcClient.oddsApiIoClearSelectedBookmakers.mutate();
     }
 };
+const cardRulesApi = {
+    async getAllRules() {
+        const result = await trpcClient.getBookmakerCardRules.query();
+        return result.rules;
+    },
+    async getRule(bookmaker) {
+        const result = await trpcClient.getBookmakerCardRule.query({ bookmaker });
+        return result.rule;
+    },
+    async setRule(bookmaker, rule) {
+        await trpcClient.setBookmakerCardRule.mutate({ bookmaker, rule });
+    },
+    async removeRule(bookmaker) {
+        await trpcClient.removeBookmakerCardRule.mutate({ bookmaker });
+    },
+    async getConfiguredBookmakers() {
+        const result = await trpcClient.getConfiguredBookmakers.query();
+        return result.bookmakers;
+    }
+};
 const deepScanApi = {
     async startDeepScan(config) {
         await trpcClient.deepScanStart.mutate(config);
@@ -180,6 +200,22 @@ const deepScanApi = {
             enabledSports: result.enabledSports,
             enabledLeagues: result.enabledLeagues
         };
+    },
+    // Story 8.7: Aggressive scan methods
+    async setAggressiveScanConfig(config) {
+        await trpcClient.setAggressiveScanConfig.mutate(config);
+    },
+    async getAggressiveScanConfig() {
+        return trpcClient.getAggressiveScanConfig.query();
+    },
+    async getAggressiveScanStats() {
+        return trpcClient.getAggressiveScanStats.query();
+    },
+    async startAggressiveScan() {
+        await trpcClient.startAggressiveScan.mutate();
+    },
+    async stopAggressiveScan() {
+        await trpcClient.stopAggressiveScan.mutate();
     }
 };
 // Custom APIs for renderer
@@ -187,6 +223,7 @@ const api = {
     credentials: credentialsApi,
     oddsApiIo: oddsApiIoApi,
     deepScan: deepScanApi,
+    cardRules: cardRulesApi,
     feed: {
         async runManualFetch() {
             await trpcClient.pollAndGetFeedSnapshot.mutate();

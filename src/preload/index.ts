@@ -3,7 +3,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { createTRPCProxyClient } from '@trpc/client'
 import { ELECTRON_TRPC_CHANNEL, ipcLink } from 'electron-trpc/renderer'
 import type { AppRouter } from '../main/services/router'
-import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId, ScanHistoryEntry, DeepScanQuotaStatus, CardCountingRule, BookmakerCardRules } from '../../shared/types'
+import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId, ScanHistoryEntry, DeepScanQuotaStatus, CardCountingRule, BookmakerCardRules, AggressiveScanConfig, AggressiveScanStats } from '../../shared/types'
 
 type CredentialsStorageStatus = {
   isUsingFallbackStorage: boolean
@@ -78,6 +78,12 @@ type DeepScanAPI = {
   getLeagues: () => Promise<DiscoveredLeague[]>
   getLeaguePresets: () => Promise<LeaguePreset[]>
   applyPreset: (presetId: string) => Promise<{ scanScope: string; enabledSports: string[]; enabledLeagues: string[] }>
+  // Story 8.7: Aggressive scan methods
+  setAggressiveScanConfig: (config: Partial<AggressiveScanConfig>) => Promise<void>
+  getAggressiveScanConfig: () => Promise<AggressiveScanConfig>
+  getAggressiveScanStats: () => Promise<AggressiveScanStats>
+  startAggressiveScan: () => Promise<void>
+  stopAggressiveScan: () => Promise<void>
 }
 
 // Story 7.9: Sport and League types for the UI
@@ -324,6 +330,22 @@ const deepScanApi: DeepScanAPI = {
       enabledSports: result.enabledSports,
       enabledLeagues: result.enabledLeagues
     }
+  },
+  // Story 8.7: Aggressive scan methods
+  async setAggressiveScanConfig(config) {
+    await trpcClient.setAggressiveScanConfig.mutate(config)
+  },
+  async getAggressiveScanConfig() {
+    return trpcClient.getAggressiveScanConfig.query()
+  },
+  async getAggressiveScanStats() {
+    return trpcClient.getAggressiveScanStats.query()
+  },
+  async startAggressiveScan() {
+    await trpcClient.startAggressiveScan.mutate()
+  },
+  async stopAggressiveScan() {
+    await trpcClient.stopAggressiveScan.mutate()
   }
 }
 

@@ -17,6 +17,11 @@ exports.toggleProvider = toggleProvider;
 exports.getAllProvidersWithStatus = getAllProvidersWithStatus;
 exports.saveApiKey = saveApiKey;
 exports.getApiKey = getApiKey;
+exports.getBookmakerCardRules = getBookmakerCardRules;
+exports.getBookmakerCardRule = getBookmakerCardRule;
+exports.setBookmakerCardRule = setBookmakerCardRule;
+exports.removeBookmakerCardRule = removeBookmakerCardRule;
+exports.getConfiguredBookmakers = getConfiguredBookmakers;
 const electron_store_1 = __importDefault(require("electron-store"));
 const electron_1 = require("electron");
 const types_1 = require("../../../shared/types");
@@ -218,4 +223,47 @@ async function getApiKey(providerId) {
         return Buffer.from(stored.slice(4), 'base64').toString('utf8');
     }
     return null;
+}
+// ============================================================
+// Card Counting Rules (Story 1.5)
+// ============================================================
+/**
+ * Get all bookmaker card counting rules.
+ */
+function getBookmakerCardRules() {
+    return store.get('bookmakerCardRules') ?? {};
+}
+/**
+ * Get the card counting rule for a specific bookmaker.
+ * Returns the default rule if not explicitly configured.
+ */
+function getBookmakerCardRule(bookmaker) {
+    const rules = getBookmakerCardRules();
+    return rules[bookmaker] ?? types_1.DEFAULT_CARD_COUNTING_RULE;
+}
+/**
+ * Set the card counting rule for a specific bookmaker.
+ */
+function setBookmakerCardRule(bookmaker, rule) {
+    const currentRules = getBookmakerCardRules();
+    store.set('bookmakerCardRules', {
+        ...currentRules,
+        [bookmaker]: rule
+    });
+}
+/**
+ * Remove the card counting rule for a specific bookmaker.
+ * The bookmaker will then use the default rule.
+ */
+function removeBookmakerCardRule(bookmaker) {
+    const currentRules = getBookmakerCardRules();
+    const { [bookmaker]: _, ...rest } = currentRules;
+    store.set('bookmakerCardRules', rest);
+}
+/**
+ * Get all bookmakers that have explicit card counting rules set.
+ */
+function getConfiguredBookmakers() {
+    const rules = getBookmakerCardRules();
+    return Object.keys(rules);
 }

@@ -1270,3 +1270,270 @@ export const CARD_COUNTING_RULE_DISPLAY: Record<CardCountingRule, { label: strin
  * Default card counting rule for new/unconfigured bookmakers.
  */
 export const DEFAULT_CARD_COUNTING_RULE: CardCountingRule = 'standard'
+
+// ============================================================================
+// Aggressive Pre-Match Scanning (Story 8.7)
+// ============================================================================
+
+/**
+ * Event tiers based on time to kickoff.
+ * Story 8.7: Aggressive Pre-Match Scanning with Quota Maximization
+ */
+export type EventTier = 'imminent' | 'soon' | 'today' | 'later' | 'tomorrow' | 'distant'
+
+/**
+ * Tier configuration with polling parameters.
+ * Story 8.7: Defines how each tier is managed in aggressive mode.
+ */
+export interface TierConfig {
+  name: EventTier
+  maxMinutesToKickoff: number
+  weight: number
+  minPollIntervalSeconds: number
+  maxPollIntervalSeconds: number
+}
+
+/**
+ * Default tier configurations for aggressive scanning.
+ * Story 8.7: Pre-configured tier boundaries and weights.
+ */
+export const DEFAULT_TIER_CONFIGS: TierConfig[] = [
+  { name: 'imminent', maxMinutesToKickoff: 30, weight: 50, minPollIntervalSeconds: 15, maxPollIntervalSeconds: 60 },
+  { name: 'soon', maxMinutesToKickoff: 120, weight: 25, minPollIntervalSeconds: 60, maxPollIntervalSeconds: 180 },
+  { name: 'today', maxMinutesToKickoff: 360, weight: 12, minPollIntervalSeconds: 180, maxPollIntervalSeconds: 600 },
+  { name: 'later', maxMinutesToKickoff: 1440, weight: 8, minPollIntervalSeconds: 600, maxPollIntervalSeconds: 1800 },
+  { name: 'tomorrow', maxMinutesToKickoff: 2880, weight: 3, minPollIntervalSeconds: 1800, maxPollIntervalSeconds: 3600 },
+  { name: 'distant', maxMinutesToKickoff: Infinity, weight: 2, minPollIntervalSeconds: 3600, maxPollIntervalSeconds: 7200 }
+]
+
+/**
+ * Tier boundaries in minutes for determining event tiers.
+ * Story 8.7: Configurable tier boundaries.
+ */
+export interface TierBoundaries {
+  imminent: number
+  soon: number
+  today: number
+  later: number
+  tomorrow: number
+}
+
+/**
+ * Default tier boundaries (in minutes).
+ * Story 8.7: Default time-to-kickoff boundaries for each tier.
+ */
+export const DEFAULT_TIER_BOUNDARIES: TierBoundaries = {
+  imminent: 30,
+  soon: 120,
+  today: 360,
+  later: 1440,
+  tomorrow: 2880
+}
+
+/**
+ * Tier weights for quota allocation.
+ * Story 8.7: Percentage of quota budget allocated to each tier.
+ */
+export interface TierWeights {
+  imminent: number
+  soon: number
+  today: number
+  later: number
+  tomorrow: number
+  distant: number
+}
+
+/**
+ * Default tier weights (% of quota budget).
+ * Story 8.7: Default weights prioritize imminent events.
+ */
+export const DEFAULT_TIER_WEIGHTS: TierWeights = {
+  imminent: 50,
+  soon: 25,
+  today: 12,
+  later: 8,
+  tomorrow: 3,
+  distant: 2
+}
+
+/**
+ * Tiered event with metadata for aggressive scanning.
+ * Story 8.7: Extends DeepScanEvent with tier and polling metadata.
+ */
+export interface TieredEvent {
+  id: string
+  name: string
+  date?: string
+  league?: string
+  sport?: string
+  tier: EventTier
+  minutesToKickoff: number
+  lastPolledAt: string | null
+  pollCount: number
+  volatilityScore: number
+  isBoosted: boolean
+  boostExpiresAt: string | null
+}
+
+/**
+ * Odds snapshot for historical tracking.
+ * Story 8.7: Single odds snapshot with timestamp.
+ */
+export interface OddsHistorySnapshot {
+  odds: RawOddsPayload
+  fetchedAt: string
+}
+
+/**
+ * Cached event with odds history.
+ * Story 8.7: Stores event with current and historical odds.
+ */
+export interface CachedEventWithOdds {
+  event: TieredEvent
+  currentOdds: RawOddsPayload | null
+  oddsHistory: OddsHistorySnapshot[]
+  oddsChangeCount: number
+  lastOddsChangeAt: string | null
+  hasActiveArbs: boolean
+  arbCount: number
+}
+
+/**
+ * Budget allocation for a single tier.
+ * Story 8.7: Tracks quota usage per tier.
+ */
+export interface TierBudget {
+  tier: EventTier
+  weight: number
+  allocatedRequests: number
+  usedThisHour: number
+  eventCount: number
+  currentPollIntervalSeconds: number
+}
+
+/**
+ * Overall quota budget tracking.
+ * Story 8.7: Manages API quota across all tiers.
+ */
+export interface QuotaBudget {
+  totalHourlyLimit: number
+  targetPercent: number
+  targetRequestsPerHour: number
+  bufferPercent: number
+  bufferRequests: number
+  usableRequests: number
+  perTier: Record<EventTier, TierBudget>
+  currentHourUsed: number
+  currentHourRemaining: number
+  hourResetAt: string
+}
+
+/**
+ * Boost information for an event.
+ * Story 8.7: Tracks temporary polling priority boost.
+ */
+export interface EventBoostInfo {
+  eventId: string
+  boostedAt: string
+  expiresAt: string
+  reason: 'arb_detected' | 'high_volatility' | 'manual'
+}
+
+/**
+ * Aggressive scan statistics for dashboard.
+ * Story 8.7: Real-time metrics display.
+ */
+export interface AggressiveScanStats {
+  enabled: boolean
+  quotaTargetPercent: number
+
+  // Quota
+  quotaUsedThisHour: number
+  quotaRemainingThisHour: number
+  quotaEfficiencyPercent: number
+
+  // Events by tier
+  eventsByTier: Record<EventTier, number>
+  totalEvents: number
+
+  // Polling
+  pollIntervalsByTier: Record<EventTier, number>
+  pollsThisHour: number
+  avgPollLatencyMs: number
+
+  // Arbitrage
+  arbsFoundThisHour: number
+  arbsFoundTotal: number
+  boostedEvents: number
+  avgArbDetectionTimeSeconds: number
+
+  // Cache
+  cachedEvents: number
+  cacheMemoryMb: number
+
+  // Timing
+  lastPollAt: string | null
+  scanStartedAt: string | null
+  uptimeMinutes: number
+}
+
+/**
+ * Aggressive scan configuration settings.
+ * Story 8.7: User-configurable aggressive mode settings.
+ */
+export interface AggressiveScanConfig {
+  enabled: boolean
+  quotaTargetPercent: number
+  scanHorizonHours: number
+  imminentPollIntervalSeconds: number
+  tierBoundaries: TierBoundaries
+  tierWeights: TierWeights
+  arbBoostDurationMinutes: number
+  arbBoostPollIntervalSeconds: number
+  maxBoostedEvents: number
+  maxCachedEvents: number
+  eventDiscoveryIntervalMinutes: number
+}
+
+/**
+ * Default aggressive scan configuration.
+ * Story 8.7: Sensible defaults for aggressive mode.
+ */
+export const DEFAULT_AGGRESSIVE_SCAN_CONFIG: AggressiveScanConfig = {
+  enabled: false,
+  quotaTargetPercent: 75,
+  scanHorizonHours: 48,
+  imminentPollIntervalSeconds: 45,
+  tierBoundaries: DEFAULT_TIER_BOUNDARIES,
+  tierWeights: DEFAULT_TIER_WEIGHTS,
+  arbBoostDurationMinutes: 5,
+  arbBoostPollIntervalSeconds: 20,
+  maxBoostedEvents: 10,
+  maxCachedEvents: 3000,
+  eventDiscoveryIntervalMinutes: 30
+}
+
+/**
+ * Progress information for cold start initialization.
+ * Story 8.7: Tracks wide event discovery and initial fetch progress.
+ */
+export interface ColdStartProgress {
+  phase: 'discovering' | 'fetching' | 'complete'
+  totalEvents: number
+  processedEvents: number
+  percentComplete: number
+  estimatedRemainingSeconds: number
+  currentTier: EventTier | null
+}
+
+/**
+ * Result of a tiered poll cycle.
+ * Story 8.7: Tracks what happened during a poll cycle.
+ */
+export interface TieredPollResult {
+  tier: EventTier
+  eventsPolled: number
+  arbsFound: number
+  latencyMs: number
+  timestamp: string
+}

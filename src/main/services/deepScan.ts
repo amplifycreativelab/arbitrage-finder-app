@@ -12,12 +12,47 @@ import {
   type OddsTrend,
   type OddsSnapshot
 } from '../../../shared/types'
+// Story 8.7: Re-export types for API consumers
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import type { 
+  AggressiveScanConfig as _AggressiveScanConfig, 
+  AggressiveScanStats as _AggressiveScanStats, 
+  EventTier as _EventTier, 
+  TieredEvent as _TieredEvent, 
+  ColdStartProgress as _ColdStartProgress 
+} from '../../../shared/types'
 import { deepScanConfigSchema } from '../../../shared/schemas'
 import { getApiKeyForAdapter } from '../credentials'
 import { scheduleProviderRequest } from './poller'
 import { getSelectedBookmakers } from './odds-api-io-bookmakers'
 import { createCorrelationId, logDebug, logInfo, logWarn, type StructuredLogBase } from './logger'
 import { calculateTwoLegArbitrageRoi, detectCardRulesMismatch, clearCardRulesCache } from './calculator'
+// Story 8.7: Aggressive Pre-Match Scanning
+import {
+  startAggressiveScan,
+  stopAggressiveScan,
+  isAggressiveScanRunning,
+  setAggressiveScanConfig,
+  getAggressiveScanConfig,
+  getAggressiveScanStats,
+  initColdStart,
+  updateColdStartProgress,
+  getColdStartProgress,
+  completeColdStart,
+  upsertTieredEvent,
+  boostEvent,
+  isEventBoosted,
+  getBoostedEventIds,
+  getEventCountsByTier,
+  getTotalEventCount,
+  calculateEventTier,
+  calculateMinutesToKickoff,
+  isPreMatchEvent,
+  createTieredEvent,
+  getEventsForTier,
+  getEventById,
+  promoteEvents
+} from './aggressiveScan'
 
 const ODDS_API_IO_BASE_URL = 'https://api.odds-api.io'
 const ODDS_API_IO_EVENTS_PATH = '/v3/events'
@@ -4419,6 +4454,33 @@ export function getDeepScanResults(): ArbitrageOpportunity[] {
   }))
 }
 
+// Story 8.7: Export aggressive scan functions
+export {
+  startAggressiveScan,
+  stopAggressiveScan,
+  isAggressiveScanRunning,
+  setAggressiveScanConfig,
+  getAggressiveScanConfig,
+  getAggressiveScanStats,
+  initColdStart,
+  updateColdStartProgress,
+  getColdStartProgress,
+  completeColdStart,
+  upsertTieredEvent,
+  boostEvent,
+  isEventBoosted,
+  getBoostedEventIds,
+  getEventCountsByTier,
+  getTotalEventCount,
+  calculateEventTier,
+  calculateMinutesToKickoff,
+  isPreMatchEvent,
+  createTieredEvent,
+  getEventsForTier,
+  getEventById,
+  promoteEvents
+}
+
 export const __test = {
   resetState(): void {
     currentScan = null
@@ -4474,6 +4536,9 @@ export const __test = {
     // Story 7.8: Clear rate limit state
     apiRateLimit = null
     apiRateLimitLastUpdatedAtMs = null
+    // Story 8.7: Reset aggressive scan state
+    const aggressiveScan = require('./aggressiveScan')
+    aggressiveScan.__test?.resetState()
   },
   setEventResolver(resolver: EventResolver | null): void {
     eventResolverOverride = resolver

@@ -516,5 +516,82 @@ exports.appRouter = t.router({
             to: input.to,
             result
         };
+    }),
+    // ============================================================
+    // Card Counting Rules Procedures (Story 1.5)
+    // ============================================================
+    /**
+     * Get all bookmaker card counting rules.
+     */
+    getBookmakerCardRules: t.procedure.query(() => {
+        return { rules: (0, storage_1.getBookmakerCardRules)() };
+    }),
+    /**
+     * Get the card counting rule for a specific bookmaker.
+     */
+    getBookmakerCardRule: t.procedure
+        .input(zod_1.z.object({ bookmaker: zod_1.z.string().min(1) }))
+        .query(({ input }) => {
+        return { rule: (0, storage_1.getBookmakerCardRule)(input.bookmaker) };
+    }),
+    /**
+     * Set the card counting rule for a specific bookmaker.
+     */
+    setBookmakerCardRule: t.procedure
+        .input(zod_1.z.object({
+        bookmaker: zod_1.z.string().min(1),
+        rule: zod_1.z.enum(['conservative', 'standard'])
+    }))
+        .mutation(({ input }) => {
+        (0, storage_1.setBookmakerCardRule)(input.bookmaker, input.rule);
+        return { ok: true, bookmaker: input.bookmaker, rule: input.rule };
+    }),
+    /**
+     * Remove the card counting rule for a specific bookmaker.
+     */
+    removeBookmakerCardRule: t.procedure
+        .input(zod_1.z.object({ bookmaker: zod_1.z.string().min(1) }))
+        .mutation(({ input }) => {
+        (0, storage_1.removeBookmakerCardRule)(input.bookmaker);
+        return { ok: true, bookmaker: input.bookmaker };
+    }),
+    /**
+     * Get all bookmakers with explicit card counting rules.
+     */
+    getConfiguredBookmakers: t.procedure.query(() => {
+        return { bookmakers: (0, storage_1.getConfiguredBookmakers)() };
+    }),
+    // ============================================================
+    // Aggressive Pre-Match Scanning (Story 8.7)
+    // ============================================================
+    setAggressiveScanConfig: t.procedure
+        .input(zod_1.z.object({
+        enabled: zod_1.z.boolean().optional(),
+        quotaTargetPercent: zod_1.z.number().min(50).max(90).optional(),
+        scanHorizonHours: zod_1.z.number().min(12).max(72).optional(),
+        imminentPollIntervalSeconds: zod_1.z.number().min(15).max(120).optional(),
+        arbBoostDurationMinutes: zod_1.z.number().min(1).max(30).optional(),
+        arbBoostPollIntervalSeconds: zod_1.z.number().min(10).max(60).optional(),
+        maxBoostedEvents: zod_1.z.number().min(1).max(50).optional(),
+        maxCachedEvents: zod_1.z.number().min(100).max(10000).optional(),
+        eventDiscoveryIntervalMinutes: zod_1.z.number().min(10).max(120).optional()
+    }))
+        .mutation(({ input }) => {
+        (0, deepScan_1.setAggressiveScanConfig)(input);
+        return { ok: true, config: (0, deepScan_1.getAggressiveScanConfig)() };
+    }),
+    getAggressiveScanConfig: t.procedure.query(() => {
+        return (0, deepScan_1.getAggressiveScanConfig)();
+    }),
+    getAggressiveScanStats: t.procedure.query(() => {
+        return (0, deepScan_1.getAggressiveScanStats)();
+    }),
+    startAggressiveScan: t.procedure.mutation(async () => {
+        await (0, deepScan_1.startAggressiveScan)();
+        return { ok: true };
+    }),
+    stopAggressiveScan: t.procedure.mutation(() => {
+        (0, deepScan_1.stopAggressiveScan)();
+        return { ok: true };
     })
 });

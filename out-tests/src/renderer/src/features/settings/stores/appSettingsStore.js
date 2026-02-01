@@ -3,12 +3,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.useAppSettingsStore = void 0;
 const zustand_1 = require("zustand");
 const middleware_1 = require("zustand/middleware");
+const types_1 = require("../../../../../../shared/types");
 const DEFAULT_RATES = {
     USD: 1,
     AUD: 1.5,
     EUR: 0.85
 };
-exports.useAppSettingsStore = (0, zustand_1.create)()((0, middleware_1.persist)((set) => ({
+exports.useAppSettingsStore = (0, zustand_1.create)()((0, middleware_1.persist)((set, get) => ({
     // Auto-refresh settings
     autoRefreshEnabled: false,
     refreshIntervalMs: 30000, // Default 30s
@@ -19,7 +20,23 @@ exports.useAppSettingsStore = (0, zustand_1.create)()((0, middleware_1.persist)(
     exchangeRates: DEFAULT_RATES,
     ratesLastFetched: null,
     setBaseCurrency: (currency) => set({ baseCurrency: currency }),
-    setExchangeRates: (rates, timestamp) => set({ exchangeRates: rates, ratesLastFetched: timestamp })
+    setExchangeRates: (rates, timestamp) => set({ exchangeRates: rates, ratesLastFetched: timestamp }),
+    // Card counting rules (Story 1.5)
+    bookmakerCardRules: {},
+    setBookmakerCardRule: (bookmaker, rule) => set((state) => ({
+        bookmakerCardRules: {
+            ...state.bookmakerCardRules,
+            [bookmaker]: rule
+        }
+    })),
+    getBookmakerCardRule: (bookmaker) => {
+        const state = get();
+        return state.bookmakerCardRules[bookmaker] ?? types_1.DEFAULT_CARD_COUNTING_RULE;
+    },
+    removeBookmakerCardRule: (bookmaker) => set((state) => {
+        const { [bookmaker]: _, ...rest } = state.bookmakerCardRules;
+        return { bookmakerCardRules: rest };
+    })
 }), {
     name: 'app-settings-storage',
     storage: (0, middleware_1.createJSONStorage)(() => localStorage)

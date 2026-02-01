@@ -9,6 +9,7 @@ import { OddsBrowser } from '../odds-browser/OddsBrowser'
 import { SettingsPage } from '../settings/SettingsPage'
 import { SystemErrorBar } from '../../components/ui/SystemErrorBar'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
+import { ThemeToggle } from '../../components/ui/ThemeToggle'
 import { useDashboardErrorStore } from './stores/dashboardErrorStore'
 import { useFeedStore } from './stores/feedStore'
 import { useCalculatorStore } from './stores/calculatorStore'
@@ -125,7 +126,7 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
 
       {/* Provider Error Banners - stacked below system error */}
       {activeProviderErrors.length > 0 && (
-        <div className="flex flex-col gap-1 px-4 py-2" data-testid="provider-error-banners">
+        <div className="flex flex-col gap-1 px-4 py-2 animate-slide-in" data-testid="provider-error-banners">
           {activeProviderErrors.map(([providerId, error]) => (
             <ErrorBanner
               key={error.id}
@@ -142,105 +143,52 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
       )}
 
       {/* Tab Navigation */}
-      <div className="flex border-b border-ot-border bg-ot-surface px-4" data-testid="dashboard-tabs">
-        <button
-          type="button"
-          onClick={() => handleTabChange('arbitrage')}
-          className={cn(
-            'relative px-4 py-2 text-[11px] font-medium transition-colors',
-            activeTab === 'arbitrage'
-              ? 'text-ot-accent'
-              : 'text-ot-muted hover:text-ot-foreground'
-          )}
-          data-testid="tab-arbitrage"
-          aria-selected={activeTab === 'arbitrage'}
-          role="tab"
-        >
-          <span className="flex items-center gap-2">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-3.5 w-3.5"
-            >
-              <path d="M12 2v20M2 12h20" />
-            </svg>
+      <div className="flex items-center justify-between border-b border-ot-border bg-ot-surface/50 backdrop-blur-sm px-2" data-testid="dashboard-tabs">
+        <div className="flex">
+          <TabButton
+            active={activeTab === 'arbitrage'}
+            onClick={() => handleTabChange('arbitrage')}
+            testId="tab-arbitrage"
+            icon={
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <path d="M12 2v20M2 12h20" />
+              </svg>
+            }
+          >
             Arbitrage Feed
-          </span>
-          {activeTab === 'arbitrage' && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-ot-accent" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => handleTabChange('odds-browser')}
-          className={cn(
-            'relative px-4 py-2 text-[11px] font-medium transition-colors',
-            activeTab === 'odds-browser'
-              ? 'text-ot-accent'
-              : 'text-ot-muted hover:text-ot-foreground'
-          )}
-          data-testid="tab-odds-browser"
-          aria-selected={activeTab === 'odds-browser'}
-          role="tab"
-        >
-          <span className="flex items-center gap-2">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-3.5 w-3.5"
-            >
-              <path d="M3 3v18h18" />
-              <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" />
-            </svg>
+          </TabButton>
+          <TabButton
+            active={activeTab === 'odds-browser'}
+            onClick={() => handleTabChange('odds-browser')}
+            testId="tab-odds-browser"
+            icon={
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <path d="M3 3v18h18" />
+                <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" />
+              </svg>
+            }
+          >
             Odds Browser
-          </span>
-          {activeTab === 'odds-browser' && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-ot-accent" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => handleTabChange('settings')}
-          className={cn(
-            'relative px-4 py-2 text-[11px] font-medium transition-colors',
-            activeTab === 'settings'
-              ? 'text-ot-accent'
-              : 'text-ot-muted hover:text-ot-foreground'
-          )}
-          data-testid="tab-settings"
-          aria-selected={activeTab === 'settings'}
-          role="tab"
-        >
-          <span className="flex items-center gap-2">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-3.5 w-3.5"
-            >
-              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
+          </TabButton>
+          <TabButton
+            active={activeTab === 'settings'}
+            onClick={() => handleTabChange('settings')}
+            testId="tab-settings"
+            icon={
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            }
+          >
             Settings
-          </span>
-          {activeTab === 'settings' && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-ot-accent" />
-          )}
-        </button>
+          </TabButton>
+        </div>
+        
+        {/* Theme Toggle */}
+        <div className="pr-2">
+          <ThemeToggle size="sm" />
+        </div>
       </div>
 
       {/* Story 8.3: Calculator Panel - Modal Mode */}
@@ -262,15 +210,19 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
               data-testid="feed-pane"
             >
               <header className="flex items-center justify-between gap-2">
-                <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-ot-accent">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-ot-accent flex items-center gap-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-ot-accent opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-ot-accent"></span>
+                  </span>
                   Feed
                 </h2>
-                <span className="text-[10px] text-ot-muted">Opportunities</span>
+                <span className="text-xs text-ot-muted font-medium">Opportunities</span>
               </header>
 
               <DeepScanPanel />
 
-              <div className="flex-1 rounded-md border border-ot-border bg-ot-background p-3 text-[11px] text-ot-muted">
+              <div className="flex-1 rounded-lg border border-ot-border bg-ot-surface p-3 text-sm text-ot-muted shadow-ot-sm">
                 {feed ?? <FeedPane />}
               </div>
             </section>
@@ -291,45 +243,31 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
               className="flex min-w-0 flex-1 flex-col gap-3"
             >
               <div
-                className="flex-1 rounded-md border border-ot-border bg-ot-background"
+                className="flex-1 rounded-lg border border-ot-border bg-ot-surface shadow-ot-sm overflow-hidden"
                 data-testid="signal-preview-pane"
               >
                 {/* Story 7.7 Task 6: Sub-tabs for Signal Preview / Best Odds */}
-                <div className="flex items-center gap-1 border-b border-ot-border px-3 py-1.5">
-                  <button
-                    type="button"
+                <div className="flex items-center gap-1 border-b border-ot-border bg-ot-background/50 px-3 py-1.5">
+                  <SubTabButton
+                    active={rightPaneView === 'signal-preview'}
                     onClick={() => handleRightPaneChange('signal-preview')}
-                    className={cn(
-                      'relative px-3 py-1.5 text-[10px] font-medium transition-colors rounded-t',
-                      rightPaneView === 'signal-preview'
-                        ? 'text-ot-accent bg-ot-accent/10'
-                        : 'text-ot-muted hover:text-ot-foreground'
-                    )}
-                    data-testid="tab-signal-preview"
-                    aria-selected={rightPaneView === 'signal-preview'}
+                    testId="tab-signal-preview"
                   >
                     Signal Preview
-                  </button>
-                  <button
-                    type="button"
+                  </SubTabButton>
+                  <SubTabButton
+                    active={rightPaneView === 'best-odds'}
                     onClick={() => handleRightPaneChange('best-odds')}
-                    className={cn(
-                      'relative px-3 py-1.5 text-[10px] font-medium transition-colors rounded-t',
-                      rightPaneView === 'best-odds'
-                        ? 'text-ot-accent bg-ot-accent/10'
-                        : 'text-ot-muted hover:text-ot-foreground'
-                    )}
-                    data-testid="tab-best-odds"
-                    aria-selected={rightPaneView === 'best-odds'}
+                    testId="tab-best-odds"
                   >
                     Best Odds
-                  </button>
+                  </SubTabButton>
                 </div>
 
                 {/* Content area */}
-                <div className="flex-1 p-3">
+                <div className="flex-1 p-3 h-[calc(100%-40px)]">
                   {rightPaneView === 'signal-preview' ? (
-                    <div className="flex h-full flex-col rounded-md border border-ot-border bg-ot-background p-3 text-[11px] font-mono text-ot-foreground">
+                    <div className="flex h-full flex-col rounded-lg border border-ot-border bg-ot-background p-3 text-sm font-mono text-ot-foreground">
                       {signalPreview ?? <SignalPreview />}
                     </div>
                   ) : (
@@ -360,6 +298,66 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
         )}
       </div>
     </div>
+  )
+}
+
+// Tab Button Component
+interface TabButtonProps {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+  testId: string
+  icon: React.ReactNode
+}
+
+function TabButton({ active, onClick, children, testId, icon }: TabButtonProps): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'relative px-4 py-3 text-sm font-medium transition-all duration-150 flex items-center gap-2',
+        active
+          ? 'text-ot-accent'
+          : 'text-ot-muted hover:text-ot-foreground hover:bg-ot-surface-hover'
+      )}
+      data-testid={testId}
+      aria-selected={active}
+      role="tab"
+    >
+      {icon}
+      {children}
+      {active && (
+        <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-ot-accent to-ot-accent-hover animate-fade-in" />
+      )}
+    </button>
+  )
+}
+
+// Sub Tab Button Component
+interface SubTabButtonProps {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+  testId: string
+}
+
+function SubTabButton({ active, onClick, children, testId }: SubTabButtonProps): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'relative px-3 py-1.5 text-xs font-medium transition-all duration-150 rounded-md',
+        active
+          ? 'text-ot-accent bg-ot-accent-subtle'
+          : 'text-ot-muted hover:text-ot-foreground hover:bg-ot-surface-hover'
+      )}
+      data-testid={testId}
+      aria-selected={active}
+    >
+      {children}
+    </button>
   )
 }
 

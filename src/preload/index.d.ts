@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId, ScanHistoryEntry, DeepScanQuotaStatus, CardCountingRule, BookmakerCardRules } from '../../shared/types'
+import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId, ScanHistoryEntry, DeepScanQuotaStatus, CardCountingRule, BookmakerCardRules, AggressiveScanConfig, AggressiveScanStats } from '../../shared/types'
 
 export interface CredentialsStorageStatus {
   isUsingFallbackStorage: boolean
@@ -56,6 +56,12 @@ export interface DeepScanAPI {
   getLeagues: () => Promise<DiscoveredLeague[]>
   getLeaguePresets: () => Promise<LeaguePreset[]>
   applyPreset: (presetId: string) => Promise<{ scanScope: string; enabledSports: string[]; enabledLeagues: string[] }>
+  // Story 8.7: Aggressive scan methods
+  setAggressiveScanConfig: (config: Partial<AggressiveScanConfig>) => Promise<void>
+  getAggressiveScanConfig: () => Promise<AggressiveScanConfig>
+  getAggressiveScanStats: () => Promise<AggressiveScanStats>
+  startAggressiveScan: () => Promise<void>
+  stopAggressiveScan: () => Promise<void>
 }
 
 // Story 7.9: Sport and League types

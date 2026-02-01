@@ -246,12 +246,12 @@ export function FeedTable({
       data-testid="feed-table"
       data-virtualized={virtualizationEnabled ? 'true' : 'false'}
     >
-      <div className="mb-2 flex items-center border-b border-ot-border pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ot-muted">
+      <div className="feed-table-header mb-3">
         <button
           type="button"
           className={cn(
-            'mr-3 flex items-center gap-1 text-left',
-            sortBy === 'time' ? 'text-ot-foreground' : 'text-ot-muted'
+            'mr-3 flex items-center gap-1.5 text-left transition-colors duration-150',
+            sortBy === 'time' ? 'text-ot-foreground' : 'text-ot-muted hover:text-ot-foreground-secondary'
           )}
           aria-label="Sort by time"
           aria-sort={getAriaSort(sortBy, 'time', sortDirection)}
@@ -259,14 +259,16 @@ export function FeedTable({
           onClick={() => handleSortChange('time')}
         >
           <span className="w-12">Time</span>
-          <span aria-hidden="true">{sortBy === 'time' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}</span>
+          <span aria-hidden="true" className={cn(
+            'transition-transform duration-150',
+            sortBy === 'time' ? 'opacity-100' : 'opacity-0'
+          )}>
+            {sortBy === 'time' ? (sortDirection === 'asc' ? '▲' : '▼') : '▲'}
+          </span>
         </button>
         <button
           type="button"
-          className={cn(
-            'mr-3 flex flex-1 items-center gap-1 text-left',
-            sortBy === 'time' ? 'text-ot-foreground' : 'text-ot-muted'
-          )}
+          className="mr-3 flex flex-1 items-center gap-1 text-left text-ot-muted"
           aria-disabled="true"
           data-testid="feed-header-event"
         >
@@ -276,8 +278,8 @@ export function FeedTable({
         <button
           type="button"
           className={cn(
-            'mr-3 flex items-center gap-1 text-right',
-            sortBy === 'trend' ? 'text-ot-foreground' : 'text-ot-muted'
+            'mr-3 flex items-center gap-1.5 text-right transition-colors duration-150',
+            sortBy === 'trend' ? 'text-ot-foreground' : 'text-ot-muted hover:text-ot-foreground-secondary'
           )}
           aria-label="Sort by trend"
           aria-sort={getAriaSort(sortBy, 'trend', sortDirection)}
@@ -285,13 +287,18 @@ export function FeedTable({
           onClick={() => handleSortChange('trend')}
         >
           <span className="w-16">Move</span>
-          <span aria-hidden="true">{sortBy === 'trend' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}</span>
+          <span aria-hidden="true" className={cn(
+            'transition-transform duration-150',
+            sortBy === 'trend' ? 'opacity-100' : 'opacity-0'
+          )}>
+            {sortBy === 'trend' ? (sortDirection === 'asc' ? '▲' : '▼') : '▲'}
+          </span>
         </button>
         <button
           type="button"
           className={cn(
-            'ml-auto flex items-center gap-1 text-right',
-            sortBy === 'roi' ? 'text-ot-foreground' : 'text-ot-muted'
+            'ml-auto flex items-center gap-1.5 text-right transition-colors duration-150',
+            sortBy === 'roi' ? 'text-ot-accent' : 'text-ot-muted hover:text-ot-foreground-secondary'
           )}
           aria-label="Sort by ROI"
           aria-sort={getAriaSort(sortBy, 'roi', sortDirection)}
@@ -299,7 +306,12 @@ export function FeedTable({
           onClick={() => handleSortChange('roi')}
         >
           <span className="w-14">ROI</span>
-          <span aria-hidden="true">{sortBy === 'roi' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}</span>
+          <span aria-hidden="true" className={cn(
+            'transition-transform duration-150',
+            sortBy === 'roi' ? 'opacity-100' : 'opacity-0'
+          )}>
+            {sortBy === 'roi' ? (sortDirection === 'asc' ? '▲' : '▼') : '▲'}
+          </span>
         </button>
       </div>
 
@@ -317,8 +329,14 @@ export function FeedTable({
         onScroll={handleScroll}
       >
         {totalCount === 0 && (
-          <div className="flex h-full items-center justify-center text-[11px] text-ot-muted">
-            No opportunities yet. Configure a provider to start the feed.
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-ot-muted animate-fade-in">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-10 w-10 opacity-50">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <div className="text-sm">No opportunities yet</div>
+            <div className="text-xs opacity-70">Configure a provider to start the feed</div>
           </div>
         )}
 
@@ -471,9 +489,10 @@ function FeedRow({
     <div
       id={`feed-row-${opportunity.id}`}
       className={cn(
-        'group relative flex cursor-pointer items-center justify-between border-b border-ot-border py-1.5 text-[11px]',
-        isStale || isProcessed ? 'opacity-50' : '',
-        isSelected ? 'bg-ot-accent/10' : 'hover:bg-black/5'
+        'feed-row',
+        isStale && 'stale',
+        isProcessed && 'processed',
+        isSelected && 'selected'
       )}
       data-testid="feed-row"
       data-staleness={isStale ? 'stale' : 'fresh'}
@@ -490,54 +509,66 @@ function FeedRow({
       aria-selected={isSelected ? 'true' : 'false'}
     >
       <div
-        className="w-[72px] shrink-0 text-ot-muted font-medium"
+        className="w-[72px] shrink-0 text-ot-muted font-mono text-xs"
         data-testid="feed-cell-time"
       >
         {combinedTimeLabel}
       </div>
       {isProcessed && (
         <div
-          className="mx-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500/80 text-[9px] font-semibold text-black"
+          className="mx-1 flex h-5 w-5 items-center justify-center rounded-full bg-ot-success text-white shadow-sm"
           data-testid="feed-row-processed-badge"
           aria-label="Processed"
         >
-          ✓
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
         </div>
       )}
       {/* Cross-provider badge (Story 5.4) - highest priority badge */}
       {isCrossProvider && (
         <div
-          className="mx-1 rounded-full border border-violet-400/50 bg-violet-500/20 px-1.5 py-0.5 text-[8px] font-semibold text-violet-300"
+          className="ot-badge ot-badge-cross-provider animate-slide-in"
           data-testid="feed-row-cross-provider-badge"
           aria-label="Cross-provider arbitrage combining odds from multiple feeds"
         >
-          ⚡ Cross-Feed
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 mr-1">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+          Cross-Feed
         </div>
       )}
       {/* Deep scan badge (Story 7.1) */}
       {!isCrossProvider && isDeepScan && (
         <div
-          className="mx-1 rounded-full border border-cyan-400/60 bg-cyan-500/15 px-1.5 py-0.5 text-[8px] font-semibold text-cyan-300"
+          className="ot-badge ot-badge-deep-scan animate-slide-in"
           data-testid="feed-row-deep-scan-badge"
           aria-label="Deep scan result"
         >
-          🔍 Deep Scan
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 mr-1">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          Deep Scan
         </div>
       )}
       {/* Merged provider badge (Story 5.2) - only show if not cross-provider */}
       {!isCrossProvider && !isDeepScan && isMerged && mergedBadgeLabel && (
         <div
-          className="mx-1 rounded-full border border-purple-400/40 bg-purple-500/15 px-1.5 py-0.5 text-[8px] font-medium text-purple-300/90"
+          className="ot-badge ot-badge-merged"
           data-testid="feed-row-merged-badge"
           aria-label={`Merged from: ${opportunity.mergedFrom?.map(id => getProviderDisplayName(id)).join(' + ')}`}
         >
-          ⚡{mergedBadgeLabel}
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 mr-1">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          {mergedBadgeLabel}
         </div>
       )}
       {/* Single provider source badge (Story 5.1) - only show if not merged and not cross-provider */}
       {!isCrossProvider && !isDeepScan && !isMerged && providerBadge && (
         <div
-          className="mx-1 rounded-full border border-ot-accent/30 bg-ot-accent/10 px-1.5 py-0.5 text-[8px] font-medium text-ot-accent/80"
+          className="ot-badge ot-badge-provider"
           data-testid="feed-row-provider-badge"
           aria-label={`Source: ${opportunity.providerId}`}
         >
@@ -554,7 +585,7 @@ function FeedRow({
         </div>
       )}
       <div
-        className="mx-2 min-w-0 flex-1 truncate text-ot-foreground"
+        className="mx-2 min-w-0 flex-1 truncate text-ot-foreground font-medium"
         data-testid="feed-cell-event"
         title={eventLabel}
       >
@@ -566,12 +597,18 @@ function FeedRow({
         data-testid="feed-cell-trend"
         aria-label={`Odds trend: ${getTrendIndicator(opportunity.oddsTrend).label}`}
       >
-        <span className={cn('text-[11px] font-medium', getTrendIndicator(opportunity.oddsTrend).colorClass)}>
+        <span className={cn(
+          'inline-flex items-center justify-center w-6 h-6 rounded-md text-xs font-bold transition-all duration-200',
+          getTrendIndicator(opportunity.oddsTrend).colorClass,
+          opportunity.oddsTrend === 'improving' && 'bg-ot-success-dim',
+          opportunity.oddsTrend === 'worsening' && 'bg-ot-error-dim',
+          opportunity.oddsTrend === 'stable' && 'bg-ot-surface-hover'
+        )}>
           {getTrendIndicator(opportunity.oddsTrend).icon}
         </span>
       </div>
       <div
-        className="w-[64px] shrink-0 text-right font-semibold text-ot-accent"
+        className="w-[64px] shrink-0 text-right font-mono font-bold text-ot-accent text-sm"
         data-testid="feed-cell-roi"
       >
         {roiLabel}
@@ -586,13 +623,22 @@ function FeedRow({
         )}
       >
         <Button
-          variant="outline"
+          variant="primary"
           size="sm"
           onClick={handleCalculateClick}
-          className="h-6 px-2 text-[9px] font-medium"
+          className="h-7 px-3 text-[10px] font-semibold shadow-ot-glow"
           data-testid="calculate-stakes-button"
         >
-          Calculate
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 mr-1">
+            <rect x="4" y="2" width="16" height="20" rx="2" />
+            <line x1="8" y1="6" x2="16" y2="6" />
+            <line x1="16" y1="14" x2="16" y2="14.01" />
+            <path d="M8 14h.01" />
+            <path d="M12 14h.01" />
+            <path d="M8 18h.01" />
+            <path d="M12 18h.01" />
+          </svg>
+          Calc
         </Button>
       </div>
 
@@ -604,14 +650,21 @@ function FeedRow({
             onClick={() => setContextMenuOpen(false)}
           />
           <div
-            className="absolute right-2 top-full z-50 mt-1 w-40 rounded-md border border-slate-700 bg-slate-900 py-1 shadow-lg"
+            className="absolute right-2 top-full z-50 mt-1 w-44 rounded-lg border border-ot-border bg-ot-surface-elevated py-1 shadow-ot-lg animate-slide-in"
             data-testid="context-menu"
           >
             <button
               type="button"
               onClick={handleContextMenuCalculate}
-              className="w-full px-3 py-1.5 text-left text-[11px] text-ot-foreground hover:bg-slate-800"
+              className="w-full px-3 py-2 text-left text-xs text-ot-foreground hover:bg-ot-surface-hover flex items-center gap-2 transition-colors"
             >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-ot-accent">
+                <rect x="4" y="2" width="16" height="20" rx="2" />
+                <line x1="8" y1="6" x2="16" y2="6" />
+                <line x1="16" y1="14" x2="16" y2="14.01" />
+                <path d="M8 14h.01" />
+                <path d="M12 14h.01" />
+              </svg>
               Calculate Stakes
             </button>
             <button
@@ -621,8 +674,12 @@ function FeedRow({
                 void copyAndAdvanceCurrentOpportunity()
                 setContextMenuOpen(false)
               }}
-              className="w-full px-3 py-1.5 text-left text-[11px] text-ot-foreground hover:bg-slate-800"
+              className="w-full px-3 py-2 text-left text-xs text-ot-foreground hover:bg-ot-surface-hover flex items-center gap-2 transition-colors"
             >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-ot-success">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
               Copy Signal
             </button>
           </div>

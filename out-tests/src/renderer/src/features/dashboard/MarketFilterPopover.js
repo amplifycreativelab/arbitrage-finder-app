@@ -45,11 +45,12 @@ const filters_1 = require("./filters");
 const types_1 = require("../../../../../shared/types");
 /**
  * Market filter popover component for Story 6.2.
- * Provides a searchable, grouped interface for filtering markets.
+ * Provides a searchable, grouped interface for filtering markets with subcategories.
  */
 function MarketFilterPopover() {
     const [open, setOpen] = React.useState(false);
     const [searchQuery, setSearchQuery] = React.useState('');
+    const [expandedGroups, setExpandedGroups] = React.useState(new Set());
     // Store access
     const marketGroups = (0, feedFiltersStore_1.useFeedFiltersStore)((state) => state.marketGroups ?? filters_1.ALL_MARKET_GROUPS);
     const toggleMarketGroup = (0, feedFiltersStore_1.useFeedFiltersStore)((state) => state.toggleMarketGroup);
@@ -62,7 +63,7 @@ function MarketFilterPopover() {
         }, 150);
         return () => clearTimeout(timer);
     }, [searchQuery]);
-    // Filter groups based on search
+    // Filter groups and subcategories based on search
     const filteredGroups = React.useMemo(() => {
         if (!debouncedSearch) {
             return types_1.MARKET_GROUP_DISPLAYS;
@@ -71,8 +72,25 @@ function MarketFilterPopover() {
             const matchesLabel = display.label.toLowerCase().includes(debouncedSearch);
             const matchesDescription = display.description.toLowerCase().includes(debouncedSearch);
             const matchesGroup = display.group.toLowerCase().includes(debouncedSearch);
-            return matchesLabel || matchesDescription || matchesGroup;
+            // Also search subcategories
+            const matchesSubcategory = display.subcategories?.some((sub) => sub.label.toLowerCase().includes(debouncedSearch) ||
+                sub.description.toLowerCase().includes(debouncedSearch));
+            return matchesLabel || matchesDescription || matchesGroup || matchesSubcategory;
         });
+    }, [debouncedSearch]);
+    // Auto-expand groups when searching
+    React.useEffect(() => {
+        if (debouncedSearch) {
+            const groupsToExpand = new Set();
+            types_1.MARKET_GROUP_DISPLAYS.forEach((display) => {
+                const matchesSubcategory = display.subcategories?.some((sub) => sub.label.toLowerCase().includes(debouncedSearch) ||
+                    sub.description.toLowerCase().includes(debouncedSearch));
+                if (matchesSubcategory) {
+                    groupsToExpand.add(display.group);
+                }
+            });
+            setExpandedGroups(groupsToExpand);
+        }
     }, [debouncedSearch]);
     // Count selected groups
     const selectedCount = marketGroups.length;
@@ -88,8 +106,41 @@ function MarketFilterPopover() {
     const handleToggleGroup = (group) => {
         toggleMarketGroup(group);
     };
+    const handleToggleExpand = (group, e) => {
+        e.stopPropagation();
+        setExpandedGroups((prev) => {
+            const next = new Set(prev);
+            if (next.has(group)) {
+                next.delete(group);
+            }
+            else {
+                next.add(group);
+            }
+            return next;
+        });
+    };
     const isGroupSelected = (group) => {
         return marketGroups.includes(group);
+    };
+    const isGroupExpanded = (group) => {
+        return expandedGroups.has(group);
+    };
+    // Format period display
+    const formatPeriods = (periods) => {
+        return periods
+            .map((p) => {
+            switch (p) {
+                case 'ft':
+                    return 'FT';
+                case '1h':
+                    return '1H';
+                case '2h':
+                    return '2H';
+                default:
+                    return p.toUpperCase();
+            }
+        })
+            .join(', ');
     };
     // Summary text for trigger
     const getSummaryText = () => {
@@ -101,6 +152,6 @@ function MarketFilterPopover() {
         }
         return `${selectedCount} of ${totalCount} groups`;
     };
-    return ((0, jsx_runtime_1.jsx)("div", { className: "flex flex-col gap-1", children: (0, jsx_runtime_1.jsxs)(popover_1.Popover, { open: open, onOpenChange: setOpen, children: [(0, jsx_runtime_1.jsx)(popover_1.PopoverTrigger, { asChild: true, children: (0, jsx_runtime_1.jsxs)("button", { type: "button", role: "combobox", "aria-expanded": open, "aria-haspopup": "listbox", "aria-label": "Select market groups", className: (0, utils_1.cn)('flex h-7 w-full items-center justify-between rounded-md border px-2 py-1 text-[10px]', 'border-ot-border bg-transparent text-ot-foreground/80', 'hover:border-ot-accent/60 hover:text-ot-accent', 'focus:outline-none focus:ring-1 focus:ring-ot-accent', open && 'border-ot-accent text-ot-accent'), "data-testid": "market-filter-trigger", children: [(0, jsx_runtime_1.jsxs)("span", { className: "flex items-center gap-1.5", children: [(0, jsx_runtime_1.jsxs)("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: "h-3 w-3 opacity-60", children: [(0, jsx_runtime_1.jsx)("path", { d: "M3 3v18h18" }), (0, jsx_runtime_1.jsx)("path", { d: "m19 9-5 5-4-4-3 3" })] }), (0, jsx_runtime_1.jsx)("span", { children: "Markets" }), (0, jsx_runtime_1.jsxs)("span", { className: "text-ot-foreground/50", children: ["(", getSummaryText(), ")"] })] }), (0, jsx_runtime_1.jsx)("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: (0, utils_1.cn)('h-3 w-3 shrink-0 opacity-50 transition-transform', open && 'rotate-180'), children: (0, jsx_runtime_1.jsx)("path", { d: "m6 9 6 6 6-6" }) })] }) }), (0, jsx_runtime_1.jsx)(popover_1.PopoverContent, { className: "w-[320px] p-0", align: "start", sideOffset: 4, "data-testid": "market-filter-popover", children: (0, jsx_runtime_1.jsxs)(command_1.Command, { shouldFilter: false, children: [(0, jsx_runtime_1.jsx)(command_1.CommandInput, { placeholder: "Search markets...", value: searchQuery, onValueChange: setSearchQuery, "data-testid": "market-filter-search" }), (0, jsx_runtime_1.jsxs)("div", { className: "flex items-center justify-between border-b border-ot-border px-3 py-2", children: [(0, jsx_runtime_1.jsxs)("span", { className: "text-[10px] font-medium text-ot-foreground/60", children: [selectedCount, " of ", totalCount, " selected"] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex items-center gap-2", children: [(0, jsx_runtime_1.jsx)("button", { type: "button", className: "text-[10px] text-ot-accent hover:underline disabled:opacity-50 disabled:no-underline", onClick: handleSelectAll, disabled: allSelected, "data-testid": "market-filter-select-all", children: "Select All" }), (0, jsx_runtime_1.jsx)("span", { className: "text-white/20", children: "|" }), (0, jsx_runtime_1.jsx)("button", { type: "button", className: "text-[10px] text-ot-accent hover:underline disabled:opacity-50 disabled:no-underline", onClick: handleClearAll, disabled: selectedCount === 0, "data-testid": "market-filter-clear-all", children: "Clear All" })] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "max-h-[300px] overflow-y-auto overflow-x-hidden p-1", role: "listbox", "aria-label": "Market groups", children: [filteredGroups.length === 0 && ((0, jsx_runtime_1.jsx)("div", { className: "py-6 text-center text-sm text-ot-foreground/60", children: "No markets found." })), filteredGroups.map((display, index) => ((0, jsx_runtime_1.jsxs)(React.Fragment, { children: [index > 0 && (0, jsx_runtime_1.jsx)("div", { className: "-mx-1 h-px bg-ot-border" }), (0, jsx_runtime_1.jsxs)("button", { type: "button", role: "option", "aria-selected": isGroupSelected(display.group), onClick: () => handleToggleGroup(display.group), className: (0, utils_1.cn)('flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-left text-sm outline-none', 'hover:bg-ot-accent/20 hover:text-ot-accent', 'focus:bg-ot-accent/20 focus:text-ot-accent', isGroupSelected(display.group) && 'bg-ot-accent/10'), "data-testid": `market-filter-group-${display.group}`, children: [(0, jsx_runtime_1.jsx)(checkbox_1.Checkbox, { checked: isGroupSelected(display.group), tabIndex: -1, "aria-hidden": "true", className: "pointer-events-none" }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-col gap-0.5", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-sm font-medium", children: display.label }), (0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/50", children: display.description })] })] })] }, display.group)))] })] }) })] }) }));
+    return ((0, jsx_runtime_1.jsx)("div", { className: "flex flex-col gap-1", children: (0, jsx_runtime_1.jsxs)(popover_1.Popover, { open: open, onOpenChange: setOpen, children: [(0, jsx_runtime_1.jsx)(popover_1.PopoverTrigger, { asChild: true, children: (0, jsx_runtime_1.jsxs)("button", { type: "button", role: "combobox", "aria-expanded": open, "aria-haspopup": "listbox", "aria-label": "Select market groups", className: (0, utils_1.cn)('flex h-7 w-full items-center justify-between rounded-md border px-2 py-1 text-[10px]', 'border-ot-border bg-transparent text-ot-foreground/80', 'hover:border-ot-accent/60 hover:text-ot-accent', 'focus:outline-none focus:ring-1 focus:ring-ot-accent', open && 'border-ot-accent text-ot-accent'), "data-testid": "market-filter-trigger", children: [(0, jsx_runtime_1.jsxs)("span", { className: "flex items-center gap-1.5", children: [(0, jsx_runtime_1.jsxs)("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: "h-3 w-3 opacity-60", children: [(0, jsx_runtime_1.jsx)("path", { d: "M3 3v18h18" }), (0, jsx_runtime_1.jsx)("path", { d: "m19 9-5 5-4-4-3 3" })] }), (0, jsx_runtime_1.jsx)("span", { children: "Markets" }), (0, jsx_runtime_1.jsxs)("span", { className: "text-ot-foreground/50", children: ["(", getSummaryText(), ")"] })] }), (0, jsx_runtime_1.jsx)("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: (0, utils_1.cn)('h-3 w-3 shrink-0 opacity-50 transition-transform', open && 'rotate-180'), children: (0, jsx_runtime_1.jsx)("path", { d: "m6 9 6 6 6-6" }) })] }) }), (0, jsx_runtime_1.jsx)(popover_1.PopoverContent, { className: "w-[380px] p-0", align: "start", sideOffset: 4, "data-testid": "market-filter-popover", children: (0, jsx_runtime_1.jsxs)(command_1.Command, { shouldFilter: false, children: [(0, jsx_runtime_1.jsx)(command_1.CommandInput, { placeholder: "Search markets...", value: searchQuery, onValueChange: setSearchQuery, "data-testid": "market-filter-search" }), (0, jsx_runtime_1.jsxs)("div", { className: "flex items-center justify-between border-b border-ot-border px-3 py-2", children: [(0, jsx_runtime_1.jsxs)("span", { className: "text-[10px] font-medium text-ot-foreground/60", children: [selectedCount, " of ", totalCount, " selected"] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex items-center gap-2", children: [(0, jsx_runtime_1.jsx)("button", { type: "button", className: "text-[10px] text-ot-accent hover:underline disabled:opacity-50 disabled:no-underline", onClick: handleSelectAll, disabled: allSelected, "data-testid": "market-filter-select-all", children: "Select All" }), (0, jsx_runtime_1.jsx)("span", { className: "text-white/20", children: "|" }), (0, jsx_runtime_1.jsx)("button", { type: "button", className: "text-[10px] text-ot-accent hover:underline disabled:opacity-50 disabled:no-underline", onClick: handleClearAll, disabled: selectedCount === 0, "data-testid": "market-filter-clear-all", children: "Clear All" })] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "max-h-[400px] overflow-y-auto overflow-x-hidden p-1", role: "listbox", "aria-label": "Market groups", children: [filteredGroups.length === 0 && ((0, jsx_runtime_1.jsx)("div", { className: "py-6 text-center text-sm text-ot-foreground/60", children: "No markets found." })), filteredGroups.map((display, index) => ((0, jsx_runtime_1.jsxs)(React.Fragment, { children: [index > 0 && (0, jsx_runtime_1.jsx)("div", { className: "-mx-1 h-px bg-ot-border/50" }), (0, jsx_runtime_1.jsxs)("div", { className: (0, utils_1.cn)('flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-left outline-none', 'hover:bg-ot-accent/10', isGroupSelected(display.group) && 'bg-ot-accent/5'), children: [(0, jsx_runtime_1.jsx)("button", { type: "button", onClick: (e) => handleToggleExpand(display.group, e), className: "flex h-5 w-5 shrink-0 items-center justify-center rounded hover:bg-ot-border/50", "aria-label": isGroupExpanded(display.group) ? 'Collapse' : 'Expand', children: (0, jsx_runtime_1.jsx)("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: (0, utils_1.cn)('h-3 w-3 text-ot-foreground/50 transition-transform', isGroupExpanded(display.group) && 'rotate-90'), children: (0, jsx_runtime_1.jsx)("path", { d: "m9 18 6-6-6-6" }) }) }), (0, jsx_runtime_1.jsxs)("button", { type: "button", role: "option", "aria-selected": isGroupSelected(display.group), onClick: () => handleToggleGroup(display.group), className: "flex flex-1 items-center gap-2", "data-testid": `market-filter-group-${display.group}`, children: [(0, jsx_runtime_1.jsx)(checkbox_1.Checkbox, { checked: isGroupSelected(display.group), tabIndex: -1, "aria-hidden": "true", className: "pointer-events-none" }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-1 items-center gap-2", children: [display.icon && ((0, jsx_runtime_1.jsx)("span", { className: "text-base", children: display.icon })), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-col gap-0", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-sm font-medium", children: display.label }), (0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-foreground/50", children: display.description })] })] }), display.subcategories && ((0, jsx_runtime_1.jsxs)("span", { className: "rounded bg-ot-border/50 px-1.5 py-0.5 text-[9px] text-ot-foreground/40", children: [display.subcategories.length, " types"] }))] })] }), isGroupExpanded(display.group) && display.subcategories && ((0, jsx_runtime_1.jsx)("div", { className: "ml-7 border-l border-ot-border/30 pl-2", children: display.subcategories.map((sub) => ((0, jsx_runtime_1.jsxs)("div", { className: (0, utils_1.cn)('flex items-start gap-2 rounded-sm px-2 py-1.5 text-left', 'text-ot-foreground/70', !isGroupSelected(display.group) && 'opacity-50'), children: [(0, jsx_runtime_1.jsx)("div", { className: "mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ot-accent/40" }), (0, jsx_runtime_1.jsxs)("div", { className: "flex flex-1 flex-col gap-0.5", children: [(0, jsx_runtime_1.jsxs)("div", { className: "flex items-center gap-2", children: [(0, jsx_runtime_1.jsx)("span", { className: "text-[11px] font-medium", children: sub.label }), (0, jsx_runtime_1.jsxs)("div", { className: "flex gap-1", children: [sub.periods.length > 0 && ((0, jsx_runtime_1.jsx)("span", { className: "rounded bg-ot-border/40 px-1 py-0.5 text-[8px] text-ot-foreground/50", children: formatPeriods(sub.periods) })), sub.teamScope.includes('home') && ((0, jsx_runtime_1.jsx)("span", { className: "rounded bg-blue-500/20 px-1 py-0.5 text-[8px] text-blue-400", children: "H/A" })), sub.hasLine && ((0, jsx_runtime_1.jsx)("span", { className: "rounded bg-green-500/20 px-1 py-0.5 text-[8px] text-green-400", children: "Line" }))] })] }), (0, jsx_runtime_1.jsx)("span", { className: "text-[9px] text-ot-foreground/40", children: sub.description })] })] }, sub.id))) }))] }, display.group)))] }), (0, jsx_runtime_1.jsx)("div", { className: "border-t border-ot-border/50 px-3 py-2", children: (0, jsx_runtime_1.jsx)("p", { className: "text-[9px] text-ot-foreground/40", children: "Click arrows to see market types. Filtering is by group (all subtypes included)." }) })] }) })] }) }));
 }
 exports.default = MarketFilterPopover;

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_PROVIDER_ID = exports.PROVIDERS = exports.MARKET_PATTERNS = exports.MARKET_GROUP_DISPLAYS = exports.MARKET_GROUPS = exports.PROVIDER_IDS = void 0;
+exports.DEFAULT_AGGRESSIVE_SCAN_CONFIG = exports.DEFAULT_TIER_WEIGHTS = exports.DEFAULT_TIER_BOUNDARIES = exports.DEFAULT_TIER_CONFIGS = exports.DEFAULT_CARD_COUNTING_RULE = exports.CARD_COUNTING_RULE_DISPLAY = exports.DEFAULT_PROVIDER_ID = exports.PROVIDERS = exports.MARKET_PATTERNS = exports.MARKET_GROUP_DISPLAYS = exports.MARKET_GROUPS = exports.PROVIDER_IDS = void 0;
 exports.createMarketKey = createMarketKey;
 exports.parseMarketKey = parseMarketKey;
 exports.isKnownMarketPattern = isKnownMarketPattern;
@@ -16,13 +16,251 @@ exports.PROVIDER_IDS = ['odds-api-io', 'the-odds-api'];
  * Each market belongs to exactly one group for filtering purposes.
  */
 exports.MARKET_GROUPS = ['goals', 'handicap', 'corners', 'cards', 'shots', 'other'];
+/**
+ * Comprehensive market group displays with subcategories.
+ * Organized for soccer/football arbitrage betting.
+ */
 exports.MARKET_GROUP_DISPLAYS = [
-    { group: 'goals', label: 'Goals', description: 'Totals, BTTS, team goals, clean sheets' },
-    { group: 'handicap', label: 'Handicaps', description: 'Asian handicaps, spreads' },
-    { group: 'corners', label: 'Corners', description: 'Corner totals, handicaps, races' },
-    { group: 'cards', label: 'Cards', description: 'Card totals, red cards, bookings' },
-    { group: 'shots', label: 'Shots', description: 'Shot totals, shots on target' },
-    { group: 'other', label: 'Other', description: 'Offsides, fouls, penalties' }
+    {
+        group: 'goals',
+        label: 'Goals',
+        description: 'Goal-related markets including totals, BTTS, team goals',
+        icon: '⚽',
+        subcategories: [
+            {
+                id: 'goals_total_ou',
+                label: 'Goals Over/Under',
+                description: 'Total match goals over/under a line',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: true
+            },
+            {
+                id: 'btts',
+                label: 'Both Teams To Score',
+                description: 'Yes/No on both teams scoring',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: false
+            },
+            {
+                id: 'team_goals_ou',
+                label: 'Team Goals Over/Under',
+                description: 'Home or away team goals over/under',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['home', 'away'],
+                hasLine: true
+            },
+            {
+                id: 'clean_sheet',
+                label: 'Clean Sheet',
+                description: 'Team to keep a clean sheet',
+                periods: ['ft'],
+                teamScope: ['home', 'away'],
+                hasLine: false
+            },
+            {
+                id: 'moneyline',
+                label: 'Match Winner (1X2)',
+                description: 'Three-way result betting',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: false
+            },
+            {
+                id: 'draw_no_bet',
+                label: 'Draw No Bet',
+                description: 'Two-way result, stake returned on draw',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: false
+            }
+        ]
+    },
+    {
+        group: 'handicap',
+        label: 'Handicaps',
+        description: 'Asian handicap and spread betting markets',
+        icon: '📊',
+        subcategories: [
+            {
+                id: 'asian_handicap',
+                label: 'Asian Handicap',
+                description: 'Two-way handicap with quarter/half lines',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: true
+            },
+            {
+                id: 'european_handicap',
+                label: 'European Handicap',
+                description: 'Three-way handicap including draw',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: true
+            }
+        ]
+    },
+    {
+        group: 'corners',
+        label: 'Corners',
+        description: 'Corner kick totals, handicaps, and team corners',
+        icon: '🚩',
+        subcategories: [
+            {
+                id: 'corners_total_ou',
+                label: 'Corners Over/Under',
+                description: 'Total match corners over/under',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: true
+            },
+            {
+                id: 'team_corners_ou',
+                label: 'Team Corners Over/Under',
+                description: 'Home or away team corners over/under',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['home', 'away'],
+                hasLine: true
+            },
+            {
+                id: 'corners_handicap',
+                label: 'Corners Handicap',
+                description: 'Asian handicap on corners',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: true
+            }
+        ]
+    },
+    {
+        group: 'cards',
+        label: 'Cards',
+        description: 'Booking points, card totals, red cards',
+        icon: '🟨',
+        subcategories: [
+            {
+                id: 'cards_total_ou',
+                label: 'Cards Over/Under',
+                description: 'Total match cards over/under',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: true
+            },
+            {
+                id: 'team_cards_ou',
+                label: 'Team Cards Over/Under',
+                description: 'Home or away team cards over/under',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['home', 'away'],
+                hasLine: true
+            },
+            {
+                id: 'red_card',
+                label: 'Red Card Yes/No',
+                description: 'Red card to be shown in match',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: false
+            },
+            {
+                id: 'booking_points',
+                label: 'Booking Points',
+                description: 'Total booking points (10 yellow, 25 red)',
+                periods: ['ft'],
+                teamScope: ['match'],
+                hasLine: true
+            }
+        ]
+    },
+    {
+        group: 'shots',
+        label: 'Shots',
+        description: 'Shot totals, shots on target',
+        icon: '🎯',
+        subcategories: [
+            {
+                id: 'shots_total_ou',
+                label: 'Shots Over/Under',
+                description: 'Total match shots over/under',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: true
+            },
+            {
+                id: 'team_shots_ou',
+                label: 'Team Shots Over/Under',
+                description: 'Home or away team shots over/under',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['home', 'away'],
+                hasLine: true
+            },
+            {
+                id: 'shots_on_target_ou',
+                label: 'Shots on Target Over/Under',
+                description: 'Total shots on target over/under',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: true
+            },
+            {
+                id: 'team_sot_ou',
+                label: 'Team Shots on Target O/U',
+                description: 'Home or away team SOT over/under',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['home', 'away'],
+                hasLine: true
+            }
+        ]
+    },
+    {
+        group: 'other',
+        label: 'Other',
+        description: 'Offsides, fouls, penalties, and miscellaneous',
+        icon: '📋',
+        subcategories: [
+            {
+                id: 'offsides_total_ou',
+                label: 'Offsides Over/Under',
+                description: 'Total match offsides over/under',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: true
+            },
+            {
+                id: 'team_offsides_ou',
+                label: 'Team Offsides Over/Under',
+                description: 'Home or away team offsides over/under',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['home', 'away'],
+                hasLine: true
+            },
+            {
+                id: 'fouls_total_ou',
+                label: 'Fouls Over/Under',
+                description: 'Total match fouls over/under',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: true
+            },
+            {
+                id: 'team_fouls_ou',
+                label: 'Team Fouls Over/Under',
+                description: 'Home or away team fouls over/under',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['home', 'away'],
+                hasLine: true
+            },
+            {
+                id: 'penalty_awarded',
+                label: 'Penalty Awarded Yes/No',
+                description: 'Penalty to be awarded in match',
+                periods: ['ft', '1h', '2h'],
+                teamScope: ['match'],
+                hasLine: false
+            }
+        ]
+    }
 ];
 /**
  * Creates a canonical market key from components.
@@ -598,3 +836,74 @@ exports.DEFAULT_PROVIDER_ID = 'the-odds-api';
 function isProviderId(value) {
     return typeof value === 'string' && exports.PROVIDER_IDS.includes(value);
 }
+/**
+ * Display metadata for card counting rules.
+ */
+exports.CARD_COUNTING_RULE_DISPLAY = {
+    conservative: {
+        label: 'Conservative (2 cards max)',
+        description: 'Counts both yellows and the resulting red as just the red',
+        example: '2 yellows + red = 2 cards total'
+    },
+    standard: {
+        label: 'Standard (3 cards)',
+        description: 'Counts each card shown individually',
+        example: '2 yellows + red = 3 cards total'
+    }
+};
+/**
+ * Default card counting rule for new/unconfigured bookmakers.
+ */
+exports.DEFAULT_CARD_COUNTING_RULE = 'standard';
+/**
+ * Default tier configurations for aggressive scanning.
+ * Story 8.7: Pre-configured tier boundaries and weights.
+ */
+exports.DEFAULT_TIER_CONFIGS = [
+    { name: 'imminent', maxMinutesToKickoff: 30, weight: 50, minPollIntervalSeconds: 15, maxPollIntervalSeconds: 60 },
+    { name: 'soon', maxMinutesToKickoff: 120, weight: 25, minPollIntervalSeconds: 60, maxPollIntervalSeconds: 180 },
+    { name: 'today', maxMinutesToKickoff: 360, weight: 12, minPollIntervalSeconds: 180, maxPollIntervalSeconds: 600 },
+    { name: 'later', maxMinutesToKickoff: 1440, weight: 8, minPollIntervalSeconds: 600, maxPollIntervalSeconds: 1800 },
+    { name: 'tomorrow', maxMinutesToKickoff: 2880, weight: 3, minPollIntervalSeconds: 1800, maxPollIntervalSeconds: 3600 },
+    { name: 'distant', maxMinutesToKickoff: Infinity, weight: 2, minPollIntervalSeconds: 3600, maxPollIntervalSeconds: 7200 }
+];
+/**
+ * Default tier boundaries (in minutes).
+ * Story 8.7: Default time-to-kickoff boundaries for each tier.
+ */
+exports.DEFAULT_TIER_BOUNDARIES = {
+    imminent: 30,
+    soon: 120,
+    today: 360,
+    later: 1440,
+    tomorrow: 2880
+};
+/**
+ * Default tier weights (% of quota budget).
+ * Story 8.7: Default weights prioritize imminent events.
+ */
+exports.DEFAULT_TIER_WEIGHTS = {
+    imminent: 50,
+    soon: 25,
+    today: 12,
+    later: 8,
+    tomorrow: 3,
+    distant: 2
+};
+/**
+ * Default aggressive scan configuration.
+ * Story 8.7: Sensible defaults for aggressive mode.
+ */
+exports.DEFAULT_AGGRESSIVE_SCAN_CONFIG = {
+    enabled: false,
+    quotaTargetPercent: 75,
+    scanHorizonHours: 48,
+    imminentPollIntervalSeconds: 45,
+    tierBoundaries: exports.DEFAULT_TIER_BOUNDARIES,
+    tierWeights: exports.DEFAULT_TIER_WEIGHTS,
+    arbBoostDurationMinutes: 5,
+    arbBoostPollIntervalSeconds: 20,
+    maxBoostedEvents: 10,
+    maxCachedEvents: 3000,
+    eventDiscoveryIntervalMinutes: 30
+};

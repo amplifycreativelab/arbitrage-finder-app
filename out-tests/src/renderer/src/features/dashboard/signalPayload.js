@@ -116,5 +116,23 @@ function formatSignalPayload(opportunity, provider) {
     const roiPercent = (opportunity.roi * 100).toFixed(2);
     lines.push('');
     lines.push(`ROI: ${roiPercent}%`);
+    // Story 7.8: Add bookmaker URLs for quick access
+    if (opportunity.bookmakerUrls && Object.keys(opportunity.bookmakerUrls).length > 0) {
+        const firstBookmaker = firstLeg.bookmaker;
+        const secondBookmaker = secondLeg.bookmaker;
+        const firstUrl = opportunity.bookmakerUrls[firstBookmaker];
+        const secondUrl = opportunity.bookmakerUrls[secondBookmaker];
+        if (firstUrl || secondUrl) {
+            lines.push('');
+            lines.push('---');
+            lines.push('Bookmaker URLs:');
+            if (firstUrl) {
+                lines.push(`${firstBookmaker}: ${firstUrl}`);
+            }
+            if (secondUrl) {
+                lines.push(`${secondBookmaker}: ${secondUrl}`);
+            }
+        }
+    }
     return lines.join('\n').trim();
 }

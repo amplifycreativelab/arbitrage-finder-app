@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.__test = exports.LEAGUE_PRESETS = exports.CONTINUOUS_SCAN_MIN_INTERVAL_MS = exports.CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE = exports.SCAN_CACHE_TTL_MS_DEFAULT = void 0;
+exports.__test = exports.promoteEvents = exports.getEventById = exports.getEventsForTier = exports.createTieredEvent = exports.isPreMatchEvent = exports.calculateMinutesToKickoff = exports.calculateEventTier = exports.getTotalEventCount = exports.getEventCountsByTier = exports.getBoostedEventIds = exports.isEventBoosted = exports.boostEvent = exports.upsertTieredEvent = exports.completeColdStart = exports.getColdStartProgress = exports.updateColdStartProgress = exports.initColdStart = exports.getAggressiveScanStats = exports.getAggressiveScanConfig = exports.setAggressiveScanConfig = exports.isAggressiveScanRunning = exports.stopAggressiveScan = exports.startAggressiveScan = exports.LEAGUE_PRESETS = exports.CONTINUOUS_SCAN_MIN_INTERVAL_MS = exports.CONTINUOUS_SCAN_MAX_EVENTS_PER_CYCLE = exports.SCAN_CACHE_TTL_MS_DEFAULT = void 0;
 exports.getAllRawOdds = getAllRawOdds;
 exports.clearRawOddsCache = clearRawOddsCache;
 exports.clearScanCache = clearScanCache;
@@ -57,6 +57,31 @@ const poller_1 = require("./poller");
 const odds_api_io_bookmakers_1 = require("./odds-api-io-bookmakers");
 const logger_1 = require("./logger");
 const calculator_1 = require("./calculator");
+// Story 8.7: Aggressive Pre-Match Scanning
+const aggressiveScan_1 = require("./aggressiveScan");
+Object.defineProperty(exports, "startAggressiveScan", { enumerable: true, get: function () { return aggressiveScan_1.startAggressiveScan; } });
+Object.defineProperty(exports, "stopAggressiveScan", { enumerable: true, get: function () { return aggressiveScan_1.stopAggressiveScan; } });
+Object.defineProperty(exports, "isAggressiveScanRunning", { enumerable: true, get: function () { return aggressiveScan_1.isAggressiveScanRunning; } });
+Object.defineProperty(exports, "setAggressiveScanConfig", { enumerable: true, get: function () { return aggressiveScan_1.setAggressiveScanConfig; } });
+Object.defineProperty(exports, "getAggressiveScanConfig", { enumerable: true, get: function () { return aggressiveScan_1.getAggressiveScanConfig; } });
+Object.defineProperty(exports, "getAggressiveScanStats", { enumerable: true, get: function () { return aggressiveScan_1.getAggressiveScanStats; } });
+Object.defineProperty(exports, "initColdStart", { enumerable: true, get: function () { return aggressiveScan_1.initColdStart; } });
+Object.defineProperty(exports, "updateColdStartProgress", { enumerable: true, get: function () { return aggressiveScan_1.updateColdStartProgress; } });
+Object.defineProperty(exports, "getColdStartProgress", { enumerable: true, get: function () { return aggressiveScan_1.getColdStartProgress; } });
+Object.defineProperty(exports, "completeColdStart", { enumerable: true, get: function () { return aggressiveScan_1.completeColdStart; } });
+Object.defineProperty(exports, "upsertTieredEvent", { enumerable: true, get: function () { return aggressiveScan_1.upsertTieredEvent; } });
+Object.defineProperty(exports, "boostEvent", { enumerable: true, get: function () { return aggressiveScan_1.boostEvent; } });
+Object.defineProperty(exports, "isEventBoosted", { enumerable: true, get: function () { return aggressiveScan_1.isEventBoosted; } });
+Object.defineProperty(exports, "getBoostedEventIds", { enumerable: true, get: function () { return aggressiveScan_1.getBoostedEventIds; } });
+Object.defineProperty(exports, "getEventCountsByTier", { enumerable: true, get: function () { return aggressiveScan_1.getEventCountsByTier; } });
+Object.defineProperty(exports, "getTotalEventCount", { enumerable: true, get: function () { return aggressiveScan_1.getTotalEventCount; } });
+Object.defineProperty(exports, "calculateEventTier", { enumerable: true, get: function () { return aggressiveScan_1.calculateEventTier; } });
+Object.defineProperty(exports, "calculateMinutesToKickoff", { enumerable: true, get: function () { return aggressiveScan_1.calculateMinutesToKickoff; } });
+Object.defineProperty(exports, "isPreMatchEvent", { enumerable: true, get: function () { return aggressiveScan_1.isPreMatchEvent; } });
+Object.defineProperty(exports, "createTieredEvent", { enumerable: true, get: function () { return aggressiveScan_1.createTieredEvent; } });
+Object.defineProperty(exports, "getEventsForTier", { enumerable: true, get: function () { return aggressiveScan_1.getEventsForTier; } });
+Object.defineProperty(exports, "getEventById", { enumerable: true, get: function () { return aggressiveScan_1.getEventById; } });
+Object.defineProperty(exports, "promoteEvents", { enumerable: true, get: function () { return aggressiveScan_1.promoteEvents; } });
 const ODDS_API_IO_BASE_URL = 'https://api.odds-api.io';
 const ODDS_API_IO_EVENTS_PATH = '/v3/events';
 const ODDS_API_IO_ODDS_PATH = '/v3/odds';
@@ -212,6 +237,10 @@ let timeOffsetMs = 0;
 let hourlyWindowStartedAtMs = null;
 let hourlyRequestsUsed = 0;
 let hourlyWarnLogged = false;
+// Story 7.8: Rate limit headers from API responses
+let apiRateLimit = null;
+let apiRateLimitLastUpdatedAtMs = null;
+const API_RATE_LIMIT_TTL_MS = 60 * 1000; // 1 minute TTL for API rate limit data
 let dailyStatsKey = null;
 let dailyEventsScanned = 0;
 let dailyOpportunitiesFound = 0;
@@ -389,13 +418,83 @@ function getHourlyQuotaStatus() {
     const ms = nowMs();
     ensureHourlyWindow(ms);
     const started = hourlyWindowStartedAtMs ?? ms;
+    // Story 7.8: Use API rate limit values if available and not expired
+    if (apiRateLimit && apiRateLimitLastUpdatedAtMs) {
+        const ageMs = ms - apiRateLimitLastUpdatedAtMs;
+        if (ageMs < API_RATE_LIMIT_TTL_MS) {
+            const percentUsed = apiRateLimit.limit > 0
+                ? (apiRateLimit.limit - apiRateLimit.remaining) / apiRateLimit.limit
+                : 0;
+            return {
+                used: apiRateLimit.limit - apiRateLimit.remaining,
+                limit: apiRateLimit.limit,
+                percentUsed: percentUsed > 0 ? percentUsed : 0,
+                windowStartedAtMs: started,
+                apiRateLimit,
+                isApiQuota: true
+            };
+        }
+    }
+    // Fall back to estimated quota
     const percentUsed = HOURLY_REQUEST_LIMIT > 0 ? hourlyRequestsUsed / HOURLY_REQUEST_LIMIT : 0;
     return {
         used: hourlyRequestsUsed,
         limit: HOURLY_REQUEST_LIMIT,
         percentUsed: percentUsed > 0 ? percentUsed : 0,
-        windowStartedAtMs: started
+        windowStartedAtMs: started,
+        isApiQuota: false
     };
+}
+/**
+ * Story 7.8: Parse rate limit headers from API response.
+ * Updates apiRateLimit state when valid headers are found.
+ * Headers expected: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
+ */
+function parseRateLimitHeaders(response) {
+    try {
+        const limitHeader = response.headers.get('X-RateLimit-Limit') ?? response.headers.get('x-ratelimit-limit');
+        const remainingHeader = response.headers.get('X-RateLimit-Remaining') ?? response.headers.get('x-ratelimit-remaining');
+        const resetHeader = response.headers.get('X-RateLimit-Reset') ?? response.headers.get('x-ratelimit-reset');
+        if (limitHeader && remainingHeader) {
+            const limit = parseInt(limitHeader, 10);
+            const remaining = parseInt(remainingHeader, 10);
+            if (!Number.isNaN(limit) && !Number.isNaN(remaining) && limit > 0) {
+                let resetAt;
+                if (resetHeader) {
+                    // Try to parse as Unix timestamp (seconds) or ISO string
+                    const resetNum = parseInt(resetHeader, 10);
+                    if (!Number.isNaN(resetNum)) {
+                        // Unix timestamp in seconds
+                        resetAt = new Date(resetNum * 1000).toISOString();
+                    }
+                    else {
+                        // Try as ISO string
+                        resetAt = resetHeader;
+                    }
+                }
+                else {
+                    // Default: 1 hour from now
+                    resetAt = new Date(nowMs() + 60 * 60 * 1000).toISOString();
+                }
+                apiRateLimit = { limit, remaining, resetAt };
+                apiRateLimitLastUpdatedAtMs = nowMs();
+                (0, logger_1.logDebug)('deepScan.rateLimit.parsed', {
+                    context: 'service:deepScan',
+                    operation: 'parseRateLimitHeaders',
+                    providerId: DEEP_SCAN_PROVIDER_ID,
+                    correlationId: undefined,
+                    durationMs: null,
+                    errorCategory: null,
+                    limit,
+                    remaining,
+                    resetAt
+                });
+            }
+        }
+    }
+    catch {
+        // Ignore parsing errors - fall back to estimated quota
+    }
 }
 function computeContinuousEventBudget(availableEvents) {
     const base = Math.max(0, Math.min(continuousScanMaxEventsPerCycle, availableEvents));
@@ -403,6 +502,24 @@ function computeContinuousEventBudget(availableEvents) {
         return 0;
     const quota = getHourlyQuotaStatus();
     const percent = quota.percentUsed;
+    // Story 7.8: Auto-throttle based on remaining quota percentage
+    // Use actual API quota when available for more accurate throttling
+    if (quota.isApiQuota && quota.apiRateLimit) {
+        const remainingPercent = quota.apiRateLimit.remaining / quota.apiRateLimit.limit;
+        // Severe throttling when < 5% remaining
+        if (remainingPercent < 0.05) {
+            return Math.min(base, 5);
+        }
+        // Aggressive throttling when < 10% remaining
+        if (remainingPercent < 0.10) {
+            return Math.min(base, 10);
+        }
+        // Moderate throttling when < 20% remaining
+        if (remainingPercent < 0.20) {
+            return Math.min(base, 20);
+        }
+    }
+    // Fallback to estimated quota throttling
     if (percent >= HOURLY_THROTTLE_THRESHOLD) {
         return Math.min(base, 10);
     }
@@ -666,6 +783,10 @@ const defaultEventsFetcher = async ({ apiKey, signal, correlationId, page, sport
         url.searchParams.set('to', to);
     }
     const response = await trackedRequest(async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }), correlationId, { mode: 'continuous' });
+    // Story 7.8: Parse rate limit headers from API response
+    if (response && typeof response === 'object' && 'headers' in response) {
+        parseRateLimitHeaders(response);
+    }
     if (!response.ok) {
         const message = await response.text().catch(() => `Events request failed with status ${response.status}`);
         throw createHttpError(response.status, message || `Events request failed with status ${response.status}`);
@@ -954,6 +1075,10 @@ const defaultOddsFetcher = async ({ event, apiKey, bookmakers, signal, correlati
     // bookmakers is REQUIRED by the API (not optional) - always set it
     url.searchParams.set('bookmakers', bookmakers.slice(0, 30).join(',')); // API max: 30 bookmakers
     const response = await trackedRequest(async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }), correlationId);
+    // Story 7.8: Parse rate limit headers from API response
+    if (response && typeof response === 'object' && 'headers' in response) {
+        parseRateLimitHeaders(response);
+    }
     if (!response.ok) {
         const message = await response.text().catch(() => `Odds request failed with status ${response.status}`);
         throw createHttpError(response.status, message || `Odds request failed with status ${response.status}`);
@@ -993,6 +1118,10 @@ const defaultBatchOddsFetcher = async ({ events, apiKey, bookmakers, signal, cor
         bookmakersCount: Math.min(bookmakers.length, 30)
     });
     const response = await trackedRequest(async () => httpFetch(url.toString(), { method: 'GET', signal, headers: { Accept: 'application/json' } }), correlationId, { mode: currentScanMode });
+    // Story 7.8: Parse rate limit headers from API response
+    if (response && typeof response === 'object' && 'headers' in response) {
+        parseRateLimitHeaders(response);
+    }
     if (!response.ok) {
         const message = await response.text().catch(() => `Batch odds request failed with status ${response.status}`);
         throw createHttpError(response.status, message || `Batch odds request failed with status ${response.status}`);
@@ -2034,6 +2163,8 @@ function buildOpportunitiesFromRawOdds(payload, config, foundAt, unknownMarketKe
         // Update history buffer with current snapshot
         const legOdds = [bestPair.a.odds, bestPair.b.odds];
         const oddsHistory = updateOddsHistory(id, bestPair.roi, legOdds, foundAt);
+        // Story 6.5: Detect card rules mismatch for cards market group
+        const cardRulesWarning = (0, calculator_1.detectCardRulesMismatch)(bestPair.a.bookmaker, bestPair.b.bookmaker, metadata.group);
         opportunities.push({
             id,
             providerId: DEEP_SCAN_PROVIDER_ID,
@@ -2068,7 +2199,9 @@ function buildOpportunitiesFromRawOdds(payload, config, foundAt, unknownMarketKe
             ...(mostRecentMarketUpdate && { marketUpdatedAt: mostRecentMarketUpdate }),
             // Story 7.8: Odds movement tracking
             oddsTrend,
-            oddsHistory
+            oddsHistory,
+            // Story 6.5: Include card rules warning if present (only for cards market group)
+            ...(cardRulesWarning?.mismatch && { cardRulesWarning })
         });
     }
     return opportunities;
@@ -2250,6 +2383,8 @@ async function fetchOddsWithRetry(fetchOdds, args, options) {
 }
 async function runScanForEvents(args) {
     const { mode, config, apiKey, signal, correlationId, events, bookmakers, discoverySummary } = args;
+    // Story 6.5: Clear card rules cache at start of each scan for fresh lookups
+    (0, calculator_1.clearCardRulesCache)();
     currentScanMode = mode;
     const fetchOdds = oddsFetcherOverride ?? defaultOddsFetcher;
     const trackOddsAttempts = oddsFetcherOverride !== null;
@@ -3543,6 +3678,12 @@ exports.__test = {
         lastIncrementalFetchTimestamp = null;
         // Story 7.8: Clear odds history buffer
         oddsHistoryBuffer.clear();
+        // Story 7.8: Clear rate limit state
+        apiRateLimit = null;
+        apiRateLimitLastUpdatedAtMs = null;
+        // Story 8.7: Reset aggressive scan state
+        const aggressiveScan = require('./aggressiveScan');
+        aggressiveScan.__test?.resetState();
     },
     setEventResolver(resolver) {
         eventResolverOverride = resolver;
@@ -3657,5 +3798,20 @@ exports.__test = {
         oddsHistoryBuffer.set(opportunityId, history);
     },
     ODDS_HISTORY_MAX_SNAPSHOTS,
-    ODDS_TREND_THRESHOLD
+    ODDS_TREND_THRESHOLD,
+    // Story 7.8: Test helpers for rate limit headers
+    getApiRateLimit() {
+        return apiRateLimit;
+    },
+    setApiRateLimit(limit, remaining, resetAt) {
+        apiRateLimit = { limit, remaining, resetAt };
+        apiRateLimitLastUpdatedAtMs = nowMs();
+    },
+    clearApiRateLimit() {
+        apiRateLimit = null;
+        apiRateLimitLastUpdatedAtMs = null;
+    },
+    getHourlyQuotaStatus() {
+        return getHourlyQuotaStatus();
+    }
 };

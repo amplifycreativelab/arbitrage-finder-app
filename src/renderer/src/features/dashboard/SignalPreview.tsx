@@ -72,10 +72,22 @@ function SignalPreview({
   if (!effectiveOpportunity) {
     return (
       <div
-        className="flex h-full items-center justify-center text-[11px] text-ot-muted"
+        className="flex h-full flex-col items-center justify-center gap-4 text-ot-muted animate-fade-in"
         data-testid="signal-preview-empty"
       >
-        Select an opportunity from the feed to see its signal preview.
+        <div className="h-16 w-16 rounded-2xl bg-ot-surface-hover flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8 opacity-50">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+            <polyline points="10 9 9 9 8 9" />
+          </svg>
+        </div>
+        <div className="text-center">
+          <div className="text-sm font-medium text-ot-foreground-secondary mb-1">No Signal Selected</div>
+          <div className="text-xs opacity-70">Select an opportunity from the feed to see its signal preview</div>
+        </div>
       </div>
     )
   }
@@ -107,67 +119,103 @@ function SignalPreview({
       })
   }
 
-  const buttonLabel =
-    copyState === 'copied' ? 'COPIED' : copyState === 'error' ? 'COPY FAILED' : 'COPY SIGNAL [Enter]'
-
-  const buttonClassName =
-    copyState === 'copied'
-      ? 'bg-emerald-500 text-black hover:bg-emerald-400'
-      : copyState === 'error'
-        ? 'bg-red-500 text-black hover:bg-red-400'
-        : undefined
-
   return (
     <div
-      className="flex h-full flex-col"
+      className="flex h-full flex-col gap-3"
       data-testid="signal-preview"
       data-opportunity-id={effectiveOpportunity.id}
     >
-      <div className="mb-2 flex items-center justify-between text-[10px] text-ot-muted">
-        <span>
+      {/* Header with provider info */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
           {isDeepScan ? (
-            <span className="font-medium text-cyan-300">
-              🔍 Deep Scan Result
-              {deepScanMeta && <span className="ml-1 text-cyan-300/70">({deepScanMeta})</span>}
-            </span>
+            <div className="flex items-center gap-2 ot-badge ot-badge-deep-scan">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <span>Deep Scan</span>
+              {deepScanMeta && <span className="opacity-70">({deepScanMeta})</span>}
+            </div>
           ) : effectiveOpportunity.isCrossProvider ? (
-            <span className="text-violet-300 font-medium">
-              ⚡ Cross-Provider Arbitrage
+            <div className="flex items-center gap-2 ot-badge ot-badge-cross-provider">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+              <span>Cross-Provider</span>
               {effectiveOpportunity.mergedFrom && effectiveOpportunity.mergedFrom.length > 1 && (
-                <span className="text-violet-300/70 ml-1">
-                  (via {effectiveOpportunity.mergedFrom.join(' + ')})
-                </span>
+                <span className="opacity-70">({effectiveOpportunity.mergedFrom.join(' + ')})</span>
               )}
-            </span>
+            </div>
           ) : effectiveOpportunity.mergedFrom && effectiveOpportunity.mergedFrom.length > 1 ? (
-            <span className="text-purple-300/90">
-              ⚡ Merged from: {effectiveOpportunity.mergedFrom.join(' + ')}
-            </span>
-          ) : effectiveProviderMetadata ? (
-            `Provider: ${effectiveProviderMetadata.displayName}`
-          ) : effectiveOpportunity.providerId ? (
-            `Provider: ${effectiveOpportunity.providerId}`
+            <div className="flex items-center gap-2 ot-badge ot-badge-merged">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span>Merged</span>
+            </div>
           ) : (
-            'Provider: (active)'
+            <div className="flex items-center gap-2 text-xs text-ot-muted">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                <line x1="8" y1="21" x2="16" y2="21" />
+                <line x1="12" y1="17" x2="12" y2="21" />
+              </svg>
+              <span>{effectiveProviderMetadata?.displayName || effectiveOpportunity.providerId || 'Active'}</span>
+            </div>
           )}
-        </span>
-        <span className="font-semibold text-ot-accent">ROI {roiPercent}%</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-ot-muted">ROI</span>
+          <span className="font-mono font-bold text-lg text-ot-accent">{roiPercent}%</span>
+        </div>
       </div>
 
-      <div className="mb-2 flex justify-end">
+      {/* Copy button */}
+      <div className="flex justify-end">
         <Button
           type="button"
-          className={cn('px-3 py-1 text-[11px]', buttonClassName)}
+          variant={copyState === 'copied' ? 'secondary' : copyState === 'error' ? 'danger' : 'primary'}
+          size="sm"
+          loading={isCopying}
           onClick={handleCopyClick}
-          disabled={isCopying}
+          className={cn(
+            copyState === 'copied' && 'bg-ot-success hover:bg-ot-success text-white',
+            copyState === 'error' && 'bg-ot-error hover:bg-ot-error'
+          )}
           data-testid="copy-signal-button"
         >
-          {buttonLabel}
+          {copyState === 'copied' ? (
+            <>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Copied!
+            </>
+          ) : copyState === 'error' ? (
+            <>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
+              Failed
+            </>
+          ) : (
+            <>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              Copy Signal
+            </>
+          )}
         </Button>
       </div>
 
-      <div className="flex-1 overflow-auto rounded-md border border-ot-border p-3">
-        <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-ot-foreground font-medium">
+      {/* Payload display */}
+      <div className="flex-1 overflow-auto rounded-lg border border-ot-border bg-ot-background p-4 shadow-inner">
+        <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-ot-foreground-secondary">
           {payload}
         </pre>
       </div>

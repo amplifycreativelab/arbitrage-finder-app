@@ -38,11 +38,15 @@ const jsx_runtime_1 = require("react/jsx-runtime");
 const React = __importStar(require("react"));
 const button_1 = require("../../../components/ui/button");
 const utils_1 = require("../../../lib/utils");
+const currency_1 = require("../../../../../../shared/lib/currency");
 const calculatorStore_1 = require("../stores/calculatorStore");
+const useCurrency_1 = require("../../../hooks/useCurrency");
 function CalculatorHistory() {
     const { history, loadFromHistory, clearHistory, removeHistoryEntry, addToHistory } = (0, calculatorStore_1.useCalculatorStore)();
     const [isExpanded, setIsExpanded] = React.useState(false);
     const [showClearConfirm, setShowClearConfirm] = React.useState(false);
+    // Get exchange rates for saving to history
+    const { rates, lastFetchedRelative } = (0, useCurrency_1.useExchangeRates)();
     const handleClear = () => {
         if (showClearConfirm) {
             clearHistory();
@@ -54,7 +58,7 @@ function CalculatorHistory() {
         }
     };
     const handleSaveCurrent = () => {
-        addToHistory();
+        addToHistory(rates, lastFetchedRelative);
     };
     if (history.length === 0) {
         return ((0, jsx_runtime_1.jsx)("div", { className: "border-t border-slate-700 pt-3", "data-testid": "calculator-history-empty", children: (0, jsx_runtime_1.jsx)(button_1.Button, { variant: "outline", size: "sm", onClick: handleSaveCurrent, className: "w-full text-[11px]", "data-testid": "save-calculation-button", children: "Save Calculation" }) }));
@@ -73,6 +77,20 @@ function HistoryItem({ entry, onLoad, onRemove }) {
             return `${hours}h ago`;
         return `${Math.floor(hours / 24)}d ago`;
     }, [entry.timestamp]);
-    return ((0, jsx_runtime_1.jsxs)("div", { className: "rounded-md border border-slate-700 bg-slate-800/30 p-2", "data-testid": "history-item", children: [(0, jsx_runtime_1.jsxs)("div", { className: "mb-1 flex items-center justify-between", children: [(0, jsx_runtime_1.jsx)("span", { className: "truncate text-[11px] font-medium text-ot-foreground", children: entry.eventName }), (0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-muted", children: timeAgo })] }), (0, jsx_runtime_1.jsxs)("div", { className: "mb-2 text-[10px] text-ot-muted", children: ["$", entry.totalStake.toFixed(0), " \u2192 $", entry.profit.toFixed(2), " profit"] }), (0, jsx_runtime_1.jsxs)("div", { className: "flex gap-2", children: [(0, jsx_runtime_1.jsx)(button_1.Button, { variant: "outline", size: "sm", onClick: onLoad, className: "h-6 flex-1 text-[10px]", "data-testid": "load-history-button", children: "Load" }), (0, jsx_runtime_1.jsx)(button_1.Button, { variant: "ghost", size: "sm", onClick: onRemove, className: "h-6 px-2 text-[10px] text-ot-muted hover:text-red-400", "data-testid": "remove-history-button", children: "\u00D7" })] })] }));
+    // NEW: Get currency symbols (Story 8.5)
+    const symbolA = currency_1.CURRENCY_DETAILS[entry.currencyA || 'USD']?.symbol || '$';
+    const symbolB = currency_1.CURRENCY_DETAILS[entry.currencyB || 'USD']?.symbol || '$';
+    const baseSymbol = currency_1.CURRENCY_DETAILS['USD']?.symbol || '$';
+    // NEW: Format rates timestamp (Story 8.5)
+    const ratesTimeAgo = entry.exchangeRateTimestamp ?
+        React.useMemo(() => {
+            const hours = Math.floor((Date.now() - new Date(entry.exchangeRateTimestamp).getTime()) / (60 * 60 * 1000));
+            if (hours < 1)
+                return '<1h';
+            if (hours < 24)
+                return `${hours}h`;
+            return `${Math.floor(hours / 24)}d`;
+        }, [entry.exchangeRateTimestamp]) : null;
+    return ((0, jsx_runtime_1.jsxs)("div", { className: "rounded-md border border-slate-700 bg-slate-800/30 p-2", "data-testid": "history-item", children: [(0, jsx_runtime_1.jsxs)("div", { className: "mb-1 flex items-center justify-between", children: [(0, jsx_runtime_1.jsx)("span", { className: "truncate text-[11px] font-medium text-ot-foreground", children: entry.eventName }), (0, jsx_runtime_1.jsx)("span", { className: "text-[10px] text-ot-muted", children: timeAgo })] }), (0, jsx_runtime_1.jsxs)("div", { className: "mb-1 text-[10px] text-ot-muted", children: [symbolA, entry.stakeA.toFixed(0), " @ ", entry.oddsA.toFixed(2), " | ", symbolB, entry.stakeB.toFixed(0), " @ ", entry.oddsB.toFixed(2)] }), (0, jsx_runtime_1.jsxs)("div", { className: "mb-1 text-[10px] text-ot-muted", children: [baseSymbol, entry.totalStake.toFixed(0), " \u2192 ", baseSymbol, entry.profit.toFixed(2), " profit"] }), ratesTimeAgo && ((0, jsx_runtime_1.jsxs)("div", { className: "mb-2 text-[9px] text-slate-500", children: ["Rates: ", ratesTimeAgo, " ago"] })), (0, jsx_runtime_1.jsxs)("div", { className: "flex gap-2", children: [(0, jsx_runtime_1.jsx)(button_1.Button, { variant: "outline", size: "sm", onClick: onLoad, className: "h-6 flex-1 text-[10px]", "data-testid": "load-history-button", children: "Load" }), (0, jsx_runtime_1.jsx)(button_1.Button, { variant: "ghost", size: "sm", onClick: onRemove, className: "h-6 px-2 text-[10px] text-ot-muted hover:text-red-400", "data-testid": "remove-history-button", children: "\u00D7" })] })] }));
 }
 exports.default = CalculatorHistory;

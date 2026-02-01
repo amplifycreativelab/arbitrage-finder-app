@@ -113,7 +113,10 @@ exports.useCalculatorStore = (0, zustand_1.create)()((0, middleware_1.persist)((
     profit: 0,
     roi: 0,
     history: [],
-    openCalculator: (opportunity) => {
+    // NEW: Default currencies (Story 8.5)
+    currencyA: 'USD',
+    currencyB: 'USD',
+    openCalculator: (opportunity, baseCurrency = 'USD') => {
         set({
             isOpen: true,
             opportunity,
@@ -125,7 +128,10 @@ exports.useCalculatorStore = (0, zustand_1.create)()((0, middleware_1.persist)((
             calculatedStakeB: 0,
             totalInvestment: 0,
             profit: 0,
-            roi: opportunity.roi
+            roi: opportunity.roi,
+            // NEW: Initialize currencies from base currency (Story 8.5)
+            currencyA: baseCurrency,
+            currencyB: baseCurrency
         });
     },
     closeCalculator: () => {
@@ -159,6 +165,28 @@ exports.useCalculatorStore = (0, zustand_1.create)()((0, middleware_1.persist)((
     setStakeB: (value) => {
         set({ stakeB: value });
         get().calculateFromStakeB();
+    },
+    setCurrencyA: (currency) => {
+        set({ currencyA: currency });
+        // Recalculate when currency changes
+        const { mode } = get();
+        if (mode === 'totalStake') {
+            get().calculateFromTotalStake();
+        }
+        else {
+            get().calculateFromTargetProfit();
+        }
+    },
+    setCurrencyB: (currency) => {
+        set({ currencyB: currency });
+        // Recalculate when currency changes
+        const { mode } = get();
+        if (mode === 'totalStake') {
+            get().calculateFromTotalStake();
+        }
+        else {
+            get().calculateFromTargetProfit();
+        }
     },
     calculateFromTotalStake: () => {
         const { opportunity, totalStake, mode } = get();
@@ -287,8 +315,8 @@ exports.useCalculatorStore = (0, zustand_1.create)()((0, middleware_1.persist)((
             roi
         });
     },
-    addToHistory: () => {
-        const { opportunity, calculatedStakeA, calculatedStakeB, totalInvestment, profit, roi } = get();
+    addToHistory: (exchangeRates, ratesTimestamp) => {
+        const { opportunity, calculatedStakeA, calculatedStakeB, totalInvestment, profit, roi, currencyA, currencyB } = get();
         if (!opportunity || totalInvestment <= 0)
             return;
         const entry = {
@@ -304,7 +332,12 @@ exports.useCalculatorStore = (0, zustand_1.create)()((0, middleware_1.persist)((
             stakeB: calculatedStakeB,
             totalStake: totalInvestment,
             profit,
-            roi
+            roi,
+            // NEW: Multi-currency fields (Story 8.5)
+            currencyA,
+            currencyB,
+            exchangeRateSnapshot: exchangeRates || { USD: 1, AUD: 1.52, EUR: 0.85 },
+            exchangeRateTimestamp: ratesTimestamp || new Date().toISOString()
         };
         set((state) => {
             const newHistory = [entry, ...state.history].slice(0, MAX_HISTORY_ENTRIES);
@@ -322,7 +355,10 @@ exports.useCalculatorStore = (0, zustand_1.create)()((0, middleware_1.persist)((
             calculatedStakeB: entry.stakeB,
             totalInvestment: entry.totalStake,
             profit: entry.profit,
-            roi: entry.roi
+            roi: entry.roi,
+            // NEW: Restore currency selections (Story 8.5)
+            currencyA: entry.currencyA || 'USD',
+            currencyB: entry.currencyB || 'USD'
         });
     },
     removeHistoryEntry: (id) => {
@@ -335,6 +371,9 @@ exports.useCalculatorStore = (0, zustand_1.create)()((0, middleware_1.persist)((
     storage: (0, middleware_1.createJSONStorage)(() => localStorage),
     partialize: (state) => ({
         history: state.history,
-        displayMode: state.displayMode
+        displayMode: state.displayMode,
+        // NEW: Persist currency preferences (Story 8.5)
+        currencyA: state.currencyA,
+        currencyB: state.currencyB
     })
 }));
