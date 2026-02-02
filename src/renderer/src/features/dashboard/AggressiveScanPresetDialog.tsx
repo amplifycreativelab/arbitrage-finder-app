@@ -1,11 +1,12 @@
 import * as React from 'react'
 
 import {
-  AGGRESSIVE_SCAN_PRESETS,
-  SCAN_SPORTS,
-  estimateRequestsPerHour,
   type AggressiveScanPreset,
-  type AggressiveScanSelection
+  type AggressiveScanSelection,
+  type QuotaConfig,
+  type DiscoveredLeague,
+  SCAN_SPORTS,
+  estimateRequestsPerHour
 } from '../../../../../shared/aggressiveScanPresets'
 import { Button } from '../../components/ui/button'
 
@@ -14,8 +15,6 @@ interface AggressiveScanPresetDialogProps {
   onClose: () => void
   onStart: (selection: AggressiveScanSelection) => void
 }
-
-const HOURLY_LIMIT = 5000
 
 export function AggressiveScanPresetDialog({
   open,
@@ -26,7 +25,58 @@ export function AggressiveScanPresetDialog({
   const [customLeagues, setCustomLeagues] = React.useState<Set<string>>(new Set())
   const [scanHorizonHours, setScanHorizonHours] = React.useState(48)
   const [showAdvanced, setShowAdvanced] = React.useState(false)
-  const [quotaTargetPercent] = React.useState(75)
+  
+  // Dynamic preset state from API
+  const [presets, setPresets] = React.useState<AggressiveScanPreset[]>([])
+  const [quotaConfig, setQuotaConfig] = React.useState<QuotaConfig>({
+    hourlyLimit: 5000,
+    targetPercent: 75,
+    planTier: 'paid'
+  })
+  const [discoveredLeagues, setDiscoveredLeagues] = React.useState<DiscoveredLeague[]>([])
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  // Fetch dynamic presets when dialog opens
+  React.useEffect(() => {
+    if (open) {
+      void fetchDynamicPresets()
+    }
+  }, [open])
+
+  const fetchDynamicPresets = async (): Promise<void> => {
+    setLoading(true)
+    setError(null)
+    try {
+      // Try to get dynamic presets with API data
+      const result = await window.api.deepScan.getDynamicPresets()
+      setPresets(result.presets)
+      setQuotaConfig(result.quotaConfig)
+      setDiscoveredLeagues(result.availableLeagues)
+      
+      // If no API data, try to refresh from API
+      if (!result.usedApiData) {
+        try {
+          const refreshed = await window.api.deepScan.refreshDynamicPresets()
+          setPresets(refreshed.presets)
+          setQuotaConfig(refreshed.quotaConfig)
+          setDiscoveredLeagues(refreshed.availableLeagues)
+        } catch (refreshErr) {
+          // Non-critical: API data refresh failed, static presets still work
+          console.warn('Failed to refresh presets from API:', refreshErr)
+        }
+      }
+    } catch (err) {
+      setError('Failed to load presets. Using fallback data.')
+      console.error('Failed to fetch dynamic presets:', err)
+      
+      // Fallback: import static presets
+      const { AGGRESSIVE_SCAN_PRESETS } = await import('../../../../../shared/aggressiveScanPresets')
+      setPresets(AGGRESSIVE_SCAN_PRESETS)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   // Calculate estimation based on selection
   const estimation = React.useMemo(() => {
@@ -35,8 +85,8 @@ export function AggressiveScanPresetDialog({
       customLeagueIds: Array.from(customLeagues),
       scanHorizonHours
     }
-    return estimateRequestsPerHour(selection, quotaTargetPercent)
-  }, [selectedPresets, customLeagues, scanHorizonHours, quotaTargetPercent])
+    return estimateRequestsPerHour(selection, presets, quotaConfig, discoveredLeagues)
+  }, [selectedPresets, customLeagues, scanHorizonHours, presets, quotaConfig, discoveredLeagues])
 
   // Reset state when dialog opens
   React.useEffect(() => {
@@ -84,6 +134,18 @@ export function AggressiveScanPresetDialog({
     })
   }
 
+  const handleSetPlanTier = async (tier: 'free' | 'paid'): Promise<void> => {
+    try {
+      const result = await window.api.deepScan.setQuotaConfig(tier)
+      if (result?.config) {
+        setQuotaConfig(result.config)
+      }
+    } catch (err) {
+      console.error('Failed to set plan tier:', err)
+      setError('Failed to update plan tier. Please try again.')
+    }
+  }
+
   const getQuotaColor = (): string => {
     if (estimation.percentOfQuota > 100) return 'text-red-500'
     if (estimation.percentOfQuota > 80) return 'text-amber-500'
@@ -100,9 +162,9 @@ export function AggressiveScanPresetDialog({
     return null
   }
 
-  const majorPresets = AGGRESSIVE_SCAN_PRESETS.filter((p) => p.category === 'major')
-  const minorPresets = AGGRESSIVE_SCAN_PRESETS.filter((p) => p.category === 'minor')
-  const regionalPresets = AGGRESSIVE_SCAN_PRESETS.filter((p) => p.category === 'regional')
+  const majorPresets = presets.filter((p) => p.category === 'major')
+  const minorPresets = presets.filter((p) => p.category === 'minor')
+  const regionalPresets = presets.filter((p) => p.category === 'regional')
 
   return (
     <div
@@ -144,6 +206,21 @@ export function AggressiveScanPresetDialog({
           <p className="mt-1 text-[11px] text-ot-muted">
             Select which sports and leagues to scan aggressively. Multiple presets can be combined.
           </p>
+          
+          {/* Error message */}
+          {error && (
+            <div className="mt-2 p-2 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-600 text-[11px]">
+              {error}
+            </div>
+          )}
+          
+          {/* Loading indicator */}
+          {loading && (
+            <div className="mt-2 text-[11px] text-ot-muted flex items-center gap-2">
+              <span className="animate-spin">⟳</span>
+              Loading presets from API...
+            </div>
+          )}
         </header>
 
         {/* Scrollable Content */}
@@ -203,6 +280,48 @@ export function AggressiveScanPresetDialog({
             </label>
           </div>
 
+          {/* Plan Tier Selection */}
+          <div className="rounded-md border border-ot-border/70 bg-ot-surface/40 p-3">
+            <span className="text-[10px] uppercase tracking-[0.12em] text-ot-muted">
+              API Plan Tier
+            </span>
+            <div className="flex items-center gap-3 mt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  handleSetPlanTier('free').catch((err) => {
+                    console.error('Failed to set free tier:', err)
+                  })
+                }}
+                className={`px-3 py-1.5 text-[11px] rounded-md border transition-colors ${
+                  quotaConfig.planTier === 'free'
+                    ? 'border-ot-accent bg-ot-accent/10 text-ot-accent'
+                    : 'border-ot-border bg-ot-surface hover:border-ot-border-strong text-ot-foreground'
+                }`}
+              >
+                Free (100/hr)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleSetPlanTier('paid').catch((err) => {
+                    console.error('Failed to set paid tier:', err)
+                  })
+                }}
+                className={`px-3 py-1.5 text-[11px] rounded-md border transition-colors ${
+                  quotaConfig.planTier === 'paid'
+                    ? 'border-ot-accent bg-ot-accent/10 text-ot-accent'
+                    : 'border-ot-border bg-ot-surface hover:border-ot-border-strong text-ot-foreground'
+                }`}
+              >
+                Paid (5000/hr)
+              </button>
+            </div>
+            <span className="text-[10px] text-ot-muted mt-1 block">
+              Select your plan tier for accurate quota estimation
+            </span>
+          </div>
+
           {/* Advanced: Individual League Selection */}
           <div className="rounded-md border border-ot-border/70 bg-ot-surface/40 p-3">
             <button
@@ -258,7 +377,7 @@ export function AggressiveScanPresetDialog({
                 <span className="text-[10px] uppercase tracking-[0.12em] text-ot-muted">
                   Request Estimation
                 </span>
-                <span className="text-[10px] text-ot-muted">(Limit: {HOURLY_LIMIT}/hr)</span>
+                <span className="text-[10px] text-ot-muted">(Limit: {quotaConfig.hourlyLimit}/hr)</span>
               </div>
 
               {/* Progress Bar */}
@@ -382,6 +501,10 @@ function PresetSection({
   selectedPresets,
   onToggle
 }: PresetSectionProps): React.JSX.Element {
+  if (presets.length === 0) {
+    return <></>
+  }
+
   return (
     <div>
       <div className="mb-2">

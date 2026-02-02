@@ -4,7 +4,7 @@ import { createTRPCProxyClient } from '@trpc/client'
 import { ELECTRON_TRPC_CHANNEL, ipcLink } from 'electron-trpc/renderer'
 import type { AppRouter } from '../main/services/router'
 import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId, ScanHistoryEntry, DeepScanQuotaStatus, CardCountingRule, BookmakerCardRules, AggressiveScanConfig, AggressiveScanStats } from '../../shared/types'
-import type { AggressiveScanSelection } from '../../shared/aggressiveScanPresets'
+import type { AggressiveScanSelection, QuotaConfig, ApiPlanTier, AggressiveScanPreset } from '../../shared/aggressiveScanPresets'
 
 type CredentialsStorageStatus = {
   isUsingFallbackStorage: boolean
@@ -86,6 +86,24 @@ type DeepScanAPI = {
   startAggressiveScan: () => Promise<void>
   stopAggressiveScan: () => Promise<void>
   startAggressiveScanWithSelection: (selection: AggressiveScanSelection) => Promise<void>
+  // Story 8.7: Dynamic presets with API data
+  getDynamicPresets: () => Promise<{
+    presets: AggressiveScanPreset[]
+    quotaConfig: QuotaConfig
+    availableSports: DiscoveredSport[]
+    availableLeagues: DiscoveredLeague[]
+    usedApiData: boolean
+  }>
+  refreshDynamicPresets: () => Promise<{
+    presets: AggressiveScanPreset[]
+    quotaConfig: QuotaConfig
+    availableSports: DiscoveredSport[]
+    availableLeagues: DiscoveredLeague[]
+    usedApiData: boolean
+  }>
+  getQuotaConfig: () => Promise<QuotaConfig>
+  setQuotaConfig: (planTier: ApiPlanTier, targetPercent?: number) => Promise<{ ok: boolean; config: QuotaConfig }>
+  detectPlanTier: (observedLimit: number) => Promise<{ ok: boolean; detectedTier: ApiPlanTier; config: QuotaConfig }>
 }
 
 // Story 7.9: Sport and League types for the UI
@@ -351,6 +369,22 @@ const deepScanApi: DeepScanAPI = {
   },
   async startAggressiveScanWithSelection(selection) {
     await trpcClient.startAggressiveScanWithSelection.mutate(selection)
+  },
+  // Story 8.7: Dynamic presets with API data
+  async getDynamicPresets() {
+    return trpcClient.getDynamicAggressiveScanPresets.query()
+  },
+  async refreshDynamicPresets() {
+    return trpcClient.refreshDynamicAggressiveScanPresets.mutate()
+  },
+  async getQuotaConfig() {
+    return trpcClient.getQuotaConfig.query()
+  },
+  async setQuotaConfig(planTier, targetPercent) {
+    return trpcClient.setQuotaConfig.mutate({ planTier, targetPercent })
+  },
+  async detectPlanTier(observedLimit) {
+    return trpcClient.detectPlanTier.mutate({ observedLimit })
   }
 }
 

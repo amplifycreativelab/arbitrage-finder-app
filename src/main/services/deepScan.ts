@@ -70,12 +70,23 @@ const DEEP_SCAN_PROVIDER_ID: ProviderId = 'odds-api-io'
 const BATCH_SIZE_MAX = 10 // API limit for /v3/odds/multi
 const DEFAULT_SCAN_HORIZON_HOURS = 4
 
+/**
+ * Canonical event identity fields for reliable cross-provider matching.
+ * Story 9.2: Added leagueSlug, sportSlug, kickoffEpochMs for collision-resistant keys.
+ */
 export interface DeepScanEvent {
   id: string
   name: string
-  date?: string
-  league?: string
-  sport?: string
+  date?: string // ISO format - kept for backward compatibility
+  kickoffEpochMs?: number // Canonical numeric timestamp (milliseconds since epoch)
+
+  // League fields - slug is canonical identity, name is display value
+  league?: string // Display name (e.g., "Premier League")
+  leagueSlug?: string // Canonical slug (e.g., "england-premier-league")
+
+  // Sport fields - slug is canonical identity, name is display value
+  sport?: string // Display name (e.g., "Football")
+  sportSlug?: string // Canonical slug (e.g., "football")
 }
 
 interface ScanCacheEntry {
@@ -882,6 +893,90 @@ async function trackedRequest<T>(
   return scheduleProviderRequest(DEEP_SCAN_PROVIDER_ID, () => fn({ correlationId }))
 }
 
+/**
+ * Extract league information from API response.
+ * Handles both string format (display name only) and object format ({name, slug}).
+ * Story 9.3: Slug-first priority - slug is canonical identity, name is display value.
+ * When name is missing, slug becomes display fallback.
+ */
+function extractLeagueInfo(
+  leagueData: string | { name?: string; slug?: string } | undefined
+): { name?: string; slug?: string } {
+  if (!leagueData) return {}
+
+  // AC2: String = display only, no slug (don't guess)
+  if (typeof leagueData === 'string') {
+    return { name: leagueData }
+  }
+
+  // AC1, AC3: Object = extract both, slug is canonical identity
+  // When name is missing/empty, fallback to slug for display
+  const rawSlug = (leagueData as { slug?: unknown }).slug
+  const rawName = (leagueData as { name?: unknown }).name
+  
+  const slug = typeof rawSlug === 'string' && rawSlug.trim().length > 0 ? rawSlug.trim() : undefined
+  const name = typeof rawName === 'string' && rawName.trim().length > 0 
+    ? rawName.trim() 
+    : slug // Fallback to slug when name is missing/empty
+
+  // Only return if we have at least one valid field
+  if (!slug && !name) return {}
+  
+  return { slug, name }
+}
+
+/**
+ * Extract sport information from API response.
+ * Handles both string format (display name only) and object format ({name, slug}).
+ * Story 9.3: Slug-first priority - slug is canonical identity, name is display value.
+ * When name is missing, slug becomes display fallback.
+ */
+function extractSportInfo(
+  sportData: string | { name?: string; slug?: string } | undefined
+): { name?: string; slug?: string } {
+  if (!sportData) return {}
+
+  // AC2: String = display only, no slug (don't guess)
+  if (typeof sportData === 'string') {
+    return { name: sportData }
+  }
+
+  // AC1, AC4: Object = extract both, slug is canonical identity
+  // When name is missing/empty, fallback to slug for display
+  const rawSlug = (sportData as { slug?: unknown }).slug
+  const rawName = (sportData as { name?: unknown }).name
+  
+  const slug = typeof rawSlug === 'string' && rawSlug.trim().length > 0 ? rawSlug.trim() : undefined
+  const name = typeof rawName === 'string' && rawName.trim().length > 0 
+    ? rawName.trim() 
+    : slug // Fallback to slug when name is missing/empty
+
+  // Only return if we have at least one valid field
+  if (!slug && !name) return {}
+  
+  return { slug, name }
+}
+
+/**
+ * Parse kickoff timestamp from various date field formats.
+ * Story 9.2: Returns epoch milliseconds for canonical time comparison.
+ * Returns undefined for invalid/missing dates (event remains processable).
+ */
+function parseKickoffTimestamp(dateString: string | undefined): number | undefined {
+  if (!dateString || typeof dateString !== 'string') {
+    return undefined
+  }
+
+  const parsed = Date.parse(dateString)
+
+  // Date.parse returns NaN for invalid dates - check with Number.isFinite
+  if (!Number.isFinite(parsed)) {
+    return undefined
+  }
+
+  return parsed
+}
+
 function extractEvents(
   payload: unknown,
   defaults: { league?: string; sport?: string } = {}
@@ -933,26 +1028,42 @@ function extractEvents(
       (item as { event?: { date?: unknown } }).event?.date
     const date = typeof rawDate === 'string' && rawDate.trim().length ? rawDate : undefined
 
+    // Story 9.2: Extract canonical league fields (slug + display name)
     const leagueCandidate =
       (item as { league?: unknown }).league ??
       (item as { event?: { league?: unknown } }).event?.league ??
       defaults.league
-    const rawLeague =
-      typeof leagueCandidate === 'object' && leagueCandidate !== null
-        ? ((leagueCandidate as { name?: unknown; slug?: unknown }).name ??
-          (leagueCandidate as { slug?: unknown }).slug)
-        : leagueCandidate
-    const league = typeof rawLeague === 'string' && rawLeague.trim().length ? rawLeague : undefined
+    const leagueInfo = extractLeagueInfo(
+      leagueCandidate as string | { name?: string; slug?: string } | undefined
+    )
 
+    // Story 9.2: Extract canonical sport fields (slug + display name)
     const sportCandidate = (item as { sport?: unknown }).sport ?? defaults.sport
-    const rawSport =
-      typeof sportCandidate === 'object' && sportCandidate !== null
-        ? ((sportCandidate as { name?: unknown; slug?: unknown }).slug ??
-          (sportCandidate as { name?: unknown }).name)
-        : sportCandidate
-    const sport = typeof rawSport === 'string' && rawSport.trim().length ? rawSport : undefined
+    const sportInfo = extractSportInfo(
+      sportCandidate as string | { name?: string; slug?: string } | undefined
+    )
+
+    // Story 9.2: Parse canonical kickoff timestamp
+    const rawKickoff =
+      (item as { kickoff?: unknown }).kickoff ??
+      (item as { date?: unknown }).date ??
+      (item as { commence_time?: unknown }).commence_time ??
+      (item as { event?: { date?: unknown } }).event?.date
+    const kickoffEpochMs = parseKickoffTimestamp(
+      typeof rawKickoff === 'string' ? rawKickoff : undefined
+    )
+
     seen.add(id)
-    events.push({ id, name, date, league, sport })
+    events.push({
+      id,
+      name,
+      date, // Keep for backward compatibility
+      kickoffEpochMs, // Canonical numeric timestamp
+      league: leagueInfo.name, // Display name
+      leagueSlug: leagueInfo.slug, // Canonical slug
+      sport: sportInfo.name, // Display name
+      sportSlug: sportInfo.slug // Canonical slug
+    })
   }
 
   return events
@@ -4666,5 +4777,10 @@ export const __test = {
   },
   getHourlyQuotaStatus(): ReturnType<typeof getHourlyQuotaStatus> {
     return getHourlyQuotaStatus()
-  }
+  },
+  // Story 9.2: Export extractEvents for unit testing canonical field extraction
+  extractEvents,
+  // Story 9.3: Export extraction helpers for unit testing slug-first priority
+  extractLeagueInfo,
+  extractSportInfo
 }

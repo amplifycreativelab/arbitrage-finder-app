@@ -2,27 +2,39 @@
  * Aggressive Scan Presets Configuration
  *
  * Defines pre-configured sport/league combinations for aggressive scanning.
- * Each preset estimates the number of API requests it will consume.
+ * Uses dynamic league data from Odds-API.io with preset templates.
  */
 
 /**
- * Represents a single league within a sport.
+ * Represents a discovered league from the API.
+ * Must match the DiscoveredLeague interface in deepScan.ts
  */
-export interface LeagueDefinition {
-  id: string
+export interface DiscoveredLeague {
   name: string
-  /** Estimated average events per day for this league */
-  avgEventsPerDay: number
+  slug: string
+  eventsCount: number
+  sport: string
 }
 
 /**
- * Represents a sport category with its leagues.
+ * Represents a discovered sport from the API.
  */
-export interface SportDefinition {
-  id: string
+export interface DiscoveredSport {
   name: string
-  icon: string
-  leagues: LeagueDefinition[]
+  slug: string
+}
+
+/**
+ * User's API plan tier - determines rate limits.
+ */
+export type ApiPlanTier = 'free' | 'paid'
+
+/**
+ * Rate limits by plan tier.
+ */
+export const RATE_LIMITS_BY_TIER: Record<ApiPlanTier, number> = {
+  free: 100,   // Free tier: 100 requests/hour
+  paid: 5000   // Paid tier: 5000 requests/hour
 }
 
 /**
@@ -32,248 +44,237 @@ export interface AggressiveScanPreset {
   id: string
   name: string
   description: string
-  /** List of sport IDs included in this preset */
+  /** List of sport slugs included in this preset */
   sports: string[]
-  /** Optional specific league IDs (if empty, all leagues for selected sports) */
-  leagues?: string[]
-  /** Estimated events this preset will scan */
+  /** Specific league slugs (generated from template rules) */
+  leagues: string[]
+  /** Estimated events based on API data */
   estimatedEvents: number
   /** Preset category for UI grouping */
   category: 'major' | 'minor' | 'regional' | 'custom'
 }
 
 /**
- * Available sports and their leagues for aggressive scanning.
+ * Template for generating presets from API data.
+ * Rules define how to select leagues from discovered data.
  */
-export const SCAN_SPORTS: SportDefinition[] = [
-  {
-    id: 'soccer',
-    name: 'Soccer',
-    icon: '⚽',
-    leagues: [
-      // Major European Leagues
-      { id: 'soccer_epl', name: 'English Premier League', avgEventsPerDay: 3 },
-      { id: 'soccer_spain_la_liga', name: 'La Liga (Spain)', avgEventsPerDay: 3 },
-      { id: 'soccer_germany_bundesliga', name: 'Bundesliga (Germany)', avgEventsPerDay: 3 },
-      { id: 'soccer_italy_serie_a', name: 'Serie A (Italy)', avgEventsPerDay: 3 },
-      { id: 'soccer_france_ligue_one', name: 'Ligue 1 (France)', avgEventsPerDay: 3 },
-      { id: 'soccer_uefa_champs_league', name: 'UEFA Champions League', avgEventsPerDay: 4 },
-      { id: 'soccer_uefa_europa_league', name: 'UEFA Europa League', avgEventsPerDay: 4 },
-      // Secondary European Leagues
-      { id: 'soccer_netherlands_eredivisie', name: 'Eredivisie (Netherlands)', avgEventsPerDay: 2 },
-      { id: 'soccer_portugal_primeira_liga', name: 'Primeira Liga (Portugal)', avgEventsPerDay: 2 },
-      { id: 'soccer_turkey_super_league', name: 'Super Lig (Turkey)', avgEventsPerDay: 2 },
-      { id: 'soccer_belgium_first_div', name: 'First Division A (Belgium)', avgEventsPerDay: 2 },
-      { id: 'soccer_scotland_premiership', name: 'Scottish Premiership', avgEventsPerDay: 2 },
-      // Lower Divisions
-      { id: 'soccer_efl_champ', name: 'EFL Championship (England)', avgEventsPerDay: 4 },
-      { id: 'soccer_germany_bundesliga2', name: '2. Bundesliga (Germany)', avgEventsPerDay: 3 },
-      { id: 'soccer_spain_segunda_division', name: 'La Liga 2 (Spain)', avgEventsPerDay: 3 },
-      { id: 'soccer_italy_serie_b', name: 'Serie B (Italy)', avgEventsPerDay: 3 },
-      { id: 'soccer_france_ligue_two', name: 'Ligue 2 (France)', avgEventsPerDay: 3 },
-      // South American
-      { id: 'soccer_brazil_campeonato', name: 'Brasileirao Serie A', avgEventsPerDay: 4 },
-      { id: 'soccer_argentina_primera_division', name: 'Argentina Primera Division', avgEventsPerDay: 4 },
-      { id: 'soccer_conmebol_libertadores', name: 'Copa Libertadores', avgEventsPerDay: 2 },
-      // Other
-      { id: 'soccer_usa_mls', name: 'MLS (USA)', avgEventsPerDay: 3 },
-      { id: 'soccer_australia_aleague', name: 'A-League (Australia)', avgEventsPerDay: 2 },
-      { id: 'soccer_japan_j_league', name: 'J1 League (Japan)', avgEventsPerDay: 3 }
-    ]
-  },
-  {
-    id: 'tennis',
-    name: 'Tennis',
-    icon: '🎾',
-    leagues: [
-      { id: 'tennis_atp_aus_open', name: 'Australian Open', avgEventsPerDay: 30 },
-      { id: 'tennis_atp_french_open', name: 'French Open', avgEventsPerDay: 30 },
-      { id: 'tennis_atp_wimbledon', name: 'Wimbledon', avgEventsPerDay: 30 },
-      { id: 'tennis_atp_us_open', name: 'US Open', avgEventsPerDay: 30 },
-      { id: 'tennis_atp_1000', name: 'ATP Masters 1000', avgEventsPerDay: 20 },
-      { id: 'tennis_atp_500', name: 'ATP 500', avgEventsPerDay: 15 },
-      { id: 'tennis_atp_250', name: 'ATP 250', avgEventsPerDay: 15 },
-      { id: 'tennis_wta_1000', name: 'WTA 1000', avgEventsPerDay: 15 },
-      { id: 'tennis_wta_500', name: 'WTA 500', avgEventsPerDay: 12 },
-      { id: 'tennis_wta_250', name: 'WTA 250', avgEventsPerDay: 12 },
-      { id: 'tennis_challenger', name: 'ATP Challenger Tour', avgEventsPerDay: 25 },
-      { id: 'tennis_itf', name: 'ITF Tournaments', avgEventsPerDay: 40 }
-    ]
-  },
-  {
-    id: 'basketball',
-    name: 'Basketball',
-    icon: '🏀',
-    leagues: [
-      { id: 'basketball_nba', name: 'NBA', avgEventsPerDay: 8 },
-      { id: 'basketball_ncaab', name: 'NCAA Basketball', avgEventsPerDay: 20 },
-      { id: 'basketball_euroleague', name: 'EuroLeague', avgEventsPerDay: 4 },
-      { id: 'basketball_eurocup', name: 'EuroCup', avgEventsPerDay: 4 },
-      { id: 'basketball_spain_acb', name: 'Liga ACB (Spain)', avgEventsPerDay: 3 },
-      { id: 'basketball_germany_bbl', name: 'BBL (Germany)', avgEventsPerDay: 3 },
-      { id: 'basketball_france_lnb', name: 'LNB Pro A (France)', avgEventsPerDay: 3 },
-      { id: 'basketball_italy_lega', name: 'Lega Basket (Italy)', avgEventsPerDay: 3 },
-      { id: 'basketball_turkey_bsl', name: 'BSL (Turkey)', avgEventsPerDay: 3 },
-      { id: 'basketball_australia_nbl', name: 'NBL (Australia)', avgEventsPerDay: 2 },
-      { id: 'basketball_wnba', name: 'WNBA', avgEventsPerDay: 3 }
-    ]
-  }
-]
+interface PresetTemplate {
+  id: string
+  name: string
+  description: string
+  category: 'major' | 'minor' | 'regional' | 'custom'
+  /** Sports to include (uses API slugs like 'football', 'tennis', 'basketball') */
+  sports: string[]
+  /** Rules for selecting leagues */
+  leagueRules: LeagueSelectionRule
+}
+
+type LeagueSelectionRule =
+  | { type: 'explicit'; slugs: string[] }
+  | { type: 'all' }
+  | { type: 'topN'; count: number; sortBy: 'eventsCount' }
+  | { type: 'exclude'; slugs: string[] }
 
 /**
- * Helper to get league IDs for a sport category.
+ * Known major leagues by sport (Odds-API.io slugs).
+ * These are used when API data isn't yet available.
  */
-function getLeagueIdsForSport(sportId: string, majorOnly: boolean = false): string[] {
-  const sport = SCAN_SPORTS.find((s) => s.id === sportId)
-  if (!sport) return []
-
-  if (!majorOnly) {
-    return sport.leagues.map((l) => l.id)
-  }
-
-  // Major leagues are the first 6-8 leagues in each sport
-  const majorCounts: Record<string, number> = {
-    soccer: 7, // Top 5 leagues + UCL + UEL
-    tennis: 6, // Grand Slams + ATP/WTA 1000
-    basketball: 4 // NBA, NCAAB, EuroLeague, EuroCup
-  }
-
-  const count = majorCounts[sportId] || 4
-  return sport.leagues.slice(0, count).map((l) => l.id)
+export const KNOWN_MAJOR_LEAGUES: Record<string, string[]> = {
+  football: [
+    'england-premier-league',
+    'spain-la-liga',
+    'italy-serie-a',
+    'germany-bundesliga',
+    'france-ligue-1',
+    'europe-champions-league',
+    'europe-europa-league'
+  ],
+  tennis: [
+    'atp-australian-open',
+    'atp-french-open',
+    'atp-wimbledon',
+    'atp-us-open',
+    'atp-masters-1000',
+    'wta-1000'
+  ],
+  basketball: [
+    'usa-nba',
+    'usa-ncaab',
+    'europe-euroleague',
+    'europe-eurocup'
+  ]
 }
 
 /**
- * Pre-configured presets for quick selection.
+ * Preset templates that get populated with real API data.
  */
-export const AGGRESSIVE_SCAN_PRESETS: AggressiveScanPreset[] = [
-  // Major Presets
+const PRESET_TEMPLATES: PresetTemplate[] = [
+  // Major presets
   {
-    id: 'major_soccer',
-    name: 'Major Soccer Leagues',
+    id: 'major_football',
+    name: 'Major Football Leagues',
     description: 'Top 5 European leagues + UEFA competitions',
-    sports: ['soccer'],
-    leagues: getLeagueIdsForSport('soccer', true),
-    estimatedEvents: 25,
-    category: 'major'
+    category: 'major',
+    sports: ['football'],
+    leagueRules: {
+      type: 'explicit',
+      slugs: [
+        'england-premier-league',
+        'spain-la-liga',
+        'italy-serie-a',
+        'germany-bundesliga',
+        'france-ligue-1',
+        'europe-champions-league',
+        'europe-europa-league'
+      ]
+    }
   },
   {
     id: 'major_tennis',
     name: 'Major Tennis',
     description: 'Grand Slams + ATP/WTA 1000 tournaments',
+    category: 'major',
     sports: ['tennis'],
-    leagues: getLeagueIdsForSport('tennis', true),
-    estimatedEvents: 80,
-    category: 'major'
+    leagueRules: { type: 'topN', count: 8, sortBy: 'eventsCount' }
   },
   {
     id: 'major_basketball',
     name: 'Major Basketball',
-    description: 'NBA, NCAAB, and EuroLeague',
+    description: 'NBA, NCAA, and EuroLeague',
+    category: 'major',
     sports: ['basketball'],
-    leagues: getLeagueIdsForSport('basketball', true),
-    estimatedEvents: 35,
-    category: 'major'
+    leagueRules: {
+      type: 'explicit',
+      slugs: ['usa-nba', 'usa-ncaab', 'europe-euroleague', 'europe-eurocup']
+    }
   },
   {
     id: 'major_all',
     name: 'All Major Sports',
-    description: 'Combined major leagues across all sports',
-    sports: ['soccer', 'tennis', 'basketball'],
-    leagues: [
-      ...getLeagueIdsForSport('soccer', true),
-      ...getLeagueIdsForSport('tennis', true),
-      ...getLeagueIdsForSport('basketball', true)
-    ],
-    estimatedEvents: 140,
-    category: 'major'
+    description: 'Top leagues across football, tennis, and basketball',
+    category: 'major',
+    sports: ['football', 'tennis', 'basketball'],
+    leagueRules: { type: 'topN', count: 6, sortBy: 'eventsCount' }
   },
 
-  // Minor/Secondary Presets
+  // Full sport presets
   {
-    id: 'minor_soccer',
-    name: 'Secondary Soccer Leagues',
-    description: 'European second divisions + smaller leagues',
-    sports: ['soccer'],
-    leagues: getLeagueIdsForSport('soccer', false).slice(7), // Skip major leagues
-    estimatedEvents: 45,
-    category: 'minor'
-  },
-  {
-    id: 'minor_tennis',
-    name: 'Minor Tennis',
-    description: 'ATP 250/500, WTA 250/500, Challengers, ITF',
-    sports: ['tennis'],
-    leagues: getLeagueIdsForSport('tennis', false).slice(6), // Skip major tournaments
-    estimatedEvents: 105,
-    category: 'minor'
-  },
-  {
-    id: 'minor_basketball',
-    name: 'Minor Basketball',
-    description: 'European national leagues + WNBA',
-    sports: ['basketball'],
-    leagues: getLeagueIdsForSport('basketball', false).slice(4), // Skip major leagues
-    estimatedEvents: 20,
-    category: 'minor'
-  },
-  {
-    id: 'minor_all',
-    name: 'All Minor Leagues',
-    description: 'Combined secondary leagues across all sports',
-    sports: ['soccer', 'tennis', 'basketball'],
-    leagues: [
-      ...getLeagueIdsForSport('soccer', false).slice(7),
-      ...getLeagueIdsForSport('tennis', false).slice(6),
-      ...getLeagueIdsForSport('basketball', false).slice(4)
-    ],
-    estimatedEvents: 170,
-    category: 'minor'
-  },
-
-  // Full Sport Presets
-  {
-    id: 'all_soccer',
-    name: 'All Soccer',
-    description: 'Every available soccer league',
-    sports: ['soccer'],
-    leagues: getLeagueIdsForSport('soccer', false),
-    estimatedEvents: 70,
-    category: 'regional'
+    id: 'all_football',
+    name: 'All Football',
+    description: 'Every available football league',
+    category: 'regional',
+    sports: ['football'],
+    leagueRules: { type: 'all' }
   },
   {
     id: 'all_tennis',
     name: 'All Tennis',
     description: 'Every available tennis tournament',
+    category: 'regional',
     sports: ['tennis'],
-    leagues: getLeagueIdsForSport('tennis', false),
-    estimatedEvents: 185,
-    category: 'regional'
+    leagueRules: { type: 'all' }
   },
   {
     id: 'all_basketball',
     name: 'All Basketball',
     description: 'Every available basketball league',
+    category: 'regional',
     sports: ['basketball'],
-    leagues: getLeagueIdsForSport('basketball', false),
-    estimatedEvents: 55,
-    category: 'regional'
+    leagueRules: { type: 'all' }
   },
-
-  // Everything
   {
     id: 'all_sports',
     name: 'All Sports & Leagues',
-    description: 'Maximum coverage - all sports and leagues',
-    sports: ['soccer', 'tennis', 'basketball'],
-    leagues: [
-      ...getLeagueIdsForSport('soccer', false),
-      ...getLeagueIdsForSport('tennis', false),
-      ...getLeagueIdsForSport('basketball', false)
-    ],
-    estimatedEvents: 310,
-    category: 'regional'
+    description: 'Maximum coverage - all available sports and leagues',
+    category: 'regional',
+    sports: ['football', 'tennis', 'basketball'],
+    leagueRules: { type: 'all' }
   }
 ]
+
+/**
+ * Apply league selection rules to get matching league slugs.
+ */
+function applyLeagueRules(
+  rules: LeagueSelectionRule,
+  leagues: DiscoveredLeague[],
+  sports: string[]
+): string[] {
+  // Filter to only leagues for the specified sports
+  const sportLeagues = leagues.filter((l) => sports.includes(l.sport))
+
+  switch (rules.type) {
+    case 'explicit':
+      // Return only the specified slugs that exist in discovered leagues
+      return rules.slugs.filter((slug) => sportLeagues.some((l) => l.slug === slug))
+
+    case 'all':
+      return sportLeagues.map((l) => l.slug)
+
+    case 'topN':
+      return sportLeagues
+        .slice()
+        .sort((a, b) => b.eventsCount - a.eventsCount)
+        .slice(0, rules.count)
+        .map((l) => l.slug)
+
+    case 'exclude':
+      return sportLeagues.filter((l) => !rules.slugs.includes(l.slug)).map((l) => l.slug)
+
+    default:
+      return []
+  }
+}
+
+/**
+ * Generate presets from templates using discovered API data.
+ * Falls back to known major leagues if no API data is available.
+ */
+export function generatePresets(
+  discoveredLeagues: DiscoveredLeague[],
+  _discoveredSports: DiscoveredSport[]
+): AggressiveScanPreset[] {
+  const hasApiData = discoveredLeagues.length > 0
+
+  return PRESET_TEMPLATES.map((template) => {
+    let leagues: string[]
+    let estimatedEvents: number
+
+    if (hasApiData) {
+      // Use real API data
+      leagues = applyLeagueRules(template.leagueRules, discoveredLeagues, template.sports)
+      estimatedEvents = discoveredLeagues
+        .filter((l) => leagues.includes(l.slug))
+        .reduce((sum, l) => sum + l.eventsCount, 0)
+    } else {
+      // Fall back to known leagues
+      if (template.leagueRules.type === 'explicit') {
+        leagues = template.leagueRules.slugs
+      } else {
+        leagues = template.sports.flatMap((sport) => KNOWN_MAJOR_LEAGUES[sport] ?? [])
+      }
+      // Rough estimate when no API data
+      estimatedEvents = leagues.length * 5
+    }
+
+    return {
+      id: template.id,
+      name: template.name,
+      description: template.description,
+      category: template.category,
+      sports: template.sports,
+      leagues,
+      estimatedEvents
+    }
+  })
+}
+
+/**
+ * Get preset templates (for cases where you need the raw templates).
+ */
+export function getPresetTemplates(): PresetTemplate[] {
+  return [...PRESET_TEMPLATES]
+}
 
 /**
  * Configuration for aggressive scan with selected presets.
@@ -288,6 +289,33 @@ export interface AggressiveScanSelection {
 }
 
 /**
+ * Quota configuration - should be set based on user's plan.
+ */
+export interface QuotaConfig {
+  /** Requests per hour limit (100 for free, 5000 for paid) */
+  hourlyLimit: number
+  /** Target percentage of quota to use (default 75%) */
+  targetPercent: number
+  /** User's plan tier */
+  planTier: ApiPlanTier
+}
+
+/**
+ * Creates a quota config based on plan tier.
+ */
+export function createQuotaConfig(planTier: ApiPlanTier, targetPercent?: number): QuotaConfig {
+  return {
+    hourlyLimit: RATE_LIMITS_BY_TIER[planTier],
+    targetPercent: targetPercent ?? (planTier === 'free' ? 80 : 75),
+    planTier
+  }
+}
+
+export const DEFAULT_QUOTA_CONFIG: QuotaConfig = createQuotaConfig('paid')
+
+export const FREE_TIER_QUOTA_CONFIG: QuotaConfig = createQuotaConfig('free')
+
+/**
  * Estimate API requests for a given selection.
  *
  * Formula:
@@ -296,12 +324,17 @@ export interface AggressiveScanSelection {
  * - Soon events (30-120 min): poll every 3 minutes = 20 polls/hour
  * - Today events (2-6 hours): poll every 10 minutes = 6 polls/hour
  * - Later events (6-24 hours): poll every 30 minutes = 2 polls/hour
+ * - Events discovery: ~1 request per sport every 5 minutes = 12/hour per sport
+ * - Plus: initial event discovery requests (1 per league + 1 per sport)
  *
  * Estimation uses weighted average assuming events distribute across tiers.
+ * Uses actual eventsCount from API when available.
  */
 export function estimateRequestsPerHour(
   selection: AggressiveScanSelection,
-  quotaTargetPercent: number = 75
+  presets: AggressiveScanPreset[],
+  quotaConfig: QuotaConfig = DEFAULT_QUOTA_CONFIG,
+  discoveredLeagues?: DiscoveredLeague[]
 ): {
   estimatedEvents: number
   estimatedRequestsPerHour: number
@@ -312,41 +345,43 @@ export function estimateRequestsPerHour(
     soon: { events: number; requests: number }
     today: { events: number; requests: number }
     later: { events: number; requests: number }
+    discovery: { requests: number }
   }
 } {
-  const HOURLY_LIMIT = 5000
-  const targetRequests = Math.floor(HOURLY_LIMIT * (quotaTargetPercent / 100))
+  const { hourlyLimit, targetPercent } = quotaConfig
+  const targetRequests = Math.floor(hourlyLimit * (targetPercent / 100))
 
-  // Gather all selected leagues
-  const selectedLeagueIds = new Set<string>()
+  // Gather all selected leagues and their events
+  const selectedLeagues = new Set<string>()
+  const selectedSports = new Set<string>()
+  let totalEstimatedEvents = 0
 
   for (const presetId of selection.presetIds) {
-    const preset = AGGRESSIVE_SCAN_PRESETS.find((p) => p.id === presetId)
-    if (preset?.leagues) {
-      for (const leagueId of preset.leagues) {
-        selectedLeagueIds.add(leagueId)
-      }
+    const preset = presets.find((p) => p.id === presetId)
+    if (preset) {
+      preset.leagues.forEach((l) => selectedLeagues.add(l))
+      preset.sports.forEach((s) => selectedSports.add(s))
+      totalEstimatedEvents += preset.estimatedEvents
     }
   }
 
+  // Add custom leagues - use API eventsCount if available, else estimate
+  selection.customLeagueIds.forEach((l) => selectedLeagues.add(l))
   for (const leagueId of selection.customLeagueIds) {
-    selectedLeagueIds.add(leagueId)
-  }
-
-  // Calculate estimated events
-  let totalEstimatedEvents = 0
-  for (const sport of SCAN_SPORTS) {
-    for (const league of sport.leagues) {
-      if (selectedLeagueIds.has(league.id)) {
-        // Scale events by scan horizon (assuming avgEventsPerDay is for 24h)
-        const scaledEvents = Math.ceil(league.avgEventsPerDay * (selection.scanHorizonHours / 24))
-        totalEstimatedEvents += scaledEvents
-      }
+    const league = discoveredLeagues?.find((l) => l.slug === leagueId)
+    if (league) {
+      totalEstimatedEvents += league.eventsCount
+    } else {
+      // Fallback estimate when no API data
+      totalEstimatedEvents += 5
     }
   }
+
+  // Scale by scan horizon (base estimates assume 24h horizon)
+  const horizonMultiplier = selection.scanHorizonHours / 24
+  totalEstimatedEvents = Math.ceil(totalEstimatedEvents * horizonMultiplier)
 
   // Distribute events across tiers (typical distribution)
-  // Based on 48-hour horizon: imminent ~5%, soon ~10%, today ~25%, later ~60%
   const tierDistribution = {
     imminent: 0.05,
     soon: 0.1,
@@ -354,13 +389,19 @@ export function estimateRequestsPerHour(
     later: 0.6
   }
 
-  // Polls per hour for each tier (based on default poll intervals)
+  // Polls per hour for each tier
   const pollsPerHour = {
     imminent: 80, // 45s interval
     soon: 20, // 3min interval
     today: 6, // 10min interval
     later: 2 // 30min interval
   }
+
+  // Calculate discovery requests: 1 per sport + 1 per league for initial discovery
+  // Plus ongoing polling for updates (12 per hour per sport)
+  const discoveryRequests = selectedSports.size * 12 + // Ongoing sport polling
+                           selectedLeagues.size * 1 +   // League discovery (one-time, amortized)
+                           selectedSports.size * 1      // Sport discovery (one-time, amortized)
 
   const breakdown = {
     imminent: {
@@ -378,13 +419,15 @@ export function estimateRequestsPerHour(
     later: {
       events: Math.ceil(totalEstimatedEvents * tierDistribution.later),
       requests: 0
+    },
+    discovery: {
+      requests: discoveryRequests
     }
   }
 
-  // Calculate requests for each tier
-  // Batch requests: up to 10 events per request
+  // Calculate requests for each tier (batch 10 events per request)
   const BATCH_SIZE = 10
-  for (const tier of Object.keys(breakdown) as Array<keyof typeof breakdown>) {
+  for (const tier of ['imminent', 'soon', 'today', 'later'] as const) {
     const batchesPerPoll = Math.ceil(breakdown[tier].events / BATCH_SIZE)
     breakdown[tier].requests = batchesPerPoll * pollsPerHour[tier]
   }
@@ -393,9 +436,10 @@ export function estimateRequestsPerHour(
     breakdown.imminent.requests +
     breakdown.soon.requests +
     breakdown.today.requests +
-    breakdown.later.requests
+    breakdown.later.requests +
+    breakdown.discovery.requests
 
-  const percentOfQuota = Math.round((estimatedRequestsPerHour / HOURLY_LIMIT) * 100)
+  const percentOfQuota = Math.round((estimatedRequestsPerHour / hourlyLimit) * 100)
 
   return {
     estimatedEvents: totalEstimatedEvents,
@@ -407,35 +451,227 @@ export function estimateRequestsPerHour(
 }
 
 /**
- * Get preset by ID.
+ * Get preset by ID from a list of presets.
  */
-export function getPresetById(id: string): AggressiveScanPreset | undefined {
-  return AGGRESSIVE_SCAN_PRESETS.find((p) => p.id === id)
+export function getPresetById(
+  presets: AggressiveScanPreset[],
+  id: string
+): AggressiveScanPreset | undefined {
+  return presets.find((p) => p.id === id)
 }
 
 /**
  * Get all presets by category.
  */
 export function getPresetsByCategory(
+  presets: AggressiveScanPreset[],
   category: AggressiveScanPreset['category']
 ): AggressiveScanPreset[] {
-  return AGGRESSIVE_SCAN_PRESETS.filter((p) => p.category === category)
+  return presets.filter((p) => p.category === category)
 }
 
 /**
- * Get all unique league IDs from selected presets.
+ * Get all unique league slugs from selected presets.
  */
-export function getLeagueIdsFromPresets(presetIds: string[]): string[] {
+export function getLeagueIdsFromPresets(
+  presets: AggressiveScanPreset[],
+  presetIds: string[]
+): string[] {
   const leagueIds = new Set<string>()
 
   for (const presetId of presetIds) {
-    const preset = AGGRESSIVE_SCAN_PRESETS.find((p) => p.id === presetId)
-    if (preset?.leagues) {
-      for (const leagueId of preset.leagues) {
-        leagueIds.add(leagueId)
-      }
+    const preset = presets.find((p) => p.id === presetId)
+    if (preset) {
+      preset.leagues.forEach((l) => leagueIds.add(l))
     }
   }
 
   return Array.from(leagueIds)
+}
+
+// ============================================================================
+// Sport Normalization Helpers
+// ============================================================================
+
+/**
+ * Sport slug mappings to normalize different naming conventions.
+ * Odds-API.io uses 'football' for soccer/football.
+ */
+const SPORT_SLUG_NORMALIZATION: Record<string, string> = {
+  // Map common variations to Odds-API.io standard
+  soccer: 'football',
+  futbol: 'football',
+  'association-football': 'football',
+  // Standard sports
+  football: 'football',
+  tennis: 'tennis',
+  basketball: 'basketball'
+}
+
+/**
+ * Normalizes a sport slug to Odds-API.io standard.
+ * @param slug - The sport slug to normalize
+ * @returns Normalized sport slug
+ */
+export function normalizeSportSlug(slug: string): string {
+  const normalized = slug.toLowerCase().trim()
+  return SPORT_SLUG_NORMALIZATION[normalized] ?? normalized
+}
+
+/**
+ * Sports available for scanning with their display info.
+ * Uses Odds-API.io sport slugs.
+ */
+export const SCAN_SPORTS: Array<{
+  id: string
+  name: string
+  icon: string
+  leagues: Array<{ id: string; name: string }>
+}> = [
+  {
+    id: 'football',
+    name: 'Football (Soccer)',
+    icon: '⚽',
+    leagues: [
+      { id: 'england-premier-league', name: 'Premier League' },
+      { id: 'spain-la-liga', name: 'La Liga' },
+      { id: 'italy-serie-a', name: 'Serie A' },
+      { id: 'germany-bundesliga', name: 'Bundesliga' },
+      { id: 'france-ligue-1', name: 'Ligue 1' },
+      { id: 'europe-champions-league', name: 'Champions League' },
+      { id: 'europe-europa-league', name: 'Europa League' }
+    ]
+  },
+  {
+    id: 'tennis',
+    name: 'Tennis',
+    icon: '🎾',
+    leagues: [
+      { id: 'atp-australian-open', name: 'Australian Open' },
+      { id: 'atp-french-open', name: 'French Open' },
+      { id: 'atp-wimbledon', name: 'Wimbledon' },
+      { id: 'atp-us-open', name: 'US Open' },
+      { id: 'atp-masters-1000', name: 'ATP Masters 1000' },
+      { id: 'wta-1000', name: 'WTA 1000' }
+    ]
+  },
+  {
+    id: 'basketball',
+    name: 'Basketball',
+    icon: '🏀',
+    leagues: [
+      { id: 'usa-nba', name: 'NBA' },
+      { id: 'usa-ncaab', name: 'NCAA' },
+      { id: 'europe-euroleague', name: 'EuroLeague' },
+      { id: 'europe-eurocup', name: 'EuroCup' }
+    ]
+  }
+]
+
+// ============================================================================
+// Dynamic Preset Service
+// ============================================================================
+
+/**
+ * Options for building dynamic presets.
+ */
+export interface DynamicPresetOptions {
+  /** Discovered leagues from API */
+  discoveredLeagues: DiscoveredLeague[]
+  /** Discovered sports from API */
+  discoveredSports: DiscoveredSport[]
+  /** User's plan tier for quota calculation */
+  planTier?: ApiPlanTier
+  /** Custom hourly limit (overrides plan tier) */
+  hourlyLimit?: number
+  /** Target quota percentage */
+  targetPercent?: number
+}
+
+/**
+ * Result of building dynamic presets.
+ */
+export interface DynamicPresetResult {
+  /** Generated presets with actual API data */
+  presets: AggressiveScanPreset[]
+  /** Quota configuration based on plan */
+  quotaConfig: QuotaConfig
+  /** Sports that were discovered */
+  availableSports: DiscoveredSport[]
+  /** Leagues that were discovered */
+  availableLeagues: DiscoveredLeague[]
+  /** Whether API data was used (true) or fell back to static (false) */
+  usedApiData: boolean
+}
+
+/**
+ * Builds dynamic presets using actual API data when available.
+ * Falls back to static templates if API data is not available.
+ * 
+ * This is the recommended way to generate presets - it ensures:
+ * 1. Presets use real league slugs from the API
+ * 2. Event counts come from API's eventsCount field
+ * 3. Quota limits match the user's plan tier
+ * 
+ * @param options - Configuration options
+ * @returns Dynamic preset result with presets and quota config
+ */
+export function buildDynamicPresets(options: DynamicPresetOptions): DynamicPresetResult {
+  const { 
+    discoveredLeagues, 
+    discoveredSports, 
+    planTier = 'paid',
+    hourlyLimit,
+    targetPercent
+  } = options
+
+  // Create quota config (use explicit limit if provided, else derive from plan tier)
+  const quotaConfig: QuotaConfig = hourlyLimit !== undefined
+    ? { hourlyLimit, targetPercent: targetPercent ?? 75, planTier }
+    : createQuotaConfig(planTier, targetPercent)
+
+  const hasApiData = discoveredLeagues.length > 0
+
+  // Generate presets using API data if available
+  const presets = generatePresets(
+    hasApiData ? discoveredLeagues : [],
+    hasApiData ? discoveredSports : []
+  )
+
+  // If no API data, enhance presets with static league info
+  if (!hasApiData) {
+    // Add estimated events from known leagues
+    for (const preset of presets) {
+      if (preset.estimatedEvents === 0) {
+        // Rough estimate: 5 events per league
+        preset.estimatedEvents = preset.leagues.length * 5
+      }
+    }
+  }
+
+  return {
+    presets,
+    quotaConfig,
+    availableSports: discoveredSports,
+    availableLeagues: discoveredLeagues,
+    usedApiData: hasApiData
+  }
+}
+
+// ============================================================================
+// Backward Compatibility Exports
+// ============================================================================
+
+/**
+ * @deprecated Use buildDynamicPresets() with API data instead.
+ * Static presets using known major leagues (for backward compatibility).
+ */
+export const AGGRESSIVE_SCAN_PRESETS: AggressiveScanPreset[] = generatePresets([], [])
+
+/**
+ * @deprecated Use getLeagueIdsFromPresets(presets, presetIds) instead.
+ * Legacy function signature for backward compatibility.
+ */
+export function getLeagueIdsFromPresetsLegacy(presetIds: string[]): string[] {
+  return getLeagueIdsFromPresets(AGGRESSIVE_SCAN_PRESETS, presetIds)
 }

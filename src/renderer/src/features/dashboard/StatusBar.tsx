@@ -3,6 +3,7 @@ import * as React from 'react'
 import type {
   DashboardStatusSnapshot,
   DeepScanProgress,
+  DeepScanQuotaStatus,
   ProviderStatus,
   SystemStatus
 } from '../../../../../shared/types'
@@ -110,6 +111,7 @@ interface ContinuousStatusInfo {
   cacheTtlMinutes?: number
   cacheOldestEntryAgeMs?: number | null
   requestsToday?: number
+  quotaStatus?: DeepScanQuotaStatus
 }
 
 function getContinuousStatusLabel(status: ContinuousStatusInfo, progress: DeepScanProgress): string {
@@ -148,12 +150,93 @@ function formatCacheExpiryTooltip(status: ContinuousStatusInfo): string {
   return `Cache: ${entries} events (oldest expires in ${remainingMinutes}m)`
 }
 
-function getQuotaWarningLevel(requestsToday: number): 'none' | 'warn' | 'critical' {
-  const hourlyLimit = 5000
-  // Rough estimate: if they're using more than 4000 requests in a day, they might be hitting hourly limits
-  if (requestsToday >= hourlyLimit * 0.9) return 'critical'
-  if (requestsToday >= hourlyLimit * 0.8) return 'warn'
+function getQuotaWarningLevel(quotaStatus?: DeepScanQuotaStatus): 'none' | 'warn' | 'critical' {
+  if (!quotaStatus) return 'none'
+
+  const percentUsed = quotaStatus.apiRateLimit
+    ? Math.round(((quotaStatus.apiRateLimit.limit - quotaStatus.apiRateLimit.remaining) / quotaStatus.apiRateLimit.limit) * 100)
+    : quotaStatus.percentUsed
+
+  if (quotaStatus.isThrottled) return 'critical'
+  if (percentUsed >= 90) return 'critical'
+  if (percentUsed >= 75) return 'warn'
   return 'none'
+}
+
+function formatQuotaDisplay(quotaStatus?: DeepScanQuotaStatus): { label: string; tooltip: string } | null {
+  if (!quotaStatus) return null
+
+  // Prefer API rate limit if available (more accurate)
+  if (quotaStatus.apiRateLimit) {
+    const { limit, remaining, resetAt } = quotaStatus.apiRateLimit
+    const used = limit - remaining
+    const percentRemaining = Math.round((remaining / limit) * 100)
+    const resetTime = formatResetTime(resetAt)
+
+    return {
+      label: `${used}/${limit} (${percentRemaining}% left)`,
+      tooltip: `API Quota: ${used} used, ${remaining} remaining\nResets ${resetTime}`
+    }
+  }
+
+  // Fall back to estimated quota
+  const { hourlyUsed, hourlyLimit, percentUsed } = quotaStatus
+  const remaining = Math.max(0, hourlyLimit - hourlyUsed)
+  const percentRemaining = Math.max(0, 100 - percentUsed)
+
+  return {
+    label: `${hourlyUsed}/${hourlyLimit} (${percentRemaining}% left)`,
+    tooltip: `Estimated Quota: ${hourlyUsed} used, ${remaining} remaining this hour`
+  }
+}
+
+function formatResetTime(resetAt: string): string {
+  const resetMs = new Date(resetAt).getTime()
+  if (!Number.isFinite(resetMs)) return 'soon'
+
+  const diffMs = Math.max(0, resetMs - Date.now())
+  const diffMinutes = Math.ceil(diffMs / 60_000)
+
+  if (diffMinutes < 1) return 'now'
+  if (diffMinutes === 1) return 'in 1m'
+  if (diffMinutes < 60) return `in ${diffMinutes}m`
+
+  const hours = Math.floor(diffMinutes / 60)
+  const mins = diffMinutes % 60
+  if (mins === 0) return `in ${hours}h`
+  return `in ${hours}h ${mins}m`
+}
+
+function QuotaChip({ quotaStatus }: { quotaStatus?: DeepScanQuotaStatus }): React.JSX.Element | null {
+  const quotaDisplay = formatQuotaDisplay(quotaStatus)
+  if (!quotaDisplay) return null
+
+  const warningLevel = getQuotaWarningLevel(quotaStatus)
+  const borderClass =
+    warningLevel === 'critical'
+      ? 'border-red-500/40'
+      : warningLevel === 'warn'
+        ? 'border-amber-500/40'
+        : 'border-ot-border'
+  const textClass =
+    warningLevel === 'critical'
+      ? 'text-red-300'
+      : warningLevel === 'warn'
+        ? 'text-amber-200'
+        : 'text-ot-muted'
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border bg-ot-surface px-2 py-[2px] text-[9px] ${borderClass} ${textClass}`}
+      aria-label="API quota status"
+      title={quotaDisplay.tooltip}
+    >
+      <span className="opacity-60">Quota:</span>
+      <span>{quotaDisplay.label}</span>
+      {warningLevel === 'warn' && <span className="text-amber-400">⚠</span>}
+      {warningLevel === 'critical' && <span className="text-red-400">⚠</span>}
+    </span>
+  )
 }
 
 function StatusBar({ stalenessNow, statusSnapshot, fetchedAt }: StatusBarProps): React.JSX.Element {
@@ -215,20 +298,15 @@ function StatusBar({ stalenessNow, statusSnapshot, fetchedAt }: StatusBarProps):
           }`}
           aria-label="Continuous deep scan status"
           title={formatCacheExpiryTooltip(continuousStatus)}
-          >
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                continuousStatus.enabled ? (continuousStatus.isActive ? 'bg-ot-accent' : 'bg-emerald-400') : 'bg-ot-muted/60'
-              }`}
-            />
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              continuousStatus.enabled ? (continuousStatus.isActive ? 'bg-ot-accent' : 'bg-emerald-400') : 'bg-ot-muted/60'
+            }`}
+          />
           <span>{getContinuousStatusLabel(continuousStatus, progress)}</span>
-          {getQuotaWarningLevel(continuousStatus.requestsToday ?? 0) === 'warn' && (
-            <span className="text-amber-400" title="High API usage">⚠</span>
-          )}
-          {getQuotaWarningLevel(continuousStatus.requestsToday ?? 0) === 'critical' && (
-            <span className="text-red-400" title="Near quota limit">⚠</span>
-          )}
         </span>
+        <QuotaChip quotaStatus={continuousStatus.quotaStatus} />
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-1" aria-label="Provider statuses">

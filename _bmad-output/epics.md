@@ -65,6 +65,7 @@ We follow a **Walking Skeleton** approach:
   Epic 6 -- Enhanced Filtering & Desktop UX     FR3, FR6, FR9, FR10, FR11, FR13, FR17
   Epic 7 -- Deep Scan (All Markets)             FR5, FR6, FR7, FR8, FR9, FR10, FR11, FR15
   Epic 8 -- Odds Browser & Surebet Tools        FR1, FR3, FR8, FR14, FR16, FR17, FR18
+  Epic 9 -- Odds-API.io Integration Fixes       FR5, FR6, FR7, FR8
 
 ------------------------------------------------------------------------
 
@@ -104,6 +105,11 @@ We follow a **Walking Skeleton** approach:
     - `renderer/src/features/odds-browser/**` (view-only odds browser)
   - State: Zustand stores for odds browser filters, calculator history, currency settings
   - Architecture refs: "Implementation Patterns – Caching and Persistence", "Implementation Patterns – Naming/Structure"
+
+- **Epic 9 – Odds-API.io Integration Fixes & Compliance**
+  - Main: `src/main/adapters/odds-api-io.ts`, `src/main/services/deepScan.ts`, `src/main/services/eventMatcher.ts`, `src/main/services/poller.ts`
+  - Shared: `shared/types.ts` (`DeepScanEvent`, `ArbitrageOpportunity`)
+  - Architecture refs: "High-Risk Domain Patterns – Rate Limiting (R-001)", "High-Risk Domain Patterns – Arbitrage Correctness (R-002)"
 
 Each story below should be read together with these architecture touchpoints to avoid introducing ad-hoc patterns or file layouts.
 
@@ -1729,6 +1735,7 @@ This epic breakdown ensures:
 - **Epic 6** – enhanced filtering UX, granular bookmaker selection, and full-width desktop optimization
 - **Epic 7** – **Continuous Deep Scan** as the primary arbitrage discovery mechanism, automatically scanning all events and markets to maximize opportunity detection
 - **Epic 8** – **Odds Browser & Surebet Tools** - Surebet calculator integrated into the main feed for immediate stake calculation; separate view-only Odds Browser for systematic odds exploration; multi-currency support via Frankfurt API; dedicated Settings tab consolidating all configuration
+- **Epic 9** – **Odds-API.io Integration Fixes & Compliance** - Critical correctness fixes to prevent false arbitrage signals, API endpoint compliance, slug-based event identity, collision-resistant keys, and 10x efficiency improvements via proper batching
 
 ## Epic 7 Architecture Overview
 
@@ -1870,3 +1877,393 @@ A complete, production-grade arbitrage analysis workflow optimized for maximum o
 - All calculations happen client-side for instant feedback
 
 A professional-grade toolkit with calculator integrated in the main surebet workflow, plus a dedicated odds exploration view.
+
+
+------------------------------------------------------------------------
+
+# **Epic 9: Odds-API.io Integration Fixes & Compliance**
+
+**Goal:** Ensure the app implements Odds-API.io correctly (endpoints, parameters, limits, rate limiting), improves correctness (no false arbs), and improves efficiency (fewer wasted requests).
+
+**Author:** John (Product Manager)  
+**Date:** February 2, 2026  
+**Priority:** P0 - Critical  
+**Estimated Duration:** 3 weeks
+
+**Non-goals (for now):**
+- Implementing 3-way (1X2) arbitrage (optional later).
+- WebSocket streaming (optional later).
+
+------------------------------------------------------------------------
+
+## Overview
+
+This epic addresses critical correctness blockers and API compliance gaps identified in the current Odds-API.io integration. These fixes are essential to prevent false arbitrage signals, ensure API contract compliance, and maximize scanning efficiency within rate limits.
+
+### Key Odds-API.io Constraints (from docs)
+
+- `/v3/odds/multi`: up to **10** eventIds per request; `bookmakers` supports up to **30** comma-separated entries.
+- `/v3/odds/updated`: requires **UNIX timestamp** `since` (max ~**1 minute** old), **singular** `bookmaker`, and **required** `sport`.
+- `/v3/arbitrage-bets`: supports `bookmakers` filtering; use a curated list of bookmakers instead of "all".
+- Handle HTTP **429** with `Retry-After` when provided and backoff otherwise.
+- Never expose `apiKey` in browser code; proxy via backend.
+
+### Context
+
+The current implementation has several issues that threaten the app's core value proposition:
+1. **False arbitrage opportunities** due to event key collisions (same teams, different leagues)
+2. **API endpoint misconfiguration** (wrong host for arbitrage endpoint)
+3. **Inefficient API usage** leading to quota waste
+4. **Missing rate limit handling** causing prolonged degraded states
+
+------------------------------------------------------------------------
+
+## **Story 9.1: Fix Arbitrage Endpoint Host Configuration**
+
+**As a** User  
+**I want** the arbitrage endpoint to use the correct API host with safe fallback  
+**So that** arbitrage opportunities are reliably retrieved without endpoint failures.
+
+### Acceptance Criteria
+
+- [ ] Add separate configurable host for arbitrage: `ODDS_API_IO_ARBS_HOST` (default: `https://api2.odds-api.io`)
+- [ ] Implement safe fallback to `https://api.odds-api.io` **only** on network error, 404, or selected 5xx responses
+- [ ] **Do not** fallback on 400/401/403/429 errors
+- [ ] All fallback events are logged with clear context
+- [ ] Arbitrage endpoint works reliably on the configured host
+
+### Technical Notes
+
+**Files:** `src/main/adapters/odds-api-io.ts`
+
+### Links
+
+- FR5 (Retrieve pre-calculated bets)
+- P0 Issue: Arbitrage base URL discrepancy
+
+------------------------------------------------------------------------
+
+## **Story 9.2: Add Canonical Fields to Event Model**
+
+**As a** Developer  
+**I want** events to store canonical identity fields (slugs, epoch timestamps)  
+**So that** cross-provider matching is reliable and collision-resistant.
+
+### Acceptance Criteria
+
+- [ ] Extend `DeepScanEvent` type with:
+  - `leagueSlug?: string` - canonical league identifier
+  - `league?: string` - display name (human-readable)
+  - `sportSlug?: string` - canonical sport identifier
+  - `sport?: string` - display name (human-readable)
+  - `kickoffEpochMs?: number` - canonical numeric timestamp (milliseconds)
+- [ ] All discovered events have `sportSlug` and `leagueSlug` when the API returns them
+- [ ] `kickoffEpochMs` is populated for valid kickoff timestamps
+- [ ] Invalid dates result in `undefined` `kickoffEpochMs` but event remains processable
+
+### Technical Notes
+
+**Files:** `src/main/services/deepScan.ts`, `shared/types.ts`
+
+### Links
+
+- FR7 (Normalize responses)
+- P0 Issue: League identity stored as display name only; Event key collisions
+
+------------------------------------------------------------------------
+
+## **Story 9.3: Fix Event Extraction Priority (Slug-First)**
+
+**As a** Developer  
+**I want** slug fields to take priority over display names for identity  
+**So that** league and sport matching is deterministic across providers.
+
+### Acceptance Criteria
+
+- [ ] When league/sport candidates are objects:
+  - `slug` becomes identity field
+  - `name` becomes display field
+- [ ] When only a string exists:
+  - Store as display field
+  - Do not guess slug unless deterministic mapping available from `/leagues` endpoint
+- [ ] League slug is never overwritten by display name
+- [ ] Sport slug is never overwritten by display name
+
+### Technical Notes
+
+**Files:** `src/main/services/deepScan.ts` (`extractEvents()`)
+
+### Links
+
+- FR7 (Normalize responses)
+- Story 9.2
+- P0 Issue: League identity stored as display name only
+
+------------------------------------------------------------------------
+
+## **Story 9.4: Implement Strict Event Key Generation**
+
+**As a** Developer  
+**I want** collision-resistant event keys using slugs and minute precision  
+**So that** cup vs league matches with the same teams do not produce false joins.
+
+### Acceptance Criteria
+
+- [ ] New strict key format: `sportSlug|leagueSlug|teamA_norm|teamB_norm|kickoffMin`
+- [ ] Minute precision: `kickoffMin = floor(kickoffEpochMs / 60000)`
+- [ ] **Strict mode requirement:** If `sportSlug` or `leagueSlug` is missing → return `null` (event not joinable across providers)
+- [ ] No `'unknown'` placeholders are used in strict key generation
+- [ ] Cup vs league matches with same teams/time produce different keys
+
+### Technical Notes
+
+**Files:** `src/main/services/eventMatcher.ts`
+
+### Links
+
+- FR7 (Normalize responses)
+- Story 9.2
+- P0 Issue: Event key collisions
+- Risk: R-002 (Arbitrage Correctness)
+
+------------------------------------------------------------------------
+
+## **Story 9.5: Wire Aggressive Scan to /v3/odds/multi Batching**
+
+**As a** User  
+**I want** aggressive scan to use batch odds fetching  
+**So that** scanning is 10x more efficient within API rate limits.
+
+### Acceptance Criteria
+
+- [ ] Aggressive scan uses `/v3/odds/multi` endpoint
+- [ ] Batch size limited to **10** events per request (API maximum)
+- [ ] `bookmakers` list is cached with TTL (>= 1 minute, recommend 5-10 minutes)
+- [ ] Events passed to fetcher are real `DeepScanEvent` objects, not placeholders
+- [ ] Aggressive scan produces odds requests and updates caches/arbs for tiered events
+
+### Technical Notes
+
+**Files:** `src/main/services/aggressiveScan.ts`
+
+### Links
+
+- FR6 (Calculate local arbs)
+- FR8 (API rate limiting)
+- FR15 (Deep Scan all markets)
+- P0 Issue: Aggressive scan partially wired
+
+------------------------------------------------------------------------
+
+## **Story 9.6: Implement API-Side League Filtering for Event Discovery**
+
+**As a** System  
+**I want** to filter events by league at the API level  
+**So that** discovery traffic is reduced proportionally with league filters.
+
+### Acceptance Criteria
+
+- [ ] Instead of fetching all events for a sport, call `/v3/events?sport=...&league=...` per enabled `leagueSlug`
+- [ ] Use best supported filter pattern from API docs
+- [ ] Keep pagination handling (numeric `nextPage`) but reduce total pages fetched
+- [ ] Discovery traffic drops proportionally with league filters
+- [ ] Returned events are already within enabled leagues
+
+### Technical Notes
+
+**Files:** `src/main/services/deepScan.ts`
+
+### Links
+
+- FR7 (Normalize responses)
+- FR8 (API rate limiting)
+- P1 Issue: Event discovery over-fetching
+
+------------------------------------------------------------------------
+
+## **Story 9.7: Implement Full Retry-After Rate Limit Handling**
+
+**As a** System  
+**I want** to respect the `Retry-After` header on HTTP 429 responses  
+**So that** rate limit recovery is optimal and retry bursts are avoided.
+
+### Acceptance Criteria
+
+- [ ] On HTTP 429:
+  - Use `Retry-After` if present (supports both integer seconds and HTTP-date format)
+  - Else use exponential backoff with jitter
+- [ ] Applied where responses are handled (not just thrown exceptions)
+- [ ] 429 triggers cooldown until the header/backoff expires
+- [ ] No immediate re-burst after cooldown period
+
+### Technical Notes
+
+**Files:** `src/main/services/poller.ts`
+
+### Links
+
+- FR8 (API rate limiting)
+- P1 Issue: Rate limit handling does not fully respect `Retry-After`
+
+------------------------------------------------------------------------
+
+## **Story 9.8: Preserve Negative ROI for Analytics (Internal)**
+
+**As a** Developer  
+**I want** to preserve negative ROI values internally  
+**So that** "near arbs" can be analyzed for debugging and opportunity spotting.
+
+### Acceptance Criteria
+
+- [ ] Arbitrage calculator returns true ROI (can be negative) for internal storage
+- [ ] UI can display `max(0, roi)` if desired for user-facing views
+- [ ] Internal analytics/logging include raw ROI values
+- [ ] No breaking changes to existing positive ROI display logic
+
+### Technical Notes
+
+**Files:** Arbitrage calculator / output formatting layer
+
+### Links
+
+- FR6 (Calculate local arbs)
+- P2 Issue: ROI clamps negative values to 0
+
+------------------------------------------------------------------------
+
+## **Story 9.9: Add Odds Format Guardrails**
+
+**As a** System  
+**I want** to validate and flag unexpected odds formats  
+**So that** American odds or malformed values don't break implied probability calculations.
+
+### Acceptance Criteria
+
+- [ ] Add sanity checks in odds parsing layer:
+  - Reject odds < 1.01 (invalid for decimal format)
+  - Warn/flag odds values that look like American odds (abs(odds) > 20 and integer-like)
+- [ ] Mark unsupported formats as "unsupported format" unless explicitly normalized
+- [ ] Invalid odds are logged and skipped, not used in arbitrage calculations
+- [ ] System continues operating when encountering malformed odds
+
+### Technical Notes
+
+**Files:** Odds parsing layer
+
+### Links
+
+- FR7 (Normalize responses)
+- P2 Issue: Odds format assumption
+
+------------------------------------------------------------------------
+
+## **Story 9.10: (Optional) Implement /v3/odds/updated Correctly**
+
+**As a** Developer  
+**I want** to use incremental odds updates via `/v3/odds/updated`  
+**So that** quota usage is minimized when tracking odds changes.
+
+**Note:** Only implement after `/v3/odds/multi` is stable. Multi-sport mode makes `/updated` N(bookmakers) × M(sports).
+
+### Acceptance Criteria
+
+- [ ] Params are correct:
+  - `since` = UNIX integer (seconds), not ISO
+  - `bookmaker` = singular (not array)
+  - `sport` = required
+- [ ] Cursor is tracked per **(sportSlug, bookmaker)** key
+- [ ] Stale detection: if `nowSec - since > 55`, fall back to snapshots (`/multi`)
+- [ ] `/updated` requests never omit `sport` and never pass ISO timestamps
+
+### Technical Notes
+
+**Files:** `src/main/services/poller.ts`, `src/main/services/deepScan.ts`
+
+### Links
+
+- FR8 (API rate limiting)
+- P1 Issue: `/v3/odds/updated` incorrect usage
+
+------------------------------------------------------------------------
+
+## Implementation Order (Recommended)
+
+### Week 1: P0 Correctness (Critical)
+1. Story 9.1 - Fix Arbitrage Endpoint Host
+2. Story 9.2 - Add Canonical Fields
+3. Story 9.3 - Fix Extraction Priority
+4. Story 9.4 - Strict Event Keys
+
+### Week 2: P1 Efficiency (High Value)
+5. Story 9.5 - Batch Odds Fetching
+6. Story 9.6 - API-Side League Filtering
+7. Story 9.7 - Retry-After Handling
+
+### Week 3: P2 Quality (Nice to Have)
+8. Story 9.8 - Preserve Negative ROI
+9. Story 9.9 - Odds Format Guardrails
+10. Story 9.10 - (Optional) Incremental Updates
+
+------------------------------------------------------------------------
+
+## FR Coverage Matrix
+
+| Requirement | Story |
+|-------------|-------|
+| FR5 | 9.1, 9.5 |
+| FR6 | 9.5, 9.8 |
+| FR7 | 9.2, 9.3, 9.4, 9.6, 9.9 |
+| FR8 | 9.5, 9.7, 9.10 |
+
+------------------------------------------------------------------------
+
+# Epic 9 Architecture Overview
+
+```
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    Odds-API.io Integration Fixes Flow                      │
+├───────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  ┌─────────────────┐    ┌──────────────────────┐    ┌──────────────────┐  │
+│  │ Arbitrage       │    │ Event Discovery      │    │ Aggressive Scan  │  │
+│  │ Endpoint        │───▶│ (API-side league     │───▶│ (Batch /multi)   │  │
+│  │ • api2 host     │    │  filtering)          │    │ • 10 events/req  │  │
+│  │ • safe fallback │    │ • leagueSlug param   │    │ • cached books   │  │
+│  └─────────────────┘    └──────────────────────┘    └──────────────────┘  │
+│           │                      │                           │             │
+│           ▼                      ▼                           ▼             │
+│  ┌─────────────────┐    ┌──────────────────────┐    ┌──────────────────┐  │
+│  │ Host Config     │    │ Canonical Event      │    │ Rate Limit       │  │
+│  │ • ODDS_API_IO_  │    │ Model                │    │ Handling         │  │
+│  │   ARBS_HOST     │    │ • sportSlug          │    │ • Retry-After    │  │
+│  │ • Fallback logic│    │ • leagueSlug         │    │ • Exponential    │  │
+│  └─────────────────┘    │ • kickoffEpochMs     │    │   backoff        │  │
+│                         └──────────────────────┘    └──────────────────┘  │
+│                                    │                                      │
+│                                    ▼                                      │
+│                         ┌──────────────────────┐                         │
+│                         │ Strict Event Key     │                         │
+│                         │ Generation           │                         │
+│                         │ sport|league|t1|t2|  │                         │
+│                         │ kickoffMin           │                         │
+│                         └──────────────────────┘                         │
+│                                    │                                      │
+│                                    ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │              Collision-Resistant Event Matching                      │ │
+│  │   • No 'unknown' placeholders                                       │ │
+│  │   • Cup vs League different keys                                    │ │
+│  │   • Minute precision timestamps                                     │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+│                                                                            │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Design Decisions:**
+- Strict mode requires canonical slugs for cross-provider matching
+- Safe fallback only on network/server errors, not auth/rate-limit
+- Batch fetching reduces API calls by ~90% (10 events per request)
+- Minute-precision keys prevent same-hour collision issues
+- Retry-After header support for optimal rate limit recovery
+
+------------------------------------------------------------------------

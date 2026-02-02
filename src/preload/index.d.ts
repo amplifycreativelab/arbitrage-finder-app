@@ -1,6 +1,6 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId, ScanHistoryEntry, DeepScanQuotaStatus, CardCountingRule, BookmakerCardRules, AggressiveScanConfig, AggressiveScanStats } from '../../shared/types'
-import type { AggressiveScanSelection } from '../../shared/aggressiveScanPresets'
+import type { AggressiveScanSelection, QuotaConfig, ApiPlanTier } from '../../shared/aggressiveScanPresets'
 
 export interface CredentialsStorageStatus {
   isUsingFallbackStorage: boolean
@@ -64,6 +64,24 @@ export interface DeepScanAPI {
   startAggressiveScan: () => Promise<void>
   stopAggressiveScan: () => Promise<void>
   startAggressiveScanWithSelection: (selection: AggressiveScanSelection) => Promise<void>
+  // Story 8.7: Dynamic presets with API data
+  getDynamicPresets: () => Promise<{
+    presets: AggressiveScanPreset[]
+    quotaConfig: QuotaConfig
+    availableSports: DiscoveredSport[]
+    availableLeagues: DiscoveredLeague[]
+    usedApiData: boolean
+  }>
+  refreshDynamicPresets: () => Promise<{
+    presets: AggressiveScanPreset[]
+    quotaConfig: QuotaConfig
+    availableSports: DiscoveredSport[]
+    availableLeagues: DiscoveredLeague[]
+    usedApiData: boolean
+  }>
+  getQuotaConfig: () => Promise<QuotaConfig>
+  setQuotaConfig: (planTier: ApiPlanTier, targetPercent?: number) => Promise<{ ok: boolean; config: QuotaConfig }>
+  detectPlanTier: (observedLimit: number) => Promise<{ ok: boolean; detectedTier: ApiPlanTier; config: QuotaConfig }>
 }
 
 // Story 7.9: Sport and League types
@@ -85,6 +103,17 @@ export interface LeaguePreset {
   description: string
   sport: string
   leagues: string[]
+}
+
+// Story 8.7: Dynamic preset types
+export interface AggressiveScanPreset {
+  id: string
+  name: string
+  description: string
+  sports: string[]
+  leagues: string[]
+  estimatedEvents: number
+  category: 'major' | 'minor' | 'regional' | 'custom'
 }
 
 export interface DeepScanContinuousStatus {

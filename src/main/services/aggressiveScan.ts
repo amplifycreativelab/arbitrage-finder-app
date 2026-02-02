@@ -23,6 +23,7 @@ import {
   DEFAULT_TIER_CONFIGS,
   DEFAULT_AGGRESSIVE_SCAN_CONFIG
 } from '../../../shared/types'
+import { type QuotaConfig, createQuotaConfig, type ApiPlanTier } from '../../../shared/aggressiveScanPresets'
 import type { DeepScanEvent } from './deepScan'
 import { logInfo, logWarn, logDebug, createCorrelationId, type StructuredLogBase } from './logger'
 
@@ -30,8 +31,12 @@ import { logInfo, logWarn, logDebug, createCorrelationId, type StructuredLogBase
 // Constants
 // ============================================================================
 
-const HOURLY_REQUEST_LIMIT = 5000
+// Default hourly limit - will be overridden by quotaConfig if set
+let HOURLY_REQUEST_LIMIT = 5000
 const DEFAULT_BUFFER_PERCENT = 20
+
+// User's quota configuration
+let quotaConfig: QuotaConfig = createQuotaConfig('paid')
 const MAX_ODDS_HISTORY_SNAPSHOTS = 3
 const BATCH_SIZE_MAX = 10
 const TIER_PROMOTION_INTERVAL_MS = 30000 // Check for tier promotions every 30 seconds
@@ -87,6 +92,69 @@ export function setAggressiveScanConfig(newConfig: Partial<AggressiveScanConfig>
     errorCategory: null,
     config: sanitizeConfigForLogging(config)
   } satisfies StructuredLogBase)
+}
+
+/**
+ * Set the quota configuration based on user's plan tier.
+ * This affects the hourly rate limit and target percentage.
+ */
+export function setQuotaConfig(newQuotaConfig: QuotaConfig): void {
+  quotaConfig = { ...newQuotaConfig }
+  HOURLY_REQUEST_LIMIT = quotaConfig.hourlyLimit
+  
+  // Re-initialize quota budget if already running
+  if (isRunning) {
+    initQuotaBudget()
+  }
+  
+  logInfo('aggressiveScan.quotaConfig.updated', {
+    context: 'service:aggressiveScan',
+    operation: 'setQuotaConfig',
+    providerId: 'odds-api-io',
+    correlationId: correlationId ?? undefined,
+    durationMs: null,
+    errorCategory: null,
+    hourlyLimit: quotaConfig.hourlyLimit,
+    targetPercent: quotaConfig.targetPercent,
+    planTier: quotaConfig.planTier
+  } satisfies StructuredLogBase)
+}
+
+/**
+ * Get the current quota configuration.
+ */
+export function getQuotaConfig(): QuotaConfig {
+  return { ...quotaConfig }
+}
+
+/**
+ * Convenience function to set plan tier.
+ * @param planTier - 'free' for 100/hr, 'paid' for 5000/hr
+ */
+export function setPlanTier(planTier: ApiPlanTier): void {
+  setQuotaConfig(createQuotaConfig(planTier))
+}
+
+/**
+ * Detect plan tier based on observed rate limit from API responses.
+ * Call this when you receive rate limit headers from the API.
+ * @param observedLimit - The X-RateLimit-Limit value from API response
+ */
+export function detectPlanTierFromRateLimit(observedLimit: number): ApiPlanTier {
+  // Free tier is 100/hr, paid is 5000/hr
+  // Use threshold of 1000 to distinguish between them
+  const detectedTier: ApiPlanTier = observedLimit <= 1000 ? 'free' : 'paid'
+  
+  // Auto-update if different from current
+  if (quotaConfig.planTier !== detectedTier || quotaConfig.hourlyLimit !== observedLimit) {
+    setQuotaConfig({
+      hourlyLimit: observedLimit,
+      targetPercent: detectedTier === 'free' ? 80 : 75,
+      planTier: detectedTier
+    })
+  }
+  
+  return detectedTier
 }
 
 export function getAggressiveScanConfig(): AggressiveScanConfig {
@@ -342,9 +410,14 @@ export function getEventCountsByTier(): Record<EventTier, number> {
 /**
  * Initialize or reset the quota budget.
  * Story 8.7 Task 3: Implement quota budget system
+ * 
+ * Uses quotaConfig.targetPercent if set, otherwise falls back to config.quotaTargetPercent.
+ * The hourly limit is determined by setQuotaConfig() or defaults to 5000 (paid tier).
  */
 export function initQuotaBudget(): QuotaBudget {
-  const targetRequestsPerHour = Math.floor(HOURLY_REQUEST_LIMIT * (config.quotaTargetPercent / 100))
+  // Use quotaConfig target percent if available, otherwise use config
+  const targetPercent = quotaConfig.targetPercent ?? config.quotaTargetPercent
+  const targetRequestsPerHour = Math.floor(HOURLY_REQUEST_LIMIT * (targetPercent / 100))
   const bufferRequests = Math.floor(targetRequestsPerHour * (DEFAULT_BUFFER_PERCENT / 100))
   const usableRequests = targetRequestsPerHour - bufferRequests
 
@@ -1226,6 +1299,8 @@ export const __test = {
   resetState(): void {
     stopAggressiveScan()
     config = { ...DEFAULT_AGGRESSIVE_SCAN_CONFIG }
+    quotaConfig = createQuotaConfig('paid')
+    HOURLY_REQUEST_LIMIT = 5000
     tieredEventCache.clear()
     oddsCache.clear()
     boostedEvents.clear()
@@ -1261,6 +1336,14 @@ export const __test = {
   
   getConfig(): AggressiveScanConfig {
     return { ...config }
+  },
+  
+  getQuotaConfig(): QuotaConfig {
+    return { ...quotaConfig }
+  },
+  
+  setHourlyLimit(limit: number): void {
+    HOURLY_REQUEST_LIMIT = limit
   },
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

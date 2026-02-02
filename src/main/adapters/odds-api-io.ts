@@ -2,7 +2,13 @@ import type { ArbitrageOpportunity, ProviderId } from '../../../shared/types'
 import { inferMarketMetadata } from '../../../shared/types'
 import { BaseArbitrageAdapter } from './base'
 import type { ProviderRequestContext } from '../services/poller'
-import { createCorrelationId, logError, logInfo, type StructuredLogBase } from '../services/logger'
+import {
+  createCorrelationId,
+  logError,
+  logInfo,
+  logWarn,
+  type StructuredLogBase
+} from '../services/logger'
 import { getSelectedBookmakers } from '../services/odds-api-io-bookmakers'
 
 /**
@@ -74,7 +80,10 @@ export function normalizeOddsApiIoOpportunity(
   // Normalize sport value to match our SportFilterValue type
   const rawSport = (raw.event?.sport ?? raw.sport ?? 'soccer').toLowerCase()
   let sport = 'soccer'
-  if (rawSport.includes('soccer') || (rawSport.includes('football') && !rawSport.includes('american'))) {
+  if (
+    rawSport.includes('soccer') ||
+    (rawSport.includes('football') && !rawSport.includes('american'))
+  ) {
     sport = 'soccer'
   } else if (rawSport.includes('tennis')) {
     sport = 'tennis'
@@ -130,13 +139,178 @@ export function normalizeOddsApiIoOpportunity(
   }
 }
 
-const ODDS_API_IO_BASE_URL = 'https://api.odds-api.io'
+// API Host Configuration
+// Per AGENTS.md: Arbitrage endpoint uses api2.odds-api.io, bookmakers use api.odds-api.io
+const ODDS_API_IO_ARBS_HOST = process.env.ODDS_API_IO_ARBS_HOST || 'https://api2.odds-api.io'
+const ODDS_API_IO_FALLBACK_HOST = 'https://api.odds-api.io'
+
 const ODDS_API_IO_ARBS_PATH = '/v3/arbitrage-bets'
 
 const ODDS_API_IO_PROVIDER_ID: ProviderId = 'odds-api-io'
 
 const SELECTED_BOOKMAKERS_TTL_MS = 5 * 60 * 1000
 let cachedSelectedBookmakers: { fetchedAtMs: number; bookmakers: string[] } | null = null
+
+/**
+ * API Error structure for fallback decision making
+ */
+interface ApiError {
+  status?: number
+  statusCode?: number
+  message: string
+  code?: string
+}
+
+/**
+ * Determines if it's safe to fallback to the alternative host.
+ * Safe to fallback on: network errors (no status), 404, 502, 503, 504
+ * NOT safe to fallback on: 400, 401, 403, 429, 500
+ */
+function isSafeToFallback(error: ApiError): boolean {
+  const statusCode = error.status ?? error.statusCode
+
+  // Network errors (no status code) - safe to fallback
+  if (statusCode === undefined || statusCode === null) {
+    return true
+  }
+
+  // Safe HTTP status codes for fallback
+  const safeFallbackCodes = [404, 502, 503, 504]
+  return safeFallbackCodes.includes(statusCode)
+}
+
+/**
+ * Builds the arbitrage bets URL with query parameters.
+ * Never logs API keys - they are passed as query parameters per API spec.
+ */
+function buildArbitrageUrl(host: string, bookmakers: string[], apiKey: string): string {
+  const url = new URL(ODDS_API_IO_ARBS_PATH, host)
+  url.searchParams.set('apiKey', apiKey)
+  url.searchParams.set('bookmakers', bookmakers.join(','))
+  url.searchParams.set('includeEventDetails', 'true')
+  url.searchParams.set('limit', '500') // Max limit to get all available opportunities
+  return url.toString()
+}
+
+/**
+ * Fetches arbitrage bets from the primary host with fallback to secondary host.
+ * Implements dual-host logic per AC2, AC3: only falls back on safe error conditions.
+ */
+async function fetchArbitrageBets(
+  httpFetch: (
+    input: string,
+    init?: { method?: string; headers?: Record<string, string> }
+  ) => Promise<{ ok: boolean; status: number; json(): Promise<unknown>; text(): Promise<string> }>,
+  bookmakers: string[],
+  apiKey: string,
+  context?: ProviderRequestContext
+): Promise<{ ok: true; data: unknown[] } | { ok: false; error: Error; statusCode?: number }> {
+  const correlationId = context?.correlationId ?? createCorrelationId()
+  const primaryUrl = buildArbitrageUrl(ODDS_API_IO_ARBS_HOST, bookmakers, apiKey)
+
+  try {
+    const response = await httpFetch(primaryUrl, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json'
+      }
+    })
+
+    if (!response.ok) {
+      const message = await response
+        .text()
+        .then((text) => text || `Odds-API.io request failed with status ${response.status}`)
+        .catch(() => `Odds-API.io request failed with status ${response.status}`)
+
+      const error = new Error(message) as Error & { status?: number }
+      error.status = response.status
+      throw error
+    }
+
+    const body = (await response.json()) as unknown
+    const rawBets: unknown[] = Array.isArray(body)
+      ? body
+      : Array.isArray((body as { data?: unknown[] }).data)
+        ? (body as { data: unknown[] }).data
+        : Array.isArray((body as { bets?: unknown[] }).bets)
+          ? (body as { bets: unknown[] }).bets
+          : []
+
+    return { ok: true, data: rawBets }
+  } catch (error) {
+    const apiError = error as ApiError
+    const statusCode = apiError.status ?? apiError.statusCode
+
+    if (isSafeToFallback(apiError)) {
+      // Log fallback event with full context (AC4)
+      logWarn('adapter.fallback', {
+        context: 'adapter:odds-api-io',
+        operation: 'fetchArbitrageBets',
+        providerId: ODDS_API_IO_PROVIDER_ID,
+        correlationId,
+        durationMs: null,
+        errorCategory: statusCode ? 'ProviderError' : 'InfrastructureError',
+        message: `Primary arbitrage host failed, falling back to fallback host`,
+        primaryHost: ODDS_API_IO_ARBS_HOST,
+        fallbackHost: ODDS_API_IO_FALLBACK_HOST,
+        statusCode: statusCode ?? null,
+        errorMessage: apiError.message
+      } satisfies StructuredLogBase)
+
+      // Attempt fallback request
+      try {
+        const fallbackUrl = buildArbitrageUrl(ODDS_API_IO_FALLBACK_HOST, bookmakers, apiKey)
+        const fallbackResponse = await httpFetch(fallbackUrl, {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json'
+          }
+        })
+
+        if (!fallbackResponse.ok) {
+          const message = await fallbackResponse
+            .text()
+            .then(
+              (text) =>
+                text || `Odds-API.io fallback request failed with status ${fallbackResponse.status}`
+            )
+            .catch(
+              () => `Odds-API.io fallback request failed with status ${fallbackResponse.status}`
+            )
+
+          const fallbackError = new Error(message) as Error & { status?: number }
+          fallbackError.status = fallbackResponse.status
+          throw fallbackError
+        }
+
+        const fallbackBody = (await fallbackResponse.json()) as unknown
+        const fallbackBets: unknown[] = Array.isArray(fallbackBody)
+          ? fallbackBody
+          : Array.isArray((fallbackBody as { data?: unknown[] }).data)
+            ? (fallbackBody as { data: unknown[] }).data
+            : Array.isArray((fallbackBody as { bets?: unknown[] }).bets)
+              ? (fallbackBody as { bets: unknown[] }).bets
+              : []
+
+        return { ok: true, data: fallbackBets }
+      } catch {
+        // Both hosts failed - return original error (per test requirement)
+        return {
+          ok: false,
+          error: error as Error,
+          statusCode
+        }
+      }
+    }
+
+    // Not safe to fallback - return original error
+    return {
+      ok: false,
+      error: error as Error,
+      statusCode
+    }
+  }
+}
 
 export class OddsApiIoAdapter extends BaseArbitrageAdapter {
   readonly id = ODDS_API_IO_PROVIDER_ID
@@ -145,7 +319,7 @@ export class OddsApiIoAdapter extends BaseArbitrageAdapter {
     apiKey: string,
     context?: ProviderRequestContext
   ): Promise<ArbitrageOpportunity[]> {
-    const httpFetch = (globalThis as any).fetch as
+    const httpFetch = (globalThis as { fetch?: typeof fetch }).fetch as
       | ((
           input: string,
           init?: {
@@ -181,7 +355,9 @@ export class OddsApiIoAdapter extends BaseArbitrageAdapter {
 
     try {
       let selectedBookmakers = cachedSelectedBookmakers?.bookmakers ?? []
-      const cacheAgeMs = cachedSelectedBookmakers ? Date.now() - cachedSelectedBookmakers.fetchedAtMs : Infinity
+      const cacheAgeMs = cachedSelectedBookmakers
+        ? Date.now() - cachedSelectedBookmakers.fetchedAtMs
+        : Infinity
 
       if (!selectedBookmakers.length || cacheAgeMs > SELECTED_BOOKMAKERS_TTL_MS) {
         selectedBookmakers = await getSelectedBookmakers(apiKey)
@@ -194,41 +370,14 @@ export class OddsApiIoAdapter extends BaseArbitrageAdapter {
         )
       }
 
-      const url = new URL(ODDS_API_IO_ARBS_PATH, ODDS_API_IO_BASE_URL)
-      url.searchParams.set('apiKey', apiKey)
-      url.searchParams.set('bookmakers', selectedBookmakers.join(','))
-      url.searchParams.set('includeEventDetails', 'true')
-      url.searchParams.set('limit', '500') // Max limit to get all available opportunities
+      const result = await fetchArbitrageBets(httpFetch, selectedBookmakers, apiKey, context)
 
-      const response = await httpFetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json'
-        }
-      })
-
-      responseStatus = response.status
-
-      if (!response.ok) {
-        const message = await response
-          .text()
-          .then((text) => text || `Odds-API.io request failed with status ${response.status}`)
-          .catch(() => `Odds-API.io request failed with status ${response.status}`)
-
-        const error = new Error(message)
-        ;(error as { status?: number }).status = response.status
-        throw error
+      if (!result.ok) {
+        throw result.error
       }
 
-      const body = (await response.json()) as unknown
-
-      const rawBets: unknown[] = Array.isArray(body)
-        ? body
-        : Array.isArray((body as { data?: unknown[] }).data)
-          ? (body as { data: unknown[] }).data
-          : Array.isArray((body as { bets?: unknown[] }).bets)
-            ? (body as { bets: unknown[] }).bets
-            : []
+      const rawBets = result.data
+      responseStatus = 200 // Success path
 
       logInfo('adapter.debug', {
         context: 'adapter:odds-api-io',
@@ -245,8 +394,9 @@ export class OddsApiIoAdapter extends BaseArbitrageAdapter {
 
       const opportunities = rawBets
         .map((item) => normalizeOddsApiIoOpportunity(item as OddsApiIoRawArbitrageBet, nowIso))
-        .filter((opportunity): opportunity is ArbitrageOpportunity =>
-          opportunity !== null && opportunity.roi >= 0
+        .filter(
+          (opportunity): opportunity is ArbitrageOpportunity =>
+            opportunity !== null && opportunity.roi >= 0
         )
 
       const durationMs = Date.now() - startedAt
@@ -279,7 +429,8 @@ export class OddsApiIoAdapter extends BaseArbitrageAdapter {
         providerId: this.id,
         correlationId,
         durationMs,
-        errorCategory: typeof status === 'number' && status >= 400 ? 'ProviderError' : 'SystemError',
+        errorCategory:
+          typeof status === 'number' && status >= 400 ? 'ProviderError' : 'SystemError',
         success: false,
         httpStatus: status,
         message: (error as Error)?.message ?? 'Odds-API.io adapter error',

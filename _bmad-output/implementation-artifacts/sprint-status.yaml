@@ -99,3 +99,7 @@ development_status:
   8-6-dedicated-settings-tab: review
   8-7-wide-fetch-incremental-update-mode: done
   epic-8-retrospective: optional
+  epic-9: in-progress
+  9-1-fix-arbitrage-endpoint-host: done
+  9-2-add-canonical-fields-to-event-model: done
+  9-3-fix-event-extraction-priority-slug-first: done

@@ -93,14 +93,24 @@ import {
   getAvailableSportsDetails,
   getAvailableLeagues,
   getLeaguePresets,
-  applyLeaguePreset,
-  // Story 8.7: Aggressive scan exports
+  applyLeaguePreset
+} from './deepScan'
+// Story 8.7: Aggressive scan with dynamic presets
+import {
   startAggressiveScan,
   stopAggressiveScan,
   setAggressiveScanConfig,
   getAggressiveScanConfig,
-  getAggressiveScanStats
-} from './deepScan'
+  getAggressiveScanStats,
+  setQuotaConfig,
+  getQuotaConfig,
+  setPlanTier,
+  detectPlanTierFromRateLimit
+} from './aggressiveScan'
+import { 
+  buildDynamicPresets, 
+  type DiscoveredLeague
+} from '../../../shared/aggressiveScanPresets'
 
 const t = initTRPC.create()
 
@@ -800,10 +810,17 @@ export const appRouter = t.router({
     )
     .mutation(async ({ input }) => {
       // Import the preset functions
-      const { getLeagueIdsFromPresets } = await import('../../../shared/aggressiveScanPresets')
+      const { getLeagueIdsFromPresets, generatePresets } = await import('../../../shared/aggressiveScanPresets')
+      
+      // Get discovered leagues to build proper presets
+      const discoveredLeagues = getAvailableLeagues()
+      const discoveredSports = getAvailableSportsDetails()
+      
+      // Generate presets with actual API data
+      const presets = generatePresets(discoveredLeagues, discoveredSports)
 
       // Get all league IDs from presets and custom selections
-      const presetLeagueIds = getLeagueIdsFromPresets(input.presetIds)
+      const presetLeagueIds = getLeagueIdsFromPresets(presets, input.presetIds)
       const allLeagueIds = [...new Set([...presetLeagueIds, ...input.customLeagueIds])]
 
       // Configure the aggressive scan with the selection
@@ -819,6 +836,122 @@ export const appRouter = t.router({
       await startAggressiveScan()
 
       return { ok: true, leagueCount: allLeagueIds.length }
+    }),
+
+  // ============================================================
+  // Dynamic Presets with API Data (Story 8.7 enhancement)
+  // ============================================================
+
+  /**
+   * Get dynamic presets built from actual API data.
+   * Returns presets with real league slugs and event counts from the API.
+   */
+  getDynamicAggressiveScanPresets: t.procedure.query(() => {
+    const discoveredLeagues = getAvailableLeagues()
+    const discoveredSports = getAvailableSportsDetails()
+    const currentQuotaConfig = getQuotaConfig()
+
+    const result = buildDynamicPresets({
+      discoveredLeagues,
+      discoveredSports,
+      planTier: currentQuotaConfig.planTier,
+      hourlyLimit: currentQuotaConfig.hourlyLimit,
+      targetPercent: currentQuotaConfig.targetPercent
+    })
+
+    return {
+      presets: result.presets,
+      quotaConfig: result.quotaConfig,
+      availableSports: result.availableSports,
+      availableLeagues: result.availableLeagues,
+      usedApiData: result.usedApiData
+    }
+  }),
+
+  /**
+   * Refresh presets by fetching fresh data from the API.
+   * Call this when you want to update the cached sports/leagues.
+   */
+  refreshDynamicAggressiveScanPresets: t.procedure.mutation(async () => {
+    const apiKey = await getApiKeyForAdapter('odds-api-io')
+    if (!apiKey) {
+      throw new Error('API key not configured for provider odds-api-io')
+    }
+
+    // Fetch fresh sports and leagues data
+    const sports = await fetchAvailableSports({ apiKey })
+    
+    // For each sport, fetch its leagues
+    const allLeagues: DiscoveredLeague[] = []
+    for (const sport of sports) {
+      try {
+        const leagues = await fetchAvailableLeagues({ apiKey, sport: sport.slug })
+        allLeagues.push(...leagues)
+      } catch {
+        // Continue with other sports if one fails
+      }
+    }
+
+    const currentQuotaConfig = getQuotaConfig()
+
+    const result = buildDynamicPresets({
+      discoveredLeagues: allLeagues,
+      discoveredSports: sports,
+      planTier: currentQuotaConfig.planTier,
+      hourlyLimit: currentQuotaConfig.hourlyLimit,
+      targetPercent: currentQuotaConfig.targetPercent
+    })
+
+    return {
+      presets: result.presets,
+      quotaConfig: result.quotaConfig,
+      availableSports: result.availableSports,
+      availableLeagues: result.availableLeagues,
+      usedApiData: result.usedApiData
+    }
+  }),
+
+  /**
+   * Get current quota configuration.
+   */
+  getQuotaConfig: t.procedure.query(() => {
+    return getQuotaConfig()
+  }),
+
+  /**
+   * Set quota configuration based on plan tier.
+   */
+  setQuotaConfig: t.procedure
+    .input(
+      z.object({
+        planTier: z.enum(['free', 'paid']),
+        targetPercent: z.number().min(50).max(95).optional()
+      })
+    )
+    .mutation(({ input }) => {
+      setPlanTier(input.planTier)
+      
+      // If target percent specified, update it
+      if (input.targetPercent !== undefined) {
+        const current = getQuotaConfig()
+        setQuotaConfig({
+          ...current,
+          targetPercent: input.targetPercent
+        })
+      }
+      
+      return { ok: true, config: getQuotaConfig() }
+    }),
+
+  /**
+   * Auto-detect plan tier from API rate limit headers.
+   * Call this when you receive rate limit headers from the API.
+   */
+  detectPlanTier: t.procedure
+    .input(z.object({ observedLimit: z.number().min(1) }))
+    .mutation(({ input }) => {
+      const detectedTier = detectPlanTierFromRateLimit(input.observedLimit)
+      return { ok: true, detectedTier, config: getQuotaConfig() }
     })
 })
 
