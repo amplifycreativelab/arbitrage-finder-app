@@ -25,7 +25,11 @@ import {
 } from '../../../shared/types'
 import { type QuotaConfig, createQuotaConfig, type ApiPlanTier } from '../../../shared/aggressiveScanPresets'
 import type { DeepScanEvent } from './deepScan'
-import { logInfo, logWarn, logDebug, createCorrelationId, type StructuredLogBase } from './logger'
+import { logInfo, logWarn, logDebug, logError, createCorrelationId, type StructuredLogBase } from './logger'
+import { getSelectedBookmakers } from './odds-api-io-bookmakers'
+import { calculateTwoLegArbitrageRoi } from './calculator'
+import { net } from 'electron'
+import { getApiKeyForAdapter } from '../credentials'
 
 // ============================================================================
 // Constants
@@ -39,6 +43,13 @@ const DEFAULT_BUFFER_PERCENT = 20
 let quotaConfig: QuotaConfig = createQuotaConfig('paid')
 const MAX_ODDS_HISTORY_SNAPSHOTS = 3
 const BATCH_SIZE_MAX = 10
+const BOOKMAKER_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes - ONLY for bookmaker LIST
+
+// API Configuration
+const ODDS_API_IO_BASE_URL = 'https://api.odds-api.io'
+const ODDS_API_IO_ODDS_MULTI_PATH = '/v3/odds/multi'
+const BATCH_DELAY_MS = 100 // Delay between batch requests to avoid rate limiting
+const MAX_BOOKMAKERS_PER_REQUEST = 30 // API limit for bookmakers parameter
 const TIER_PROMOTION_INTERVAL_MS = 30000 // Check for tier promotions every 30 seconds
 const EVENT_EVICT_AFTER_MINUTES = 30 // Remove finished events after 30 minutes
 
@@ -76,6 +87,367 @@ const tierPollTimers = new Map<EventTier, ReturnType<typeof setInterval>>()
 
 // Cold start tracking
 let coldStartProgress: ColdStartProgress | null = null
+
+// Bookmaker list cache (cached for 5 min - bookmaker names only, NOT odds)
+let cachedBookmakers: { fetchedAtMs: number; bookmakers: string[] } | null = null
+
+// ============================================================================
+// HTTP Fetch Helper
+// ============================================================================
+
+/**
+ * Get HTTP fetch implementation.
+ * Uses Electron's net.fetch in main process, falls back to globalThis.fetch.
+ */
+function getHttpFetch(): typeof fetch {
+  if (typeof net?.fetch === 'function') {
+    return net.fetch as unknown as typeof fetch
+  }
+
+  const httpFetch = (globalThis as { fetch?: typeof fetch }).fetch
+  if (typeof httpFetch === 'function') {
+    return httpFetch
+  }
+
+  throw new Error('No fetch implementation available for aggressive scan')
+}
+
+// ============================================================================
+// Bookmaker Cache (Story 9.5 Task 2)
+// ============================================================================
+
+/**
+ * Get cached bookmaker LIST (names only, not odds).
+ * This caches the user's selected bookmakers to avoid repeated settings lookups.
+ * ODDS THEMSELVES ARE ALWAYS FRESH - fetched from /v3/odds/multi every poll.
+ *
+ * @param apiKey - API key for fetching bookmakers
+ * @returns Array of bookmaker names
+ */
+async function getCachedBookmakers(apiKey: string): Promise<string[]> {
+  let bookmakers = cachedBookmakers?.bookmakers ?? []
+  const cacheAgeMs = cachedBookmakers ? Date.now() - cachedBookmakers.fetchedAtMs : Infinity
+
+  if (!bookmakers.length || cacheAgeMs > BOOKMAKER_CACHE_TTL_MS) {
+    bookmakers = await getSelectedBookmakers(apiKey)
+    cachedBookmakers = { fetchedAtMs: Date.now(), bookmakers }
+
+    logDebug('aggressiveScan.bookmakers.refreshed', {
+      context: 'service:aggressiveScan',
+      operation: 'getCachedBookmakers',
+      providerId: 'odds-api-io',
+      correlationId: correlationId ?? undefined,
+      durationMs: null,
+      errorCategory: null,
+      bookmakerCount: bookmakers.length,
+      cacheAgeMs: cacheAgeMs === Infinity ? 'cold-start' : cacheAgeMs
+    } satisfies StructuredLogBase)
+  }
+
+  return bookmakers
+}
+
+// ============================================================================
+// Batch Odds Fetching (Story 9.5 Task 1)
+// ============================================================================
+
+/**
+ * Fetch odds for a batch of events using /v3/odds/multi endpoint.
+ * Batches events into groups of 10 (API maximum).
+ *
+ * Story 9.5 AC1: Uses /v3/odds/multi endpoint
+ * Story 9.5 AC2: Batch size limited to 10 events
+ * Story 9.5 AC4: Accepts real DeepScanEvent objects
+ * Story 9.5 AC6: Requests are batched at 10 events wherever possible
+ *
+ * @param events - DeepScanEvent objects to fetch odds for
+ * @param apiKey - API key for authentication
+ * @param signal - AbortSignal for cancellation
+ * @returns Array of RawOddsPayload results
+ */
+async function fetchOddsForEvents(
+  events: DeepScanEvent[],
+  apiKey: string,
+  signal: AbortSignal
+): Promise<RawOddsPayload[]> {
+  if (events.length === 0) {
+    return []
+  }
+
+  // Get cached bookmakers (with TTL check)
+  const bookmakers = await getCachedBookmakers(apiKey)
+
+  if (!bookmakers.length) {
+    logWarn('aggressiveScan.fetchOdds.noBookmakers', {
+      context: 'service:aggressiveScan',
+      operation: 'fetchOddsForEvents',
+      providerId: 'odds-api-io',
+      correlationId: correlationId ?? undefined,
+      durationMs: null,
+      errorCategory: 'UserError',
+      message: 'No bookmakers configured for aggressive scan'
+    } satisfies StructuredLogBase)
+    return []
+  }
+
+  // Warn if bookmakers will be truncated
+  if (bookmakers.length > MAX_BOOKMAKERS_PER_REQUEST) {
+    logWarn('aggressiveScan.fetchOdds.bookmakersTruncated', {
+      context: 'service:aggressiveScan',
+      operation: 'fetchOddsForEvents',
+      providerId: 'odds-api-io',
+      correlationId: correlationId ?? undefined,
+      durationMs: null,
+      errorCategory: null,
+      configuredCount: bookmakers.length,
+      maxAllowed: MAX_BOOKMAKERS_PER_REQUEST,
+      message: `Configured ${bookmakers.length} bookmakers but API allows max ${MAX_BOOKMAKERS_PER_REQUEST}. Some bookmakers will be excluded.`
+    } satisfies StructuredLogBase)
+  }
+
+  const httpFetch = getHttpFetch()
+  const allResults: RawOddsPayload[] = []
+
+  // Batch events into groups of 10 (AC2, AC6)
+  const batches: DeepScanEvent[][] = []
+  for (let i = 0; i < events.length; i += BATCH_SIZE_MAX) {
+    batches.push(events.slice(i, i + BATCH_SIZE_MAX))
+  }
+
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex]
+    if (signal.aborted) {
+      break
+    }
+
+    // Add delay between batches to avoid rate limiting (skip delay for first batch)
+    if (batchIndex > 0) {
+      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS))
+    }
+
+    const eventIds = batch.map(e => e.id).join(',')
+    const url = new URL(ODDS_API_IO_ODDS_MULTI_PATH, ODDS_API_IO_BASE_URL)
+    url.searchParams.set('apiKey', apiKey)
+    url.searchParams.set('eventIds', eventIds)
+    url.searchParams.set('bookmakers', bookmakers.slice(0, MAX_BOOKMAKERS_PER_REQUEST).join(','))
+
+    try {
+      const startTime = Date.now()
+      const response = await httpFetch(url.toString(), {
+        method: 'GET',
+        signal,
+        headers: { Accept: 'application/json' }
+      })
+
+      if (!response.ok) {
+        const message = await response.text().catch(() => `Batch odds request failed with status ${response.status}`)
+        logWarn('aggressiveScan.fetchOdds.failed', {
+          context: 'service:aggressiveScan',
+          operation: 'fetchOddsForEvents',
+          providerId: 'odds-api-io',
+          correlationId: correlationId ?? undefined,
+          durationMs: Date.now() - startTime,
+          errorCategory: 'ProviderError',
+          status: response.status,
+          eventCount: batch.length,
+          message
+        } satisfies StructuredLogBase)
+        continue
+      }
+
+      const body = await response.json() as unknown
+      const batchResults = parseBatchOddsResponse(body, batch)
+      allResults.push(...batchResults)
+
+      logDebug('aggressiveScan.fetchOdds.batch', {
+        context: 'service:aggressiveScan',
+        operation: 'fetchOddsForEvents',
+        providerId: 'odds-api-io',
+        correlationId: correlationId ?? undefined,
+        durationMs: Date.now() - startTime,
+        errorCategory: null,
+        batchSize: batch.length,
+        resultsCount: batchResults.length
+      } satisfies StructuredLogBase)
+
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        break
+      }
+
+      logError('aggressiveScan.fetchOdds.error', {
+        context: 'service:aggressiveScan',
+        operation: 'fetchOddsForEvents',
+        providerId: 'odds-api-io',
+        correlationId: correlationId ?? undefined,
+        durationMs: null,
+        errorCategory: 'ProviderError',
+        message: (error as Error).message,
+        eventCount: batch.length
+      } satisfies StructuredLogBase)
+    }
+  }
+
+  return allResults
+}
+
+/**
+ * Parse batch odds response from /v3/odds/multi endpoint.
+ * Converts API response to RawOddsPayload format.
+ */
+function parseBatchOddsResponse(
+  body: unknown,
+  requestedEvents: DeepScanEvent[]
+): RawOddsPayload[] {
+  const results: RawOddsPayload[] = []
+
+  // Handle array response (expected format)
+  const items = Array.isArray(body) ? body :
+    (body && typeof body === 'object' && Array.isArray((body as { data?: unknown[] }).data))
+      ? (body as { data: unknown[] }).data
+      : []
+
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue
+
+    // Extract event ID
+    const rawId = (item as { id?: unknown; eventId?: unknown }).id ??
+                  (item as { eventId?: unknown }).eventId
+    const eventId = rawId != null ? String(rawId) : null
+
+    if (!eventId) continue
+
+    // Find matching event
+    const event = requestedEvents.find(e => e.id === eventId)
+    if (!event) continue
+
+    // Extract bookmakers
+    const rawBookmakers = (item as { bookmakers?: unknown[] }).bookmakers
+    if (!Array.isArray(rawBookmakers)) continue
+
+    const bookmakers: RawOddsPayload['bookmakers'] = []
+    for (const bk of rawBookmakers) {
+      if (!bk || typeof bk !== 'object') continue
+
+      const name = (bk as { name?: unknown }).name
+      if (typeof name !== 'string') continue
+
+      const rawMarkets = (bk as { markets?: unknown[] }).markets
+      if (!Array.isArray(rawMarkets)) continue
+
+      const markets: RawOddsPayload['bookmakers'][number]['markets'] = []
+      for (const mkt of rawMarkets) {
+        if (!mkt || typeof mkt !== 'object') continue
+
+        const key = (mkt as { key?: unknown }).key
+        if (typeof key !== 'string') continue
+
+        const rawOutcomes = (mkt as { outcomes?: unknown[] }).outcomes
+        if (!Array.isArray(rawOutcomes)) continue
+
+        const outcomes: RawOddsPayload['bookmakers'][number]['markets'][number]['outcomes'] = []
+        for (const out of rawOutcomes) {
+          if (!out || typeof out !== 'object') continue
+
+          const outName = (out as { name?: unknown }).name
+          const odds = (out as { price?: unknown; odds?: unknown }).price ?? (out as { odds?: unknown }).odds
+
+          if (typeof outName === 'string' && typeof odds === 'number') {
+            outcomes.push({ name: outName, odds })
+          }
+        }
+
+        if (outcomes.length > 0) {
+          markets.push({ key, outcomes })
+        }
+      }
+
+      if (markets.length > 0) {
+        bookmakers.push({ name, markets })
+      }
+    }
+
+    if (bookmakers.length > 0) {
+      results.push({
+        event: {
+          id: eventId,
+          name: event.name,
+          date: event.date ?? '',
+          league: event.league ?? '',
+          sport: event.sport ?? ''
+        },
+        bookmakers
+      })
+    }
+  }
+
+  return results
+}
+
+// ============================================================================
+// Arbitrage Computation (Story 9.5 Task 3)
+// ============================================================================
+
+/**
+ * Compute arbitrage opportunities from odds payload.
+ * Returns the number of arbitrage opportunities found.
+ *
+ * Story 9.5 AC5: Compute arbitrage opportunities from fetched odds
+ */
+function computeArbitrageFromOdds(odds: RawOddsPayload): number {
+  let arbCount = 0
+
+  // Build best odds map per market/outcome
+  const bestOddsByMarket = new Map<string, Map<string, { odds: number; bookmaker: string }>>()
+
+  for (const bookmaker of odds.bookmakers) {
+    for (const market of bookmaker.markets) {
+      if (!bestOddsByMarket.has(market.key)) {
+        bestOddsByMarket.set(market.key, new Map())
+      }
+      const outcomeMap = bestOddsByMarket.get(market.key)!
+
+      for (const outcome of market.outcomes) {
+        const existing = outcomeMap.get(outcome.name)
+        if (!existing || outcome.odds > existing.odds) {
+          outcomeMap.set(outcome.name, { odds: outcome.odds, bookmaker: bookmaker.name })
+        }
+      }
+    }
+  }
+
+  // Check for two-way arbitrage opportunities
+  for (const [marketKey, outcomeMap] of bestOddsByMarket.entries()) {
+    const outcomes = Array.from(outcomeMap.entries())
+
+    // Two-way markets (h2h, over/under, etc.)
+    if (outcomes.length === 2) {
+      const [first, second] = outcomes
+      const roi = calculateTwoLegArbitrageRoi(first[1].odds, second[1].odds)
+
+      if (roi > 0) {
+        arbCount++
+        logDebug('aggressiveScan.arb.detected', {
+          context: 'service:aggressiveScan',
+          operation: 'computeArbitrageFromOdds',
+          providerId: 'odds-api-io',
+          correlationId: correlationId ?? undefined,
+          durationMs: null,
+          errorCategory: null,
+          eventId: odds.event.id,
+          marketKey,
+          roi: roi.toFixed(4),
+          odds1: first[1].odds,
+          odds2: second[1].odds,
+          bookmaker1: first[1].bookmaker,
+          bookmaker2: second[1].bookmaker
+        } satisfies StructuredLogBase)
+      }
+    }
+  }
+
+  return arbCount
+}
 
 // ============================================================================
 // Configuration
@@ -1203,27 +1575,85 @@ async function pollTier(tier: EventTier): Promise<TieredPollResult> {
   let totalArbsFound = 0
   const startTime = Date.now()
 
+  // Get API key for odds fetching
+  const apiKey = await getApiKeyForAdapter('odds-api-io')
+  if (!apiKey) {
+    logWarn('aggressiveScan.pollTier.noApiKey', {
+      context: 'service:aggressiveScan',
+      operation: 'pollTier',
+      providerId: 'odds-api-io',
+      correlationId: correlationId ?? undefined,
+      durationMs: null,
+      errorCategory: 'UserError',
+      tier,
+      message: 'No API key configured for odds-api-io'
+    } satisfies StructuredLogBase)
+
+    return {
+      tier,
+      eventsPolled: 0,
+      arbsFound: 0,
+      latencyMs: 0,
+      timestamp: new Date().toISOString()
+    }
+  }
+
   for (const batch of batches) {
     if (!isRunning || abortController?.signal.aborted) {
       break
     }
 
-    // Record request usage
+    // Convert TieredEvent to DeepScanEvent for the fetcher (AC4)
+    // Include slug fields from Story 9.2 for proper cross-provider matching
+    const deepScanEvents: DeepScanEvent[] = batch.map(tieredEvent => ({
+      id: tieredEvent.id,
+      name: tieredEvent.name,
+      date: tieredEvent.date,
+      league: tieredEvent.league,
+      sport: tieredEvent.sport,
+      leagueSlug: (tieredEvent as { leagueSlug?: string }).leagueSlug,
+      sportSlug: (tieredEvent as { sportSlug?: string }).sportSlug,
+      kickoffEpochMs: tieredEvent.date ? new Date(tieredEvent.date).getTime() : undefined
+    }))
+
+    // Fetch FRESH odds using batch endpoint (Story 9.5 AC1, AC5)
+    // Bookmaker list may be cached (5min TTL), but odds are always fresh
+    const oddsResults = await fetchOddsForEvents(
+      deepScanEvents,
+      apiKey,
+      abortController!.signal
+    )
+
+    // Record request usage (1 request per batch)
     recordRequest(1)
     if (quotaBudget) {
       quotaBudget.perTier[tier].usedThisHour++
     }
 
-    // Update event poll metadata
+    // Process results and update caches (Story 9.5 AC5)
+    for (const odds of oddsResults) {
+      // Compute arbs from odds
+      const arbsFound = computeArbitrageFromOdds(odds)
+      totalArbsFound += arbsFound
+
+      // Update odds cache
+      updateOddsCache(odds.event.id, odds, arbsFound)
+
+      // Boost events with arbs (Story 9.5 AC5)
+      if (arbsFound > 0) {
+        boostEvent(odds.event.id, 'arb_detected')
+      }
+    }
+
+    // Arb tracking is done once per pollTier call, not per-batch (see after batch loop)
+
+    // Update event poll metadata (Story 9.5 AC5)
     const now = new Date().toISOString()
     for (const event of batch) {
       event.lastPolledAt = now
       event.pollCount++
     }
 
-    // Note: Actual odds fetching would happen here
-    // For now, we're tracking the poll
-    
     lastPollAt = now
   }
 
@@ -1312,6 +1742,7 @@ export const __test = {
     lastPollAt = null
     scanStartedAt = null
     coldStartProgress = null
+    cachedBookmakers = null // Reset bookmaker cache
   },
   
   getTierCache(): Map<EventTier, Map<string, TieredEvent>> {
@@ -1346,8 +1777,13 @@ export const __test = {
     HOURLY_REQUEST_LIMIT = limit
   },
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _unusedPlaceholder(_tier: string): void {
-    // Placeholder to satisfy TS until full implementation
+  // Story 9.5: Test helper to get bookmaker cache
+  getBookmakerCache(): { fetchedAtMs: number; bookmakers: string[] } | null {
+    return cachedBookmakers
+  },
+
+  // Story 9.5: Test helper to set bookmaker cache
+  setBookmakerCache(cache: { fetchedAtMs: number; bookmakers: string[] } | null): void {
+    cachedBookmakers = cache
   }
 }
