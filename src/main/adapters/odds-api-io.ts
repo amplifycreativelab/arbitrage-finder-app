@@ -70,7 +70,26 @@ export function normalizeOddsApiIoOpportunity(
       : `Event ${raw.eventId}`)
   const eventDate = raw.event?.date ?? new Date().toISOString()
   const eventLeague = raw.event?.league ?? ''
-  const sport = raw.event?.sport ?? raw.sport ?? 'soccer'
+
+  // Normalize sport value to match our SportFilterValue type
+  const rawSport = (raw.event?.sport ?? raw.sport ?? 'soccer').toLowerCase()
+  let sport = 'soccer'
+  if (rawSport.includes('soccer') || (rawSport.includes('football') && !rawSport.includes('american'))) {
+    sport = 'soccer'
+  } else if (rawSport.includes('tennis')) {
+    sport = 'tennis'
+  } else if (
+    rawSport.includes('basketball') ||
+    rawSport.includes('nba') ||
+    rawSport.includes('ncaab') ||
+    rawSport.includes('euroleague') ||
+    rawSport.includes('wnba')
+  ) {
+    sport = 'basketball'
+  } else {
+    // For unrecognized sports, use the raw value
+    sport = rawSport
+  }
 
   // Normalize legs - map 'side' to 'outcome' and convert odds string to number
   const normalizedLegs = raw.legs.slice(0, 2).map((leg) => ({
