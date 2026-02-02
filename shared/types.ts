@@ -507,7 +507,271 @@ export const MARKET_PATTERNS: Record<string, { group: MarketGroup; baseType: str
   penalty_scored: { group: 'other', baseType: 'penalty' },
   own_goal_scored: { group: 'other', baseType: 'own_goal' },
   throw_in_totals: { group: 'other', baseType: 'throw_ins' },
-  goal_kick_totals: { group: 'other', baseType: 'goal_kicks' }
+  goal_kick_totals: { group: 'other', baseType: 'goal_kicks' },
+
+  // ============================================================================
+  // Tennis-specific 2-way markets
+  // ============================================================================
+  // Tennis uses games/sets instead of goals, but we map to 'goals' group for consistency
+
+  // Tennis match winner (h2h) - 2-way market (no draws in tennis)
+  tennis_h2h: { group: 'goals', baseType: 'moneyline' },
+  tennis_moneyline: { group: 'goals', baseType: 'moneyline' },
+  match_winner: { group: 'goals', baseType: 'moneyline' },
+
+  // Tennis game totals (over/under total games in match)
+  game_totals: { group: 'goals', baseType: 'game_totals' },
+  games_over: { group: 'goals', baseType: 'game_totals' },
+  games_under: { group: 'goals', baseType: 'game_totals' },
+  total_games: { group: 'goals', baseType: 'game_totals' },
+  games_over_under: { group: 'goals', baseType: 'game_totals' },
+  match_games: { group: 'goals', baseType: 'game_totals' },
+
+  // Tennis set totals (over/under total sets)
+  set_totals: { group: 'goals', baseType: 'set_totals' },
+  sets_over: { group: 'goals', baseType: 'set_totals' },
+  sets_under: { group: 'goals', baseType: 'set_totals' },
+  total_sets: { group: 'goals', baseType: 'set_totals' },
+  match_sets: { group: 'goals', baseType: 'set_totals' },
+
+  // Tennis game spreads/handicaps
+  game_spread: { group: 'handicap', baseType: 'game_spread' },
+  game_spreads: { group: 'handicap', baseType: 'game_spread' },
+  games_handicap: { group: 'handicap', baseType: 'game_spread' },
+  tennis_handicap: { group: 'handicap', baseType: 'game_spread' },
+  tennis_spread: { group: 'handicap', baseType: 'game_spread' },
+
+  // Tennis set spreads/handicaps
+  set_spread: { group: 'handicap', baseType: 'set_spread' },
+  set_spreads: { group: 'handicap', baseType: 'set_spread' },
+  sets_handicap: { group: 'handicap', baseType: 'set_spread' },
+  set_handicap: { group: 'handicap', baseType: 'set_spread' },
+
+  // Tennis player games (individual player totals)
+  player_games: { group: 'goals', baseType: 'player_games' },
+  player1_games: { group: 'goals', baseType: 'player_games' },
+  player2_games: { group: 'goals', baseType: 'player_games' },
+  player_games_over: { group: 'goals', baseType: 'player_games' },
+  player_games_under: { group: 'goals', baseType: 'player_games' },
+
+  // Tennis first set winner
+  first_set_winner: { group: 'goals', baseType: 'first_set_winner' },
+  set_1_winner: { group: 'goals', baseType: 'first_set_winner' },
+  set1_winner: { group: 'goals', baseType: 'first_set_winner' },
+  second_set_winner: { group: 'goals', baseType: 'set_winner' },
+  set_2_winner: { group: 'goals', baseType: 'set_winner' },
+  third_set_winner: { group: 'goals', baseType: 'set_winner' },
+
+  // Tennis tie-break markets (2-way yes/no)
+  tie_break: { group: 'other', baseType: 'tie_break' },
+  tiebreak: { group: 'other', baseType: 'tie_break' },
+  tie_break_yes: { group: 'other', baseType: 'tie_break' },
+  tie_break_no: { group: 'other', baseType: 'tie_break' },
+  tiebreak_in_match: { group: 'other', baseType: 'tie_break' },
+  any_tiebreak: { group: 'other', baseType: 'tie_break' },
+  tie_break_1st_set: { group: 'other', baseType: 'tie_break_set' },
+  tiebreak_set_1: { group: 'other', baseType: 'tie_break_set' },
+
+  // Tennis aces (over/under)
+  aces: { group: 'other', baseType: 'aces' },
+  total_aces: { group: 'other', baseType: 'aces' },
+  aces_over: { group: 'other', baseType: 'aces' },
+  aces_under: { group: 'other', baseType: 'aces' },
+  match_aces: { group: 'other', baseType: 'aces' },
+  player_aces: { group: 'other', baseType: 'player_aces' },
+  player1_aces: { group: 'other', baseType: 'player_aces' },
+  player2_aces: { group: 'other', baseType: 'player_aces' },
+
+  // Tennis double faults (over/under)
+  double_faults: { group: 'other', baseType: 'double_faults' },
+  total_double_faults: { group: 'other', baseType: 'double_faults' },
+  double_faults_over: { group: 'other', baseType: 'double_faults' },
+  double_faults_under: { group: 'other', baseType: 'double_faults' },
+  player_double_faults: { group: 'other', baseType: 'player_double_faults' },
+
+  // Tennis break of serve (yes/no)
+  break_of_serve: { group: 'other', baseType: 'break_of_serve' },
+  break_in_match: { group: 'other', baseType: 'break_of_serve' },
+  service_break: { group: 'other', baseType: 'break_of_serve' },
+  player_to_be_broken: { group: 'other', baseType: 'break_of_serve' },
+
+  // Tennis set betting (exact set score)
+  set_betting: { group: 'other', baseType: 'set_betting' },
+  correct_set_score: { group: 'other', baseType: 'set_betting' },
+  exact_sets: { group: 'other', baseType: 'set_betting' },
+  set_score: { group: 'other', baseType: 'set_betting' },
+
+  // Tennis first set games (over/under games in set 1)
+  first_set_games: { group: 'goals', baseType: 'first_set_games' },
+  set_1_games: { group: 'goals', baseType: 'first_set_games' },
+  set1_games_over: { group: 'goals', baseType: 'first_set_games' },
+  set1_games_under: { group: 'goals', baseType: 'first_set_games' },
+
+  // ============================================================================
+  // Basketball-specific 2-way markets
+  // ============================================================================
+  // Basketball h2h (match winner) - 2-way market (no draw possible)
+  basketball_h2h: { group: 'goals', baseType: 'moneyline' },
+  basketball_moneyline: { group: 'goals', baseType: 'moneyline' },
+
+  // Basketball points totals (over/under)
+  points_totals: { group: 'goals', baseType: 'points_totals' },
+  points_over: { group: 'goals', baseType: 'points_totals' },
+  points_under: { group: 'goals', baseType: 'points_totals' },
+  total_points: { group: 'goals', baseType: 'points_totals' },
+  points_over_under: { group: 'goals', baseType: 'points_totals' },
+  match_points: { group: 'goals', baseType: 'points_totals' },
+  game_total: { group: 'goals', baseType: 'points_totals' },
+
+  // Basketball spreads (point handicaps)
+  point_spread: { group: 'handicap', baseType: 'point_spread' },
+  point_spreads: { group: 'handicap', baseType: 'point_spread' },
+  points_spread: { group: 'handicap', baseType: 'point_spread' },
+  points_handicap: { group: 'handicap', baseType: 'point_spread' },
+  basketball_spread: { group: 'handicap', baseType: 'point_spread' },
+  basketball_handicap: { group: 'handicap', baseType: 'point_spread' },
+
+  // Basketball team totals (over/under per team)
+  team_points: { group: 'goals', baseType: 'team_points' },
+  home_points: { group: 'goals', baseType: 'team_points' },
+  away_points: { group: 'goals', baseType: 'team_points' },
+  team_points_over: { group: 'goals', baseType: 'team_points' },
+  team_points_under: { group: 'goals', baseType: 'team_points' },
+  home_team_total: { group: 'goals', baseType: 'team_points' },
+  away_team_total: { group: 'goals', baseType: 'team_points' },
+
+  // Basketball quarter markets
+  quarter_totals: { group: 'goals', baseType: 'quarter_totals' },
+  q1_totals: { group: 'goals', baseType: 'quarter_totals' },
+  q2_totals: { group: 'goals', baseType: 'quarter_totals' },
+  q3_totals: { group: 'goals', baseType: 'quarter_totals' },
+  q4_totals: { group: 'goals', baseType: 'quarter_totals' },
+  quarter_1_total: { group: 'goals', baseType: 'quarter_totals' },
+  quarter_2_total: { group: 'goals', baseType: 'quarter_totals' },
+  quarter_3_total: { group: 'goals', baseType: 'quarter_totals' },
+  quarter_4_total: { group: 'goals', baseType: 'quarter_totals' },
+  q1_over_under: { group: 'goals', baseType: 'quarter_totals' },
+
+  // Basketball half markets
+  half_totals: { group: 'goals', baseType: 'half_totals' },
+  first_half_points: { group: 'goals', baseType: 'half_totals' },
+  second_half_points: { group: 'goals', baseType: 'half_totals' },
+  first_half_total: { group: 'goals', baseType: 'half_totals' },
+  second_half_total: { group: 'goals', baseType: 'half_totals' },
+  h1_totals: { group: 'goals', baseType: 'half_totals' },
+  h2_totals: { group: 'goals', baseType: 'half_totals' },
+
+  // Basketball quarter/half spreads
+  quarter_spread: { group: 'handicap', baseType: 'quarter_spread' },
+  half_spread: { group: 'handicap', baseType: 'half_spread' },
+  q1_spread: { group: 'handicap', baseType: 'quarter_spread' },
+  q2_spread: { group: 'handicap', baseType: 'quarter_spread' },
+  q3_spread: { group: 'handicap', baseType: 'quarter_spread' },
+  q4_spread: { group: 'handicap', baseType: 'quarter_spread' },
+  first_half_spread: { group: 'handicap', baseType: 'half_spread' },
+  second_half_spread: { group: 'handicap', baseType: 'half_spread' },
+  h1_spread: { group: 'handicap', baseType: 'half_spread' },
+  h2_spread: { group: 'handicap', baseType: 'half_spread' },
+
+  // Basketball quarter/half winner
+  quarter_winner: { group: 'goals', baseType: 'quarter_winner' },
+  q1_winner: { group: 'goals', baseType: 'quarter_winner' },
+  q2_winner: { group: 'goals', baseType: 'quarter_winner' },
+  q3_winner: { group: 'goals', baseType: 'quarter_winner' },
+  q4_winner: { group: 'goals', baseType: 'quarter_winner' },
+  first_half_winner: { group: 'goals', baseType: 'half_winner' },
+  second_half_winner: { group: 'goals', baseType: 'half_winner' },
+  half_winner: { group: 'goals', baseType: 'half_winner' },
+
+  // Basketball player points (over/under)
+  player_points: { group: 'other', baseType: 'player_points' },
+  player_points_over: { group: 'other', baseType: 'player_points' },
+  player_points_under: { group: 'other', baseType: 'player_points' },
+
+  // Basketball player rebounds (over/under)
+  player_rebounds: { group: 'other', baseType: 'player_rebounds' },
+  rebounds: { group: 'other', baseType: 'player_rebounds' },
+  rebounds_over: { group: 'other', baseType: 'player_rebounds' },
+  rebounds_under: { group: 'other', baseType: 'player_rebounds' },
+  total_rebounds: { group: 'other', baseType: 'player_rebounds' },
+
+  // Basketball player assists (over/under)
+  player_assists: { group: 'other', baseType: 'player_assists' },
+  assists: { group: 'other', baseType: 'player_assists' },
+  assists_over: { group: 'other', baseType: 'player_assists' },
+  assists_under: { group: 'other', baseType: 'player_assists' },
+  total_assists: { group: 'other', baseType: 'player_assists' },
+
+  // Basketball 3-pointers made (over/under)
+  three_pointers: { group: 'other', baseType: 'three_pointers' },
+  threes: { group: 'other', baseType: 'three_pointers' },
+  three_pointers_made: { group: 'other', baseType: 'three_pointers' },
+  threes_made: { group: 'other', baseType: 'three_pointers' },
+  player_threes: { group: 'other', baseType: 'player_threes' },
+  player_3pm: { group: 'other', baseType: 'player_threes' },
+
+  // Basketball steals (over/under)
+  player_steals: { group: 'other', baseType: 'player_steals' },
+  steals: { group: 'other', baseType: 'player_steals' },
+  steals_over: { group: 'other', baseType: 'player_steals' },
+  steals_under: { group: 'other', baseType: 'player_steals' },
+
+  // Basketball blocks (over/under)
+  player_blocks: { group: 'other', baseType: 'player_blocks' },
+  blocks: { group: 'other', baseType: 'player_blocks' },
+  blocks_over: { group: 'other', baseType: 'player_blocks' },
+  blocks_under: { group: 'other', baseType: 'player_blocks' },
+
+  // Basketball combo markets (PRA = Points + Rebounds + Assists)
+  points_rebounds_assists: { group: 'other', baseType: 'pra' },
+  pra: { group: 'other', baseType: 'pra' },
+  pra_over: { group: 'other', baseType: 'pra' },
+  pra_under: { group: 'other', baseType: 'pra' },
+  player_pra: { group: 'other', baseType: 'pra' },
+
+  // Basketball Points + Rebounds
+  points_rebounds: { group: 'other', baseType: 'points_rebounds' },
+  pr: { group: 'other', baseType: 'points_rebounds' },
+  player_pr: { group: 'other', baseType: 'points_rebounds' },
+
+  // Basketball Points + Assists
+  points_assists: { group: 'other', baseType: 'points_assists' },
+  pa: { group: 'other', baseType: 'points_assists' },
+  player_pa: { group: 'other', baseType: 'points_assists' },
+
+  // Basketball Rebounds + Assists
+  rebounds_assists: { group: 'other', baseType: 'rebounds_assists' },
+  ra: { group: 'other', baseType: 'rebounds_assists' },
+  player_ra: { group: 'other', baseType: 'rebounds_assists' },
+
+  // Basketball overtime (yes/no)
+  overtime: { group: 'other', baseType: 'overtime' },
+  overtime_yes: { group: 'other', baseType: 'overtime' },
+  overtime_no: { group: 'other', baseType: 'overtime' },
+  will_there_be_overtime: { group: 'other', baseType: 'overtime' },
+
+  // Basketball winning margin
+  winning_margin: { group: 'other', baseType: 'winning_margin' },
+  margin: { group: 'other', baseType: 'winning_margin' },
+  win_margin: { group: 'other', baseType: 'winning_margin' },
+
+  // Basketball race to X points
+  race_to_points: { group: 'other', baseType: 'race_to_points' },
+  race_to_20: { group: 'other', baseType: 'race_to_points' },
+  race_to_10: { group: 'other', baseType: 'race_to_points' },
+  first_to_score: { group: 'other', baseType: 'race_to_points' },
+
+  // Basketball double-double/triple-double (yes/no)
+  double_double: { group: 'other', baseType: 'double_double' },
+  player_double_double: { group: 'other', baseType: 'double_double' },
+  triple_double: { group: 'other', baseType: 'triple_double' },
+  player_triple_double: { group: 'other', baseType: 'triple_double' },
+
+  // Basketball alternate lines
+  alternate_spread: { group: 'handicap', baseType: 'alternate_spread' },
+  alternate_total: { group: 'goals', baseType: 'alternate_total' },
+  alt_spread: { group: 'handicap', baseType: 'alternate_spread' },
+  alt_total: { group: 'goals', baseType: 'alternate_total' }
 }
 
 /**

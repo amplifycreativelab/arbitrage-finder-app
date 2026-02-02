@@ -35,7 +35,8 @@ const REGION_OPTIONS = [
 // Sport display options
 const SPORT_OPTIONS = [
     { value: 'soccer' as SportFilterValue, label: 'Soccer', icon: '⚽' },
-    { value: 'tennis' as SportFilterValue, label: 'Tennis', icon: '🎾' }
+    { value: 'tennis' as SportFilterValue, label: 'Tennis', icon: '🎾' },
+    { value: 'basketball' as SportFilterValue, label: 'Basketball', icon: '🏀' }
 ]
 
 // Sort options for the feed

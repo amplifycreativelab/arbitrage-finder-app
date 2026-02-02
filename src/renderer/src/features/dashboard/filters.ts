@@ -2,7 +2,7 @@ import type { ArbitrageOpportunity, MarketGroup, MarketMetadata } from '../../..
 import { inferMarketMetadata, MARKET_GROUPS } from '../../../../../shared/types'
 import type { RegionCode } from '../../../../../shared/filters'
 
-export type SportFilterValue = 'soccer' | 'tennis'
+export type SportFilterValue = 'soccer' | 'tennis' | 'basketball'
 
 /**
  * Legacy market filter values for backward compatibility.
@@ -17,7 +17,7 @@ export type { MarketGroup, MarketMetadata }
 
 export const ALL_REGION_CODES: RegionCode[] = ['AU', 'UK', 'IT', 'RO']
 
-export const ALL_SPORT_FILTERS: SportFilterValue[] = ['soccer', 'tennis']
+export const ALL_SPORT_FILTERS: SportFilterValue[] = ['soccer', 'tennis', 'basketball']
 
 /**
  * Legacy market filters (5 original categories).
@@ -92,18 +92,31 @@ export function inferRegionFromOpportunity(
 
   // Italy
   if (
+    // Soccer
     league.includes('serie a') ||
     league.includes('serie b') ||
     league.includes('coppa italia') ||
     league.includes('supercoppa') ||
-    league.includes('italy')
+    league.includes('italy') ||
+    league.includes('calcio') ||
+    // Italian basketball - Serie A, LBA, Lega Basket
+    league.includes('lega basket') ||
+    league.includes('serie a basket') ||
+    league.includes('lba') ||
+    league.includes('basket italy') ||
+    league.includes('italian basketball') ||
+    // Italian tennis - Internazionali BNL d'Italia (Rome Masters)
+    league.includes('internazionali bnl') ||
+    league.includes('rome open') ||
+    league.includes('rome masters') ||
+    league.includes('italian open tennis')
   ) {
     return 'IT'
   }
 
   // UK
   if (
-    league.includes('wimbledon') ||
+    // Soccer
     league.includes('premier league') ||
     league.includes('epl') ||
     league.includes('championship') ||
@@ -114,27 +127,56 @@ export function inferRegionFromOpportunity(
     league.includes('carabao cup') ||
     league.includes('england') ||
     league.includes('scotland') ||
-    league.includes('premiership') // Scottish Premiership often just 'Premiership'
+    league.includes('premiership') || // Scottish Premiership often just 'Premiership'
+    // UK basketball - BBL (British Basketball League)
+    league.includes('bbl') ||
+    league.includes('british basketball') ||
+    league.includes('england basketball') ||
+    // UK tennis - Wimbledon (Grand Slam), Queen's Club, Eastbourne
+    league.includes('wimbledon') ||
+    league.includes('queen') || // Queen's Club Championships
+    league.includes('eastbourne') ||
+    league.includes('nottingham open') ||
+    league.includes('birmingham classic')
   ) {
     return 'UK'
   }
 
   // Australia
   if (
+    // Soccer
     league.includes('a-league') ||
     league.includes('a league') ||
     league.includes('ffa cup') ||
-    league.includes('australia')
+    league.includes('australia') ||
+    // Australian basketball - NBL (National Basketball League)
+    league.includes('nbl') ||
+    league.includes('australian basketball') ||
+    league.includes('national basketball league') ||
+    // Australian tennis - Australian Open (Grand Slam), Brisbane, Sydney, Adelaide
+    league.includes('australian open') ||
+    league.includes('brisbane international') ||
+    league.includes('sydney international') ||
+    league.includes('adelaide international') ||
+    league.includes('hobart international')
   ) {
     return 'AU'
   }
 
   // Romania
   if (
+    // Soccer
     league.includes('liga i') ||
     league.includes('liga 1') ||
     league.includes('cupa romaniei') ||
-    league.includes('romania')
+    league.includes('romania') ||
+    // Romanian basketball - Liga Nationala
+    league.includes('liga nationala') ||
+    league.includes('romanian basketball') ||
+    // Romanian tennis - Transilvania Open, Iasi Open
+    league.includes('transilvania open') ||
+    league.includes('iasi open') ||
+    league.includes('bucharest open')
   ) {
     return 'RO'
   }
