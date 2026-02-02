@@ -1,34 +1,78 @@
 import * as React from 'react'
 import { format, parseISO } from 'date-fns'
 import { cn } from '../../../lib/utils'
-import type { OddsBrowserRow, OddsBrowserTableProps } from '../types'
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+  CollapsibleChevron
+} from '../../../components/ui/collapsible'
+import type { OddsBrowserRow, OddsBrowserEventGroup, OddsBrowserTableProps } from '../types'
 
 // Story 8.x: Improved visual design with proper icons
 const TrendUpIcon = ({ className }: { className?: string }): React.JSX.Element => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
     <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
     <polyline points="16 7 22 7 22 13" />
   </svg>
 )
 
-const SortIcon = ({ direction, active }: { direction: 'asc' | 'desc'; active: boolean }): React.JSX.Element => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-    className={cn('h-3 w-3 transition-opacity', active ? 'opacity-100' : 'opacity-30')}>
-    {direction === 'asc' ? (
-      <path d="m5 12 7-7 7 7" />
-    ) : (
-      <path d="m19 12-7 7-7-7" />
-    )}
+const MarketIcon = ({ className }: { className?: string }): React.JSX.Element => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M3 3v18h18" />
+    <path d="m19 9-5 5-4-4-3 3" />
   </svg>
 )
 
-// Story 8.x: Enhanced keyboard shortcuts
-const SELECTION_KEYS = ['Enter', ' '] as const
+const BookmakerIcon = ({ className }: { className?: string }): React.JSX.Element => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <rect width="20" height="16" x="2" y="4" rx="2" />
+    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+  </svg>
+)
 
-const ROW_HEIGHT_PX = 44
-const VIRTUALIZATION_THRESHOLD = 50
-const VISIBLE_WINDOW_ROWS = 40
-const OVERSCAN_ROWS = 8
+// Sport badge colors
+const SPORT_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  soccer: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+  football: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+  basketball: { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/30' },
+  tennis: { bg: 'bg-yellow-500/10', text: 'text-yellow-400', border: 'border-yellow-500/30' },
+  baseball: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/30' },
+  hockey: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30' },
+  default: { bg: 'bg-ot-accent/10', text: 'text-ot-accent', border: 'border-ot-accent/30' }
+}
+
+function getSportColor(sport: string): { bg: string; text: string; border: string } {
+  const key = sport.toLowerCase()
+  return SPORT_COLORS[key] || SPORT_COLORS.default
+}
 
 function formatTimeAgo(timestamp: string): { text: string; isStale: boolean } {
   try {
@@ -52,88 +96,107 @@ function formatOdds(odds: number): string {
   return odds.toFixed(2)
 }
 
-function formatEventTime(startTime: string): { date: string; time: string; isLive: boolean } {
+function formatEventTime(startTime: string): {
+  date: string
+  time: string
+  isLive: boolean
+  fullDate: string
+} {
   try {
     const date = parseISO(startTime)
     const now = new Date()
     const diffMs = date.getTime() - now.getTime()
-    const isLive = diffMs < 0 && diffMs > -3 * 60 * 60 * 1000 // Started within last 3h
+    const isLive = diffMs < 0 && diffMs > -3 * 60 * 60 * 1000
 
     return {
       date: format(date, 'MMM d'),
       time: format(date, 'HH:mm'),
-      isLive
+      isLive,
+      fullDate: format(date, 'MMM d, yyyy HH:mm')
     }
   } catch {
-    return { date: '-', time: '-', isLive: false }
+    return { date: '-', time: '-', isLive: false, fullDate: '-' }
   }
 }
 
-function getAriaSort(
-  column: string,
-  currentColumn: string | null,
-  direction: 'asc' | 'desc'
-): React.AriaAttributes['aria-sort'] {
-  if (column !== currentColumn) return 'none'
-  return direction === 'asc' ? 'ascending' : 'descending'
-}
+// Group rows by event
+function groupRowsByEvent(rows: OddsBrowserRow[]): OddsBrowserEventGroup[] {
+  const groups = new Map<string, OddsBrowserEventGroup>()
 
-// Sport badge colors
-const SPORT_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  soccer: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
-  football: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
-  basketball: { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/30' },
-  tennis: { bg: 'bg-yellow-500/10', text: 'text-yellow-400', border: 'border-yellow-500/30' },
-  baseball: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/30' },
-  hockey: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30' },
-  default: { bg: 'bg-ot-accent/10', text: 'text-ot-accent', border: 'border-ot-accent/30' }
-}
+  for (const row of rows) {
+    const eventKey = `${row.sport}:${row.league}:${row.event.home}:${row.event.away}:${row.event.startTime}`
 
-function getSportColor(sport: string): { bg: string; text: string; border: string } {
-  const key = sport.toLowerCase()
-  return SPORT_COLORS[key] || SPORT_COLORS.default
+    if (!groups.has(eventKey)) {
+      groups.set(eventKey, {
+        eventId: eventKey,
+        sport: row.sport,
+        league: row.league,
+        event: row.event,
+        odds: [],
+        marketCount: 0,
+        bookmakerCount: 0,
+        bestOdds: 0
+      })
+    }
+
+    groups.get(eventKey)!.odds.push(row)
+  }
+
+  // Calculate derived metrics
+  for (const group of groups.values()) {
+    const uniqueMarkets = new Set(group.odds.map((o) => o.marketType))
+    const uniqueBookmakers = new Set(group.odds.map((o) => o.bookmaker))
+    group.marketCount = uniqueMarkets.size
+    group.bookmakerCount = uniqueBookmakers.size
+    group.bestOdds = Math.max(...group.odds.map((o) => o.odds))
+  }
+
+  return Array.from(groups.values()).sort((a, b) => {
+    return new Date(a.event.startTime).getTime() - new Date(b.event.startTime).getTime()
+  })
 }
 
 export function OddsBrowserTable({
   rows,
   selectedOutcomeId,
-  onSelectOutcome,
-  sortColumn,
-  sortDirection,
-  onSort
+  onSelectOutcome
 }: OddsBrowserTableProps): React.JSX.Element {
-  const [scrollOffset, setScrollOffset] = React.useState(0)
+  const [expandedEvents, setExpandedEvents] = React.useState<Set<string>>(new Set())
   const [hoveredRowId, setHoveredRowId] = React.useState<string | null>(null)
   const scrollContainerRef = React.useRef<HTMLDivElement | null>(null)
 
-  const totalCount = rows.length
-  const virtualizationEnabled = totalCount > VIRTUALIZATION_THRESHOLD
+  // Group rows by event
+  const eventGroups = React.useMemo(() => groupRowsByEvent(rows), [rows])
 
-  const baseWindow = virtualizationEnabled ? VISIBLE_WINDOW_ROWS : totalCount
-  const visibleWindow = Math.max(0, baseWindow)
+  // Auto-expand event when a row is selected
+  React.useEffect(() => {
+    if (selectedOutcomeId) {
+      const selectedRow = rows.find((r) => r.id === selectedOutcomeId)
+      if (selectedRow) {
+        const eventKey = `${selectedRow.sport}:${selectedRow.league}:${selectedRow.event.home}:${selectedRow.event.away}:${selectedRow.event.startTime}`
+        setExpandedEvents((prev) => new Set([...prev, eventKey]))
+      }
+    }
+  }, [selectedOutcomeId, rows])
 
-  const startIndex = virtualizationEnabled
-    ? Math.max(0, Math.min(totalCount - visibleWindow, Math.floor(scrollOffset / ROW_HEIGHT_PX)))
-    : 0
-  const endIndex = virtualizationEnabled
-    ? Math.min(totalCount, startIndex + visibleWindow + OVERSCAN_ROWS)
-    : totalCount
-
-  const visibleRows = rows.slice(startIndex, endIndex)
-  const totalHeight = virtualizationEnabled ? totalCount * ROW_HEIGHT_PX : undefined
-  const offsetY = virtualizationEnabled ? startIndex * ROW_HEIGHT_PX : 0
-
-  const handleRowSelect = (id: string): void => {
-    onSelectOutcome(id)
+  const toggleEvent = (eventId: string) => {
+    setExpandedEvents((prev) => {
+      const next = new Set(prev)
+      if (next.has(eventId)) {
+        next.delete(eventId)
+      } else {
+        next.add(eventId)
+      }
+      return next
+    })
   }
 
-  const handleSort = (column: typeof sortColumn): void => {
-    onSort(column)
+  const expandAll = () => {
+    setExpandedEvents(new Set(eventGroups.map((g) => g.eventId)))
   }
 
-  const handleScroll = (event: React.UIEvent<HTMLDivElement>): void => {
-    if (!virtualizationEnabled) return
-    setScrollOffset(event.currentTarget.scrollTop)
+  const collapseAll = () => {
+    setExpandedEvents(new Set())
   }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
@@ -153,67 +216,49 @@ export function OddsBrowserTable({
       if (nextIndex >= 0) {
         onSelectOutcome(rows[nextIndex].id)
       }
-    } else if (SELECTION_KEYS.includes(event.key as typeof SELECTION_KEYS[number])) {
+    } else if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
       if (selectedOutcomeId) {
         onSelectOutcome(selectedOutcomeId)
-      } else if (currentIndex >= 0) {
-        onSelectOutcome(rows[currentIndex].id)
       }
     }
   }
 
-  // Enhanced header button component
-  const HeaderButton = ({
-    column,
-    label,
-    width
-  }: {
-    column: typeof sortColumn;
-    label: string;
-    width: string
-  }): React.JSX.Element => {
-    const isActive = sortColumn === column
-    return (
-      <button
-        type="button"
-        className={cn(
-          'group flex items-center gap-1.5 rounded px-2 py-1 text-left transition-all',
-          'hover:bg-ot-accent/5',
-          isActive ? 'text-ot-foreground' : 'text-ot-muted'
-        )}
-        onClick={() => handleSort(column)}
-        aria-sort={getAriaSort(column as string, sortColumn, sortDirection)}
-      >
-        <span className={width}>{label}</span>
-        <SortIcon direction={isActive ? sortDirection : 'desc'} active={isActive} />
-      </button>
-    )
-  }
+  const totalCount = rows.length
+  const eventCount = eventGroups.length
 
   return (
     <div className="flex h-full flex-col" data-testid="odds-browser-table">
-      {/* Enhanced Header - with gradient background */}
-      <div className="mb-1 flex items-center rounded-lg bg-gradient-to-r from-ot-surface via-ot-surface to-transparent px-1 py-2">
-        <div className="flex items-center text-[9px] font-bold uppercase tracking-[0.16em]">
-          <HeaderButton column="sport" label="Sport" width="w-[70px]" />
-          <HeaderButton column="league" label="League" width="w-[100px]" />
-          <div className="flex-1">
-            <HeaderButton column="eventTime" label="Event" width="flex-1" />
-          </div>
-          <HeaderButton column="marketType" label="Market" width="w-[100px]" />
-          <div className="w-[80px] px-2 text-ot-muted">Bookmaker</div>
-          <HeaderButton column="odds" label="Odds" width="w-[60px] text-right" />
-          <div className="w-[70px] px-2 text-right text-ot-muted">Updated</div>
+      {/* Enhanced Header with expand/collapse controls */}
+      <div className="mb-2 flex items-center justify-between rounded-lg bg-gradient-to-r from-ot-surface via-ot-surface to-transparent px-2 py-2">
+        <div className="flex items-center gap-4 text-[9px] font-bold uppercase tracking-[0.16em]">
+          <span className="text-ot-muted">{eventCount} Events</span>
+          <span className="text-ot-muted">·</span>
+          <span className="text-ot-muted">{totalCount} Odds</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={expandAll}
+            className="rounded px-2 py-1 text-[10px] text-ot-muted transition-colors hover:bg-ot-accent/10 hover:text-ot-accent"
+          >
+            Expand All
+          </button>
+          <button
+            type="button"
+            onClick={collapseAll}
+            className="rounded px-2 py-1 text-[10px] text-ot-muted transition-colors hover:bg-ot-accent/10 hover:text-ot-accent"
+          >
+            Collapse All
+          </button>
         </div>
       </div>
 
-      {/* Table Body with enhanced scrollbar */}
+      {/* Events List */}
       <div
         ref={scrollContainerRef}
         className={cn(
           'relative flex-1 overflow-y-auto outline-none',
-          // Custom scrollbar styling
           'scrollbar-thin scrollbar-track-transparent scrollbar-thumb-ot-border/50',
           'hover:scrollbar-thumb-ot-border'
         )}
@@ -222,7 +267,6 @@ export function OddsBrowserTable({
         role="listbox"
         aria-label="Odds browser"
         onKeyDown={handleKeyDown}
-        onScroll={handleScroll}
       >
         {totalCount === 0 && (
           <div className="flex h-full items-center justify-center">
@@ -234,37 +278,18 @@ export function OddsBrowserTable({
           </div>
         )}
 
-        {totalCount > 0 && virtualizationEnabled && (
-          <div style={{ height: totalHeight }}>
-            <div className="absolute left-0 right-0" style={{ transform: `translateY(${offsetY}px)` }}>
-              {visibleRows.map((row, idx) => (
-                <OddsBrowserRowEnhanced
-                  key={row.id}
-                  row={row}
-                  isSelected={row.id === selectedOutcomeId}
-                  isHovered={row.id === hoveredRowId}
-                  onSelect={() => handleRowSelect(row.id)}
-                  onHover={() => setHoveredRowId(row.id)}
-                  onLeave={() => setHoveredRowId(null)}
-                  index={startIndex + idx}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {totalCount > 0 && !virtualizationEnabled && (
-          <div className="space-y-0.5">
-            {visibleRows.map((row, idx) => (
-              <OddsBrowserRowEnhanced
-                key={row.id}
-                row={row}
-                isSelected={row.id === selectedOutcomeId}
-                isHovered={row.id === hoveredRowId}
-                onSelect={() => handleRowSelect(row.id)}
-                onHover={() => setHoveredRowId(row.id)}
-                onLeave={() => setHoveredRowId(null)}
-                index={idx}
+        {totalCount > 0 && (
+          <div className="space-y-2 pb-4">
+            {eventGroups.map((group) => (
+              <EventGroupCard
+                key={group.eventId}
+                group={group}
+                isExpanded={expandedEvents.has(group.eventId)}
+                onToggle={() => toggleEvent(group.eventId)}
+                selectedOutcomeId={selectedOutcomeId}
+                onSelectOutcome={onSelectOutcome}
+                hoveredRowId={hoveredRowId}
+                setHoveredRowId={setHoveredRowId}
               />
             ))}
           </div>
@@ -274,41 +299,187 @@ export function OddsBrowserTable({
   )
 }
 
-interface OddsBrowserRowEnhancedProps {
+interface EventGroupCardProps {
+  group: OddsBrowserEventGroup
+  isExpanded: boolean
+  onToggle: () => void
+  selectedOutcomeId: string | null
+  onSelectOutcome: (id: string | null) => void
+  hoveredRowId: string | null
+  setHoveredRowId: (id: string | null) => void
+}
+
+function EventGroupCard({
+  group,
+  isExpanded,
+  onToggle,
+  selectedOutcomeId,
+  onSelectOutcome,
+  hoveredRowId,
+  setHoveredRowId
+}: EventGroupCardProps): React.JSX.Element {
+  const eventTime = formatEventTime(group.event.startTime)
+  const sportColor = getSportColor(group.sport)
+  const hasSelection = group.odds.some((o) => o.id === selectedOutcomeId)
+
+  return (
+    <Collapsible open={isExpanded} onOpenChange={onToggle}>
+      <div
+        className={cn(
+          'rounded-lg border transition-all duration-200',
+          hasSelection
+            ? 'border-ot-accent/50 bg-ot-accent/5'
+            : 'border-ot-border bg-ot-surface/30 hover:border-ot-border/80'
+        )}
+      >
+        {/* Event Header */}
+        <CollapsibleTrigger asChild>
+          <div
+            className={cn(
+              'group flex cursor-pointer items-center gap-3 px-3 py-3',
+              'hover:bg-ot-surface/50'
+            )}
+            data-testid="event-group-header"
+          >
+            {/* Expand/Collapse Icon */}
+            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-ot-border/50 text-ot-muted transition-colors group-hover:bg-ot-border group-hover:text-ot-foreground">
+              <CollapsibleChevron className="h-3.5 w-3.5" />
+            </div>
+
+            {/* Sport Badge */}
+            <span
+              className={cn(
+                'shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-medium uppercase tracking-wide',
+                sportColor.bg,
+                sportColor.text,
+                sportColor.border
+              )}
+            >
+              {group.sport}
+            </span>
+
+            {/* League */}
+            <span
+              className="hidden w-[100px] shrink-0 truncate text-[10px] text-ot-muted sm:block"
+              title={group.league}
+            >
+              {group.league}
+            </span>
+
+            {/* Event Time */}
+            <div className="shrink-0">
+              {eventTime.isLive ? (
+                <span className="inline-flex items-center gap-1 rounded bg-red-500/20 px-1.5 py-0.5 text-[9px] font-bold text-red-400">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" />
+                  LIVE
+                </span>
+              ) : (
+                <span className="inline-flex flex-col items-center rounded bg-ot-surface px-2 py-1 text-center">
+                  <span className="text-[8px] font-medium text-ot-muted">{eventTime.date}</span>
+                  <span className="text-[10px] font-semibold text-ot-foreground">{eventTime.time}</span>
+                </span>
+              )}
+            </div>
+
+            {/* Teams */}
+            <div className="min-w-0 flex-1 px-2">
+              <span className="block truncate text-[12px] font-semibold text-ot-foreground">
+                {group.event.home}
+                <span className="mx-2 text-ot-muted">vs</span>
+                {group.event.away}
+              </span>
+            </div>
+
+            {/* Stats */}
+            <div className="hidden shrink-0 items-center gap-3 md:flex">
+              <div
+                className="flex items-center gap-1.5 text-[10px] text-ot-muted"
+                title={`${group.marketCount} market types`}
+              >
+                <MarketIcon className="h-3.5 w-3.5" />
+                <span>{group.marketCount}</span>
+              </div>
+              <div
+                className="flex items-center gap-1.5 text-[10px] text-ot-muted"
+                title={`${group.bookmakerCount} bookmakers`}
+              >
+                <BookmakerIcon className="h-3.5 w-3.5" />
+                <span>{group.bookmakerCount}</span>
+              </div>
+              <div
+                className="flex items-center gap-1.5 text-[10px] font-medium text-emerald-400"
+                title={`Best odds: ${group.bestOdds.toFixed(2)}`}
+              >
+                <TrendUpIcon className="h-3.5 w-3.5" />
+                <span>{group.bestOdds.toFixed(2)}</span>
+              </div>
+            </div>
+
+            {/* Odds Count */}
+            <div className="shrink-0 rounded-full bg-ot-border/50 px-2 py-0.5 text-[10px] text-ot-muted">
+              {group.odds.length}
+            </div>
+          </div>
+        </CollapsibleTrigger>
+
+        {/* Odds List (Collapsible) */}
+        <CollapsibleContent>
+          <div className="border-t border-ot-border/50">
+            {/* Sub-header */}
+            <div className="flex items-center bg-ot-surface/20 px-3 py-1.5 text-[9px] font-medium uppercase tracking-wide text-ot-muted">
+              <div className="w-[100px]">Market</div>
+              <div className="w-[100px]">Outcome</div>
+              <div className="w-[100px]">Bookmaker</div>
+              <div className="w-[80px] text-right">Odds</div>
+              <div className="flex-1 text-right">Updated</div>
+            </div>
+
+            {/* Odds Rows */}
+            <div className="px-1 pb-1">
+              {group.odds.map((row) => (
+                <OddsRow
+                  key={row.id}
+                  row={row}
+                  isSelected={row.id === selectedOutcomeId}
+                  isHovered={row.id === hoveredRowId}
+                  onSelect={() => onSelectOutcome(row.id)}
+                  onHover={() => setHoveredRowId(row.id)}
+                  onLeave={() => setHoveredRowId(null)}
+                />
+              ))}
+            </div>
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  )
+}
+
+interface OddsRowProps {
   row: OddsBrowserRow
   isSelected: boolean
   isHovered: boolean
   onSelect: () => void
   onHover: () => void
   onLeave: () => void
-  index: number
 }
 
-function OddsBrowserRowEnhanced({
+function OddsRow({
   row,
   isSelected,
   isHovered,
   onSelect,
   onHover,
-  onLeave,
-  index
-}: OddsBrowserRowEnhancedProps): React.JSX.Element {
+  onLeave
+}: OddsRowProps): React.JSX.Element {
   const timeAgo = formatTimeAgo(row.lastUpdated)
-  const eventTime = formatEventTime(row.event.startTime)
-  const oddsFormatted = formatOdds(row.odds)
-  const eventDisplay = `${row.event.home} vs ${row.event.away}`
-  const sportColor = getSportColor(row.sport)
 
   return (
     <div
       className={cn(
-        // Base styles
-        'group flex cursor-pointer items-center rounded-lg px-2 py-2.5 transition-all duration-150',
-        // Alternating background
-        index % 2 === 0 ? 'bg-transparent' : 'bg-ot-surface/30',
-        // Selection and hover states
-        isSelected && 'bg-ot-accent/10 ring-1 ring-inset ring-ot-accent shadow-sm',
-        !isSelected && isHovered && 'bg-ot-accent/5 translate-x-0.5',
+        'group flex cursor-pointer items-center rounded px-2 py-2 text-[11px] transition-all duration-150',
+        isSelected && 'bg-ot-accent/15 ring-1 ring-inset ring-ot-accent/50',
+        !isSelected && isHovered && 'bg-ot-accent/5',
         !isSelected && !isHovered && 'hover:bg-ot-surface/50'
       )}
       data-testid="odds-browser-row"
@@ -318,66 +489,9 @@ function OddsBrowserRowEnhanced({
       onMouseLeave={onLeave}
       role="option"
       aria-selected={isSelected ? 'true' : 'false'}
-      style={{ minHeight: `${ROW_HEIGHT_PX}px` }}
     >
-      {/* Sport Badge */}
-      <div className="w-[70px] shrink-0 px-1">
-        <span
-          className={cn(
-            'inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-medium',
-            sportColor.bg, sportColor.text, sportColor.border
-          )}
-          title={row.sport}
-        >
-          {row.sport.slice(0, 6)}
-        </span>
-      </div>
-
-      {/* League - truncated with tooltip */}
-      <div className="w-[100px] shrink-0 px-1">
-        <span
-          className="block truncate text-[10px] text-ot-muted"
-          title={row.league}
-        >
-          {row.league}
-        </span>
-      </div>
-
-      {/* Event with time badge */}
-      <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
-        {/* Live indicator or time */}
-        <div className="shrink-0">
-          {eventTime.isLive ? (
-            <span className="inline-flex items-center gap-1 rounded bg-red-500/20 px-1.5 py-0.5 text-[9px] font-bold text-red-400">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" />
-              LIVE
-            </span>
-          ) : (
-            <span className="inline-flex flex-col items-center rounded bg-ot-surface px-1.5 py-0.5 text-center">
-              <span className="text-[8px] font-medium text-ot-muted">{eventTime.date}</span>
-              <span className="text-[10px] font-semibold text-ot-foreground">{eventTime.time}</span>
-            </span>
-          )}
-        </div>
-
-        {/* Team names */}
-        <div className="min-w-0 flex-1">
-          <span
-            className={cn(
-              'block truncate text-[11px] font-medium transition-colors',
-              isSelected ? 'text-ot-accent' : 'text-ot-foreground group-hover:text-ot-accent'
-            )}
-            title={eventDisplay}
-          >
-            {row.event.home}
-            <span className="mx-1 text-ot-muted">vs</span>
-            {row.event.away}
-          </span>
-        </div>
-      </div>
-
-      {/* Market type */}
-      <div className="w-[100px] shrink-0 px-1">
+      {/* Market Type */}
+      <div className="w-[100px] px-1">
         <span
           className="block truncate rounded bg-ot-border/30 px-1.5 py-0.5 text-center text-[9px] font-medium text-ot-foreground"
           title={row.marketType}
@@ -386,18 +500,22 @@ function OddsBrowserRowEnhanced({
         </span>
       </div>
 
+      {/* Outcome */}
+      <div className="w-[100px] px-1">
+        <span className="block truncate font-medium text-ot-foreground" title={row.outcome}>
+          {row.outcome}
+        </span>
+      </div>
+
       {/* Bookmaker */}
-      <div className="w-[80px] shrink-0 px-1">
-        <span
-          className="block truncate text-[10px] text-ot-muted"
-          title={row.bookmaker}
-        >
+      <div className="w-[100px] px-1">
+        <span className="block truncate text-ot-muted" title={row.bookmaker}>
           {row.bookmaker}
         </span>
       </div>
 
-      {/* Odds - prominent display */}
-      <div className="w-[60px] shrink-0 px-1 text-right">
+      {/* Odds */}
+      <div className="w-[80px] px-1 text-right">
         <span
           className={cn(
             'inline-block rounded-md px-2 py-1 text-[12px] font-bold tabular-nums transition-all',
@@ -406,12 +524,12 @@ function OddsBrowserRowEnhanced({
               : 'bg-ot-accent/10 text-ot-accent group-hover:bg-ot-accent group-hover:text-ot-background'
           )}
         >
-          {oddsFormatted}
+          {formatOdds(row.odds)}
         </span>
       </div>
 
-      {/* Updated time with freshness indicator */}
-      <div className="w-[70px] shrink-0 px-1 text-right">
+      {/* Updated Time */}
+      <div className="flex-1 px-1 text-right">
         <span
           className={cn(
             'inline-flex items-center gap-1 text-[9px]',
@@ -419,9 +537,7 @@ function OddsBrowserRowEnhanced({
           )}
           title={`Last updated: ${row.lastUpdated}`}
         >
-          {timeAgo.isStale && (
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-          )}
+          {timeAgo.isStale && <span className="h-1 w-1 rounded-full bg-amber-400" />}
           {timeAgo.text}
         </span>
       </div>

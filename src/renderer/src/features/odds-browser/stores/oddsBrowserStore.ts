@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import type { OddsBrowserStore, OddsBrowserRow, OddsBrowserFilters, ComparisonDisplayMode } from '../types'
+import type { OddsBrowserStore, OddsBrowserRow, OddsBrowserFilters, ComparisonDisplayMode, OddsBrowserEventGroup } from '../types'
 
 interface StorageLike {
   getItem: (key: string) => string | null
@@ -272,6 +272,47 @@ export const useOddsBrowserStore = create<OddsBrowserStore>()(
         }
 
         return rows
+      },
+
+      filteredEventGroups: () => {
+        const rows = get().filteredRows()
+
+        // Group rows by event (using event key: sport + league + home + away + startTime)
+        const groups = new Map<string, OddsBrowserEventGroup>()
+
+        for (const row of rows) {
+          const eventKey = `${row.sport}:${row.league}:${row.event.home}:${row.event.away}:${row.event.startTime}`
+
+          if (!groups.has(eventKey)) {
+            groups.set(eventKey, {
+              eventId: eventKey,
+              sport: row.sport,
+              league: row.league,
+              event: row.event,
+              odds: [],
+              marketCount: 0,
+              bookmakerCount: 0,
+              bestOdds: 0
+            })
+          }
+
+          const group = groups.get(eventKey)!
+          group.odds.push(row)
+        }
+
+        // Calculate derived metrics for each group
+        for (const group of groups.values()) {
+          const uniqueMarkets = new Set(group.odds.map((o) => o.marketType))
+          const uniqueBookmakers = new Set(group.odds.map((o) => o.bookmaker))
+          group.marketCount = uniqueMarkets.size
+          group.bookmakerCount = uniqueBookmakers.size
+          group.bestOdds = Math.max(...group.odds.map((o) => o.odds))
+        }
+
+        // Convert to array and sort by event time (soonest first)
+        return Array.from(groups.values()).sort((a, b) => {
+          return new Date(a.event.startTime).getTime() - new Date(b.event.startTime).getTime()
+        })
       }
     }),
     {

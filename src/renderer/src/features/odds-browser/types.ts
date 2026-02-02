@@ -111,6 +111,33 @@ export interface OddsBrowserStore extends OddsBrowserState {
   availableMarketTypes: () => string[]
   availableBookmakers: () => string[]
   filteredRows: () => OddsBrowserRow[]
+  filteredEventGroups: () => OddsBrowserEventGroup[]
+}
+
+/**
+ * Event group containing all odds for a single event.
+ */
+export interface OddsBrowserEventGroup {
+  /** Unique event ID */
+  eventId: string
+  /** Sport name */
+  sport: string
+  /** League name */
+  league: string
+  /** Event details */
+  event: {
+    home: string
+    away: string
+    startTime: string
+  }
+  /** All odds rows for this event */
+  odds: OddsBrowserRow[]
+  /** Number of unique market types */
+  marketCount: number
+  /** Number of unique bookmakers */
+  bookmakerCount: number
+  /** Best odds available for this event (highest) */
+  bestOdds: number
 }
 
 /**
