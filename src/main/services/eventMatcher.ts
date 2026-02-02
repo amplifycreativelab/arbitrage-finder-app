@@ -8,6 +8,7 @@
  */
 
 import type { ArbitrageOpportunity, MarketQuote, ProviderId } from '../../../shared/types'
+import type { DeepScanEvent } from './deepScan'
 
 /**
  * Common suffixes to strip from team names for normalization.
@@ -182,6 +183,75 @@ export function generateEventKey(event: {
 }
 
 /**
+ * Story 9.4: Generate a strict, collision-resistant event key.
+ *
+ * Key format: sportSlug|leagueSlug|teamA_norm|teamB_norm|kickoffMin
+ *
+ * This function requires canonical fields (sportSlug, leagueSlug, kickoffEpochMs)
+ * and returns null if any are missing. This prevents false cross-provider joins
+ * for events like cup vs league matches with the same teams.
+ *
+ * @param event - DeepScanEvent with canonical identity fields
+ * @returns Strict event key or null if required fields are missing
+ *
+ * @example
+ * generateStrictEventKey({
+ *   name: "Arsenal vs Chelsea",
+ *   sportSlug: "football",
+ *   leagueSlug: "england-premier-league",
+ *   kickoffEpochMs: 1705312800000
+ * })
+ * // => "football|england-premier-league|arsenal|chelsea|28421880"
+ */
+export function generateStrictEventKey(
+  event: DeepScanEvent | null | undefined
+): string | null {
+  // Guard against null/undefined input
+  if (!event) {
+    return null
+  }
+
+  // Strict mode: require all canonical identity fields
+  // Story 9.4 AC3: return null if sportSlug or leagueSlug is missing
+  if (!event.sportSlug || !event.leagueSlug) {
+    return null
+  }
+
+  // Story 9.4 AC3: kickoffEpochMs is required for strict matching
+  // Allow 0 as a valid timestamp (epoch start)
+  if (event.kickoffEpochMs === undefined || event.kickoffEpochMs === null) {
+    return null
+  }
+
+  // Extract team names from event name
+  const teams = extractTeamsFromEventName(event.name)
+  if (!teams) {
+    return null
+  }
+
+  const [home, away] = teams
+
+  // Story 9.4 AC6: Normalize team names using existing function
+  const normalizedHome = normalizeTeamName(home)
+  const normalizedAway = normalizeTeamName(away)
+
+  if (!normalizedHome || !normalizedAway) {
+    return null
+  }
+
+  // Story 9.4: Sort team names alphabetically for deterministic ordering
+  // This ensures "Arsenal vs Chelsea" and "Chelsea vs Arsenal" produce the same key
+  const sortedTeams = [normalizedHome, normalizedAway].sort()
+
+  // Story 9.4 AC2: Convert to minute precision
+  // kickoffMin = floor(kickoffEpochMs / 60000)
+  const kickoffMin = Math.floor(event.kickoffEpochMs / 60000)
+
+  // Story 9.4 AC1: Format: sportSlug|leagueSlug|teamA_norm|teamB_norm|kickoffMin
+  return `${event.sportSlug}|${event.leagueSlug}|${sortedTeams[0]}|${sortedTeams[1]}|${kickoffMin}`
+}
+
+/**
  * Group arbitrage opportunities by their normalized event key.
  *
  * This enables finding the same underlying fixture across different providers.
@@ -205,6 +275,40 @@ export function matchEventsByKey(
       existing.push(opp)
     } else {
       grouped.set(key, [opp])
+    }
+  }
+
+  return grouped
+}
+
+/**
+ * Story 9.4: Group DeepScanEvents by their strict event key.
+ *
+ * Uses the collision-resistant strict key format that includes sportSlug
+ * and leagueSlug to prevent false joins between cup and league matches.
+ *
+ * Events without canonical fields (sportSlug, leagueSlug, kickoffEpochMs)
+ * are skipped - they cannot be reliably matched across providers.
+ *
+ * @param events - Array of DeepScanEvents from multiple providers
+ * @returns Map of strict event key to events sharing that key
+ */
+export function matchDeepScanEventsByStrictKey(
+  events: DeepScanEvent[]
+): Map<string, DeepScanEvent[]> {
+  const grouped = new Map<string, DeepScanEvent[]>()
+
+  for (const event of events) {
+    const key = generateStrictEventKey(event)
+    if (!key) {
+      continue // Skip events that can't produce a strict key
+    }
+
+    const existing = grouped.get(key)
+    if (existing) {
+      existing.push(event)
+    } else {
+      grouped.set(key, [event])
     }
   }
 

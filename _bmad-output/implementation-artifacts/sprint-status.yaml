@@ -103,3 +103,5 @@ development_status:
   9-1-fix-arbitrage-endpoint-host: done
   9-2-add-canonical-fields-to-event-model: done
   9-3-fix-event-extraction-priority-slug-first: done
+  9-4-implement-strict-event-key-generation: done
+  9-5-wire-aggressive-scan-to-multi-batching: ready-for-dev
