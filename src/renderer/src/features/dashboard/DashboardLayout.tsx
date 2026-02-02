@@ -1,12 +1,11 @@
 import * as React from 'react'
 
 import FeedPane from './FeedPane'
-import SignalPreview from './SignalPreview'
-import BestOddsPanel from './BestOddsPanel'
-import DeepScanPanel from './DeepScanPanel'
 import CalculatorPanel from './components/CalculatorPanel'
 import { OddsBrowser } from '../odds-browser/OddsBrowser'
-import { SettingsPage } from '../settings/SettingsPage'
+import { DeepScanSettings } from '../settings/DeepScanSettings'
+import { OddsApiSettings } from '../settings/OddsApiSettings'
+import { CurrencyDisplaySettings } from '../settings/CurrencyDisplaySettings'
 import { SystemErrorBar } from '../../components/ui/SystemErrorBar'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { ThemeToggle } from '../../components/ui/ThemeToggle'
@@ -17,23 +16,23 @@ import { trpcClient } from '../../lib/trpc'
 import type { ProviderStatus } from '../../../../../shared/types'
 import { cn } from '../../lib/utils'
 
-type DashboardTab = 'arbitrage' | 'odds-browser' | 'settings'
-type RightPaneView = 'signal-preview' | 'best-odds'
-
-// Story 7.7 Task 6.3: Persist user's right pane view preference
-const STORAGE_KEY_RIGHT_PANE = 'arb-finder-right-pane-view'
-function loadRightPanePreference(): RightPaneView {
-  if (typeof localStorage === 'undefined') return 'signal-preview'
-  const saved = localStorage.getItem(STORAGE_KEY_RIGHT_PANE)
-  return saved === 'best-odds' ? 'best-odds' : 'signal-preview'
-}
+type DashboardTab = 'arbitrage' | 'odds-browser' | 'deep-scan-settings' | 'odds-api-settings' | 'currency-display-settings'
 
 // Story 8.6: Persist active tab preference
 const STORAGE_KEY_ACTIVE_TAB = 'arb-finder-active-tab'
 function loadActiveTabPreference(): DashboardTab {
   if (typeof localStorage === 'undefined') return 'arbitrage'
   const saved = localStorage.getItem(STORAGE_KEY_ACTIVE_TAB)
-  if (saved === 'odds-browser' || saved === 'settings') return saved
+  // Migrate old 'settings' tab to 'deep-scan-settings'
+  if (saved === 'settings') return 'deep-scan-settings'
+  if (
+    saved === 'odds-browser' ||
+    saved === 'deep-scan-settings' ||
+    saved === 'odds-api-settings' ||
+    saved === 'currency-display-settings'
+  ) {
+    return saved
+  }
   return 'arbitrage'
 }
 
@@ -61,25 +60,15 @@ function errorCodeToProviderStatus(code: string): ProviderStatus {
   }
 }
 
-function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.JSX.Element {
+function DashboardLayout({ feed }: DashboardLayoutProps): React.JSX.Element {
   // Story 8.6: Load persisted tab preference
   const [activeTab, setActiveTab] = React.useState<DashboardTab>(loadActiveTabPreference)
-  // Story 7.7 Task 6: State for right pane view (Signal Preview vs Best Odds)
-  const [rightPaneView, setRightPaneView] = React.useState<RightPaneView>(loadRightPanePreference)
 
   // Story 8.6: Persist active tab
   const handleTabChange = (tab: DashboardTab): void => {
     setActiveTab(tab)
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(STORAGE_KEY_ACTIVE_TAB, tab)
-    }
-  }
-
-  // Story 7.7 Task 6.3: Persist right pane preference
-  const handleRightPaneChange = (view: RightPaneView): void => {
-    setRightPaneView(view)
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY_RIGHT_PANE, view)
     }
   }
 
@@ -171,17 +160,46 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
             Odds Browser
           </TabButton>
           <TabButton
-            active={activeTab === 'settings'}
-            onClick={() => handleTabChange('settings')}
-            testId="tab-settings"
+            active={activeTab === 'deep-scan-settings'}
+            onClick={() => handleTabChange('deep-scan-settings')}
+            testId="tab-deep-scan"
             icon={
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-                <circle cx="12" cy="12" r="3" />
+                <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
+                <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
+                <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+                <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
               </svg>
             }
           >
-            Settings
+            Deep Scan
+          </TabButton>
+          <TabButton
+            active={activeTab === 'odds-api-settings'}
+            onClick={() => handleTabChange('odds-api-settings')}
+            testId="tab-odds-api"
+            icon={
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                <polyline points="2 17 12 22 22 17" />
+                <polyline points="2 12 12 17 22 12" />
+              </svg>
+            }
+          >
+            Odds-API.io
+          </TabButton>
+          <TabButton
+            active={activeTab === 'currency-display-settings'}
+            onClick={() => handleTabChange('currency-display-settings')}
+            testId="tab-display"
+            icon={
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <line x1="12" x2="12" y1="2" y2="22" />
+                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+              </svg>
+            }
+          >
+            Display
           </TabButton>
         </div>
         
@@ -220,8 +238,6 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
                 <span className="text-xs text-ot-muted font-medium">Opportunities</span>
               </header>
 
-              <DeepScanPanel />
-
               <div className="flex-1 rounded-lg border border-ot-border bg-ot-surface p-3 text-sm text-ot-muted shadow-ot-sm">
                 {feed ?? <FeedPane />}
               </div>
@@ -237,47 +253,6 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
                 <CalculatorPanel />
               </section>
             )}
-
-            <section
-              aria-label="Signal preview and settings"
-              className="flex min-w-0 flex-1 flex-col gap-3"
-            >
-              <div
-                className="flex-1 rounded-lg border border-ot-border bg-ot-surface shadow-ot-sm overflow-hidden"
-                data-testid="signal-preview-pane"
-              >
-                {/* Story 7.7 Task 6: Sub-tabs for Signal Preview / Best Odds */}
-                <div className="flex items-center gap-1 border-b border-ot-border bg-ot-background/50 px-3 py-1.5">
-                  <SubTabButton
-                    active={rightPaneView === 'signal-preview'}
-                    onClick={() => handleRightPaneChange('signal-preview')}
-                    testId="tab-signal-preview"
-                  >
-                    Signal Preview
-                  </SubTabButton>
-                  <SubTabButton
-                    active={rightPaneView === 'best-odds'}
-                    onClick={() => handleRightPaneChange('best-odds')}
-                    testId="tab-best-odds"
-                  >
-                    Best Odds
-                  </SubTabButton>
-                </div>
-
-                {/* Content area */}
-                <div className="flex-1 p-3 h-[calc(100%-40px)]">
-                  {rightPaneView === 'signal-preview' ? (
-                    <div className="flex h-full flex-col rounded-lg border border-ot-border bg-ot-background p-3 text-sm font-mono text-ot-foreground">
-                      {signalPreview ?? <SignalPreview />}
-                    </div>
-                  ) : (
-                    <div className="h-full">
-                      <BestOddsPanel />
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
           </>
         ) : activeTab === 'odds-browser' ? (
           <section
@@ -287,13 +262,29 @@ function DashboardLayout({ feed, signalPreview }: DashboardLayoutProps): React.J
           >
             <OddsBrowser className="flex h-full flex-col" />
           </section>
+        ) : activeTab === 'deep-scan-settings' ? (
+          <section
+            aria-label="Deep Scan Settings"
+            className="flex flex-1 flex-col overflow-hidden"
+            data-testid="deep-scan-settings-pane"
+          >
+            <DeepScanSettings />
+          </section>
+        ) : activeTab === 'odds-api-settings' ? (
+          <section
+            aria-label="Odds-API.io Settings"
+            className="flex flex-1 flex-col overflow-hidden"
+            data-testid="odds-api-settings-pane"
+          >
+            <OddsApiSettings />
+          </section>
         ) : (
           <section
-            aria-label="Settings"
+            aria-label="Currency Display Settings"
             className="flex flex-1 flex-col overflow-hidden"
-            data-testid="settings-pane"
+            data-testid="currency-display-settings-pane"
           >
-            <SettingsPage />
+            <CurrencyDisplaySettings />
           </section>
         )}
       </div>
@@ -330,33 +321,6 @@ function TabButton({ active, onClick, children, testId, icon }: TabButtonProps):
       {active && (
         <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-ot-accent to-ot-accent-hover animate-fade-in" />
       )}
-    </button>
-  )
-}
-
-// Sub Tab Button Component
-interface SubTabButtonProps {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-  testId: string
-}
-
-function SubTabButton({ active, onClick, children, testId }: SubTabButtonProps): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'relative px-3 py-1.5 text-xs font-medium transition-all duration-150 rounded-md',
-        active
-          ? 'text-ot-accent bg-ot-accent-subtle'
-          : 'text-ot-muted hover:text-ot-foreground hover:bg-ot-surface-hover'
-      )}
-      data-testid={testId}
-      aria-selected={active}
-    >
-      {children}
     </button>
   )
 }

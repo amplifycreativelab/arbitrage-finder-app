@@ -1,84 +1,57 @@
-import * as React from 'react'
+﻿import * as React from 'react'
 
-import { useFeedStore } from './stores/feedStore'
-import { FeedTable } from './FeedTable'
-import type { FeedSortKey, FeedSortDirection } from './stores/feedStore'
-import {
-  applyDashboardFilters,
-  getAvailableBookmakers
-} from './filters'
+import { useFeedStore, type FeedSortKey, type FeedSortDirection } from './stores/feedStore'
 import { useFeedFiltersStore } from './stores/feedFiltersStore'
+import { useDeepScanStore } from './stores/deepScanStore'
 import { useStalenessTicker } from './useStalenessTicker'
 import { useAutoRefresh } from './hooks/useAutoRefresh'
-import type {
-  DashboardStatusSnapshot,
-  ProviderStatus,
-  ProviderId,
-  SystemStatus,
-  ArbitrageOpportunity
-} from '../../../../../shared/types'
-import { PROVIDERS } from '../../../../../shared/types'
+import { applyDashboardFilters } from './filters'
+import type { ArbitrageOpportunity } from '../../../../../shared/types'
+
 import StatusBar from './StatusBar'
-import { getStalenessInfo } from './staleness'
-import { FilterBar, type SourceFilter, type SortOption } from './FilterBar'
+import { FeedToolbar } from './components/FeedToolbar'
+import { FeedResultsHeader } from './components/FeedResultsHeader'
+import { SurebetTable } from './components/SurebetTable'
+import { FilterSidebar } from './components/FilterSidebar'
+import SignalPreview from './SignalPreview'
+import { Button } from '../../components/ui/button'
 
-interface ProviderFailureBannerProps {
-  statusSnapshot: DashboardStatusSnapshot | null
-  stalenessNow: number
+// Notification type for scan actions
+interface Notification {
+  id: string
+  message: string
+  type: 'success' | 'error' | 'info'
 }
 
-function getProviderRecommendedAction(status: ProviderStatus): string {
-  switch (status) {
-    case 'QuotaLimited':
-      return 'Quota reached or approaching; reduce polling frequency or check API quota dashboard.'
-    case 'Degraded':
-      return 'Provider responding slowly or with partial failures; inspect logs and consider temporary fallbacks.'
-    case 'ConfigMissing':
-      return 'Config missing: set or update API key in Provider Settings.'
-    case 'Down':
-      return 'Provider is unreachable or failing; check provider status page and network connectivity.'
-    case 'OK':
-    default:
-      return 'No action required.'
-  }
+// ScanActionButtons component
+interface ScanActionButtonsProps {
+  onAggressiveScan: () => void
+  onDeepScan: () => void
+  isAggressiveScanning: boolean
+  isDeepScanning: boolean
+  deepScanProgress: ReturnType<typeof useDeepScanStore.getState>['progress']
 }
 
-function formatLastSuccess(timestamp: string | null, stalenessNow: number): string {
-  if (!timestamp) {
-    return 'No successful fetch yet'
-  }
-
-  const info = getStalenessInfo({ foundAt: timestamp }, stalenessNow)
-  return info.label ? `${info.label}` : 'Just now'
-}
-
-function ProviderFailureBanner({
-  statusSnapshot,
-  stalenessNow
-}: ProviderFailureBannerProps): React.JSX.Element | null {
-  if (!statusSnapshot?.providers?.length) {
-    return null
-  }
-
-  const problematic = statusSnapshot.providers.filter((entry) =>
-    ['Down', 'QuotaLimited', 'ConfigMissing'].includes(entry.status)
-  )
-
-  if (problematic.length === 0) {
-    return null
-  }
-
-  const providerLabelById = new Map<ProviderId, string>(
-    PROVIDERS.map((provider) => [provider.id, provider.displayName] as const)
-  )
+function ScanActionButtons({
+  onAggressiveScan,
+  onDeepScan,
+  isAggressiveScanning,
+  isDeepScanning,
+  deepScanProgress
+}: ScanActionButtonsProps): React.JSX.Element {
+  const isAnyScanning = isAggressiveScanning || isDeepScanning || deepScanProgress.status === 'scanning'
 
   return (
-    <div
-      className="mb-3 space-y-1 rounded-lg border border-amber-500/30 bg-gradient-to-r from-amber-500/10 to-orange-500/5 p-3 text-[10px] text-amber-100"
-      data-testid="provider-failure-banner"
-      aria-label="Provider health issues"
-    >
-      <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 py-2 px-3 border-t border-ot-border bg-ot-surface">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onAggressiveScan}
+        disabled={isAnyScanning}
+        loading={isAggressiveScanning}
+        className="border-amber-500/50 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+        data-testid="aggressive-scan-button"
+      >
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24"
@@ -87,79 +60,230 @@ function ProviderFailureBanner({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="h-4 w-4 text-amber-400"
+          className="h-4 w-4 mr-1.5"
         >
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-          <line x1="12" y1="9" x2="12" y2="13" />
-          <line x1="12" y1="17" x2="12.01" y2="17" />
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
         </svg>
-        <span className="font-semibold uppercase tracking-[0.14em]">Provider Issues</span>
-      </div>
-      <ul className="mt-2 space-y-1.5 pl-6">
-        {problematic.map((entry) => (
-          <li key={entry.providerId} className="leading-snug">
-            <span className="font-semibold text-amber-200">
-              {providerLabelById.get(entry.providerId as ProviderId) ?? entry.providerId}
-            </span>
-            <span className="mx-1.5 rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-medium">
-              {entry.status}
-            </span>
-            <span className="text-amber-100/70">
-              · Last success: {formatLastSuccess(entry.lastSuccessfulFetchAt, stalenessNow)}
-            </span>
-            <span className="mt-0.5 block text-[9px] text-amber-200/70">
-              → {getProviderRecommendedAction(entry.status as ProviderStatus)}
-            </span>
-          </li>
-        ))}
-      </ul>
+        Aggressive Scan
+      </Button>
+
+      <Button
+        variant="primary"
+        size="sm"
+        onClick={onDeepScan}
+        disabled={isAnyScanning}
+        loading={isDeepScanning || deepScanProgress.status === 'scanning'}
+        data-testid="deep-scan-button"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-4 w-4 mr-1.5"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        {deepScanProgress.status === 'scanning' ? 'Scanning...' : 'Deep Scan'}
+      </Button>
+
+      {deepScanProgress.status === 'scanning' && (
+        <div className="flex items-center gap-2 text-xs text-ot-muted ml-2">
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-ot-border border-t-ot-accent" />
+          {deepScanProgress.eventsScanned}/{deepScanProgress.eventsTotal || '?'} events
+          {deepScanProgress.opportunitiesFound > 0 && (
+            <span className="text-ot-accent">({deepScanProgress.opportunitiesFound} found)</span>
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
-/**
- * Apply source filtering to opportunities
- */
-function applySourceFilter(
-  opportunities: ArbitrageOpportunity[],
-  sourceFilter: SourceFilter
-): ArbitrageOpportunity[] {
-  if (sourceFilter === 'all') {
-    return opportunities
-  }
-
-  return opportunities.filter((opp) => {
-    switch (sourceFilter) {
-      case 'live':
-        return opp.source !== 'deepScan'
-      case 'deepScan':
-        return opp.source === 'deepScan'
-      case 'crossProvider':
-        return opp.isCrossProvider === true
-      default:
-        return true
-    }
-  })
+// Confirmation Dialog component
+interface ConfirmationDialogProps {
+  isOpen: boolean
+  title: string
+  message: string
+  confirmLabel: string
+  cancelLabel: string
+  onConfirm: () => void
+  onCancel: () => void
+  variant?: 'danger' | 'warning'
 }
 
-/**
- * Parse sort option into key and direction
- */
-function parseSortOption(sortOption: SortOption): { key: FeedSortKey; direction: FeedSortDirection } {
-  const [key, direction] = sortOption.split('-') as [FeedSortKey, FeedSortDirection]
-  return { key, direction }
+function ConfirmationDialog({
+  isOpen,
+  title,
+  message,
+  confirmLabel,
+  cancelLabel,
+  onConfirm,
+  onCancel,
+  variant = 'warning'
+}: ConfirmationDialogProps): React.JSX.Element | null {
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="confirmation-dialog">
+      <div className="w-full max-w-md rounded-lg border border-ot-border bg-ot-surface p-6 shadow-lg">
+        <h3 className="text-lg font-semibold text-ot-foreground mb-2">{title}</h3>
+        <p className="text-sm text-ot-muted mb-6">{message}</p>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onCancel}>
+            {cancelLabel}
+          </Button>
+          <Button
+            variant={variant === 'danger' ? 'danger' : 'primary'}
+            size="sm"
+            onClick={onConfirm}
+            className={variant === 'warning' ? 'bg-amber-500 hover:bg-amber-600 text-white' : ''}
+          >
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Notification Toast component
+interface NotificationToastProps {
+  notifications: Notification[]
+  onDismiss: (id: string) => void
+}
+
+function NotificationToast({ notifications, onDismiss }: NotificationToastProps): React.JSX.Element {
+  React.useEffect(() => {
+    notifications.forEach((notification) => {
+      const timer = setTimeout(() => {
+        onDismiss(notification.id)
+      }, 4000)
+      return () => clearTimeout(timer)
+    })
+  }, [notifications, onDismiss])
+
+  if (notifications.length === 0) return <></>
+
+  return (
+    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+      {notifications.map((notification) => (
+        <div
+          key={notification.id}
+          className={`flex items-center gap-2 rounded-lg border px-4 py-3 shadow-lg animate-fade-in ${
+            notification.type === 'success'
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700'
+              : notification.type === 'error'
+                ? 'border-red-500/30 bg-red-500/10 text-red-700'
+                : 'border-ot-accent/30 bg-ot-accent/10 text-ot-accent'
+          }`}
+          data-testid={`notification-${notification.type}`}
+        >
+          {notification.type === 'success' && (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-5 w-5"
+            >
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          )}
+          {notification.type === 'error' && (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-5 w-5"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="15" y1="9" x2="9" y2="15" />
+              <line x1="9" y1="9" x2="15" y2="15" />
+            </svg>
+          )}
+          {notification.type === 'info' && (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-5 w-5"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+          )}
+          <span className="text-sm font-medium">{notification.message}</span>
+          <button
+            type="button"
+            onClick={() => onDismiss(notification.id)}
+            className="ml-2 text-current opacity-60 hover:opacity-100"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function FeedPane(): React.JSX.Element {
   const [feedState, setFeedState] = React.useState(() => useFeedStore.getState())
   const refreshSnapshot = useFeedStore((state) => state.refreshSnapshot)
-  const syncSelectionWithVisibleIds = useFeedStore(
-    (state) => state.syncSelectionWithVisibleIds
-  )
+  const syncSelectionWithVisibleIds = useFeedStore((state) => state.syncSelectionWithVisibleIds)
+  const selectedOpportunityId = useFeedStore((state) => state.selectedOpportunityId)
+  const setSelectedOpportunityId = useFeedStore((state) => state.setSelectedOpportunityId)
 
-  // Local filter state
-  const [sourceFilter, setSourceFilter] = React.useState<SourceFilter>('all')
-  const [sortOption, setSortOption] = React.useState<SortOption>('roi-desc')
+  // Deep scan store
+  const deepScanStore = useDeepScanStore()
+  const { setDialogOpen, progress: deepScanProgress } = deepScanStore
+
+  // Search query state
+  const [searchQuery, setSearchQuery] = React.useState('')
+
+  // Expanded row state
+  const [expandedId, setExpandedId] = React.useState<string | null>(null)
+
+  // Sort state
+  const [sortBy, setSortBy] = React.useState<FeedSortKey>('roi')
+  const [sortDirection, setSortDirection] = React.useState<FeedSortDirection>('desc')
+
+  // Notification state
+  const [notifications, setNotifications] = React.useState<Notification[]>([])
+
+  // Confirmation dialog state
+  const [showAggressiveConfirm, setShowAggressiveConfirm] = React.useState(false)
+
+  // Scan loading states
+  const [isAggressiveScanning, setIsAggressiveScanning] = React.useState(false)
 
   // Enable auto-refresh polling
   useAutoRefresh()
@@ -198,9 +322,6 @@ function FeedPane(): React.JSX.Element {
 
   const safeOpportunities = Array.isArray(opportunities) ? opportunities : []
 
-  const availableBookmakersForRegions = React.useMemo(() => {
-    return getAvailableBookmakers(safeOpportunities, regions)
-  }, [safeOpportunities, regions])
 
   // Apply dashboard filters first
   const dashboardFiltered = React.useMemo(
@@ -215,39 +336,100 @@ function FeedPane(): React.JSX.Element {
     [safeOpportunities, regions, sports, markets, bookmakers, minRoi]
   )
 
-  // Then apply source filter
-  const filteredOpportunities = React.useMemo(
-    () => applySourceFilter(dashboardFiltered, sourceFilter),
-    [dashboardFiltered, sourceFilter]
-  )
+  // Apply search filter
+  const searchFiltered = React.useMemo(() => {
+    if (!searchQuery.trim()) return dashboardFiltered
 
+    const query = searchQuery.toLowerCase()
+    return dashboardFiltered.filter((opp: ArbitrageOpportunity) => {
+      const eventName = opp.event.name.toLowerCase()
+      const league = opp.event.league?.toLowerCase() || ''
+      const bookmakerNames = opp.legs.map((leg) => leg.bookmaker.toLowerCase()).join(' ')
+      const market = opp.legs[0]?.market?.toLowerCase() || ''
+
+      return (
+        eventName.includes(query) ||
+        league.includes(query) ||
+        bookmakerNames.includes(query) ||
+        market.includes(query)
+      )
+    })
+  }, [dashboardFiltered, searchQuery])
+
+  // Sync selection with visible IDs
   React.useEffect(() => {
-    const visibleIds = Array.isArray(filteredOpportunities)
-      ? filteredOpportunities.map((opportunity) => opportunity.id)
+    const visibleIds = Array.isArray(searchFiltered)
+      ? searchFiltered.map((opportunity) => opportunity.id)
       : []
 
     syncSelectionWithVisibleIds(visibleIds)
-  }, [filteredOpportunities, syncSelectionWithVisibleIds])
+  }, [searchFiltered, syncSelectionWithVisibleIds])
 
   const totalCount = safeOpportunities.length
-  const filteredCount = Array.isArray(filteredOpportunities)
-    ? filteredOpportunities.length
-    : 0
+  const filteredCount = Array.isArray(searchFiltered) ? searchFiltered.length : 0
   const hasUnderlyingData = totalCount > 0
   const noUnderlyingData = !hasUnderlyingData
 
-  const systemStatus: SystemStatus = status?.systemStatus ?? 'OK'
-  const hasUnhealthyProvider =
-    status?.providers?.some((entry) =>
-      ['Degraded', 'Down', 'QuotaLimited', 'ConfigMissing'].includes(entry.status)
-    ) ?? false
-  const isSystemUnhealthy: boolean =
-    systemStatus === 'Degraded' || systemStatus === 'Error' || systemStatus === 'Stale'
-  const hasUnhealthyStatus = hasUnhealthyProvider || isSystemUnhealthy
+  // Handle sort change
+  const handleSortChange = (key: FeedSortKey, direction: FeedSortDirection): void => {
+    setSortBy(key)
+    setSortDirection(direction)
+  }
 
-  // Parse sort option for FeedTable
-  const { key: sortBy, direction: sortDirection } = parseSortOption(sortOption)
+  // Handle row selection
+  const handleSelect = (id: string): void => {
+    setSelectedOpportunityId(id)
+  }
 
+  // Handle row expand toggle
+  const handleToggleExpand = (id: string): void => {
+    setExpandedId((current) => (current === id ? null : id))
+  }
+
+  // Handle aggressive scan
+  const handleAggressiveScan = (): void => {
+    setShowAggressiveConfirm(true)
+  }
+
+  const confirmAggressiveScan = async (): Promise<void> => {
+    setShowAggressiveConfirm(false)
+    setIsAggressiveScanning(true)
+
+    try {
+      // Simulate aggressive scan - replace with actual implementation
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      addNotification({
+        id: Date.now().toString(),
+        message: 'Aggressive scan completed successfully',
+        type: 'success'
+      })
+    } catch (err) {
+      addNotification({
+        id: Date.now().toString(),
+        message: 'Aggressive scan failed',
+        type: 'error'
+      })
+    } finally {
+      setIsAggressiveScanning(false)
+    }
+  }
+
+  // Handle deep scan
+  const handleDeepScan = (): void => {
+    setDialogOpen(true)
+  }
+
+  // Notification helper
+  const addNotification = (notification: Notification): void => {
+    setNotifications((prev) => [...prev, notification])
+  }
+
+  const dismissNotification = (id: string): void => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id))
+  }
+
+  // Empty state content
   let content: React.ReactNode
 
   if (error && noUnderlyingData) {
@@ -311,110 +493,143 @@ function FeedPane(): React.JSX.Element {
         <button
           type="button"
           className="mt-2 rounded-md border border-ot-accent/30 bg-ot-accent/10 px-3 py-1.5 text-[10px] font-medium text-ot-accent transition-colors hover:bg-ot-accent/20"
-          onClick={() => useFeedFiltersStore.getState().resetFilters()}
+          onClick={() => {
+            useFeedFiltersStore.getState().resetFilters()
+            setSearchQuery('')
+          }}
         >
           Reset All Filters
         </button>
       </div>
     )
   } else if (noUnderlyingData) {
-    if (hasUnhealthyStatus) {
-      const lastUpdatedLabel =
-        fetchedAt != null
-          ? getStalenessInfo({ foundAt: fetchedAt }, stalenessNow).label || ''
-          : ''
-
-      content = (
-        <div
-          className="flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-amber-400/30 bg-amber-50/50 p-6 text-center"
-          data-testid="feed-empty-unhealthy"
+    content = (
+      <div
+        className="flex h-full flex-col items-center justify-center gap-3 rounded-lg border border-ot-border/60 bg-ot-surface p-6 text-center"
+        data-testid="feed-empty"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-8 w-8 text-ot-muted"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-8 w-8 text-amber-500"
-          >
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-            <line x1="12" y1="9" x2="12" y2="13" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
-          <div className="text-[12px] font-medium text-amber-700">System Health Degraded</div>
-          <div className="text-[11px] text-amber-600/80">
-            Status: <span className="font-semibold">{systemStatus}</span>
-            {lastUpdatedLabel && (
-              <span className="ml-1">· Last update {lastUpdatedLabel}</span>
-            )}
-          </div>
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        <div className="text-[12px] font-medium text-ot-foreground">No surebets found</div>
+        <div className="text-[11px] text-ot-muted">
+          Try running a scan to find arbitrage opportunities
         </div>
-      )
-    } else {
-      const lastUpdatedLabel =
-        fetchedAt != null
-          ? getStalenessInfo({ foundAt: fetchedAt }, stalenessNow).label || ''
-          : ''
-
-      content = (
-        <div
-          className="flex h-full flex-col items-center justify-center gap-3 rounded-lg border border-emerald-300/30 bg-emerald-50/30 p-6 text-center"
-          data-testid="feed-empty-healthy"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-8 w-8 text-emerald-500"
-          >
-            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-            <polyline points="22 4 12 14.01 9 11.01" />
-          </svg>
-          <div className="text-[12px] font-medium text-emerald-700">All Systems Healthy</div>
-          <div className="text-[11px] text-ot-muted">
-            No arbitrage opportunities detected at this time
-          </div>
-          {lastUpdatedLabel && (
-            <div className="text-[10px] text-ot-muted/70">Last checked {lastUpdatedLabel}</div>
-          )}
-        </div>
-      )
-    }
+      </div>
+    )
   } else {
     content = (
-      <FeedTable
-        opportunities={filteredOpportunities}
-        stalenessNow={stalenessNow}
-        initialSortBy={sortBy}
-        initialSortDirection={sortDirection}
+      <SurebetTable
+        opportunities={searchFiltered}
+        selectedId={selectedOpportunityId}
+        expandedId={expandedId}
+        onSelect={handleSelect}
+        onToggleExpand={handleToggleExpand}
+        sortBy={sortBy}
+        sortDirection={sortDirection}
+        onSortChange={handleSortChange}
       />
     )
   }
 
   return (
-    <div className="flex h-full flex-col gap-3">
-      <StatusBar stalenessNow={stalenessNow} statusSnapshot={status ?? null} fetchedAt={fetchedAt} />
-      <ProviderFailureBanner statusSnapshot={status ?? null} stalenessNow={stalenessNow} />
-      <FilterBar
-        totalCount={totalCount}
-        filteredCount={filteredCount}
-        availableBookmakers={availableBookmakersForRegions}
-        sourceFilter={sourceFilter}
-        onSourceFilterChange={setSourceFilter}
-        sortBy={sortOption}
-        onSortChange={setSortOption}
-      />
-      <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-ot-border bg-ot-surface p-3">
-        {content}
+    <div className="flex h-full flex-col">
+      {/* StatusBar at top */}
+      <div className="px-3 pt-3">
+        <StatusBar stalenessNow={stalenessNow} statusSnapshot={status ?? null} fetchedAt={fetchedAt} />
       </div>
+
+      {/* Main 2-column layout */}
+      <div className="flex flex-1 min-h-0 gap-3 p-3">
+        {/* Left column - Feed */}
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden rounded-lg border border-ot-border bg-ot-surface">
+          {/* FeedToolbar with search */}
+          <FeedToolbar
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onClearAll={() => {
+              // Clear all opportunities logic here
+              addNotification({
+                id: Date.now().toString(),
+                message: 'All opportunities cleared',
+                type: 'info'
+              })
+            }}
+          />
+
+          {/* FeedResultsHeader */}
+          <FeedResultsHeader
+            count={totalCount}
+            filteredCount={filteredCount}
+            fetchedAt={fetchedAt}
+            stalenessNow={stalenessNow}
+            isLoading={isLoading}
+          />
+
+          {/* SurebetTable or empty state */}
+          <div className="flex-1 min-h-0 overflow-hidden">{content}</div>
+
+          {/* SignalPreview inline when opportunity selected */}
+          {selectedOpportunityId && filteredCount > 0 && (
+            <div className="border-t border-ot-border h-64 shrink-0">
+              <div className="h-full p-3">
+                <SignalPreview />
+              </div>
+            </div>
+          )}
+
+          {/* ScanActionButtons at bottom */}
+          <ScanActionButtons
+            onAggressiveScan={handleAggressiveScan}
+            onDeepScan={handleDeepScan}
+            isAggressiveScanning={isAggressiveScanning}
+            isDeepScanning={deepScanStore.isStarting}
+            deepScanProgress={deepScanProgress}
+          />
+        </div>
+
+        {/* Right column - FilterSidebar (320px width) */}
+        <div className="w-[320px] shrink-0 overflow-hidden rounded-lg border border-ot-border bg-ot-surface">
+          <FilterSidebar
+            sortBy={sortBy}
+            sortDirection={sortDirection}
+            onSortChange={handleSortChange}
+            totalCount={totalCount}
+            filteredCount={filteredCount}
+          />
+        </div>
+      </div>
+
+      {/* Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={showAggressiveConfirm}
+        title="Start Aggressive Scan?"
+        message="This will perform an intensive scan that may use more API requests and take longer. Are you sure you want to continue?"
+        confirmLabel="Start Scan"
+        cancelLabel="Cancel"
+        onConfirm={confirmAggressiveScan}
+        onCancel={() => setShowAggressiveConfirm(false)}
+        variant="warning"
+      />
+
+      {/* Notification Toasts */}
+      <NotificationToast notifications={notifications} onDismiss={dismissNotification} />
     </div>
   )
 }
 
 export default FeedPane
+
+
+
