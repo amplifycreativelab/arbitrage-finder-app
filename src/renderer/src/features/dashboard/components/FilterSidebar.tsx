@@ -14,6 +14,8 @@ export interface FilterSidebarProps {
   totalCount: number
   filteredCount: number
   className?: string
+  /** List of all available bookmakers extracted from opportunities */
+  availableBookmakers?: string[]
 }
 
 const SORT_OPTIONS: { key: FeedSortKey; label: string }[] = [
@@ -45,7 +47,8 @@ export function FilterSidebar({
   onSortChange,
   totalCount,
   filteredCount,
-  className
+  className,
+  availableBookmakers = []
 }: FilterSidebarProps): React.JSX.Element {
   const filterState = useFeedFiltersStore()
   const [expandedSections, setExpandedSections] = React.useState<string[]>(['bookmakers', 'sports'])
@@ -196,7 +199,62 @@ export function FilterSidebar({
           isExpanded={expandedSections.includes('bookmakers')}
           onToggle={() => toggleSection('bookmakers')}
         >
-          <div className="text-xs text-ot-muted py-2">Bookmaker filter coming soon</div>
+          {availableBookmakers.length > 0 ? (
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {/* Select All / Clear All */}
+              <div className="flex items-center justify-between py-1 border-b border-ot-border/50 mb-1">
+                <button
+                  type="button"
+                  onClick={() => filterState.setBookmakers([])}
+                  className={cn(
+                    'text-[10px] font-medium',
+                    filterState.bookmakers.length === 0
+                      ? 'text-ot-accent'
+                      : 'text-ot-muted hover:text-ot-foreground'
+                  )}
+                >
+                  All
+                </button>
+                {filterState.bookmakers.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => filterState.setBookmakers([])}
+                    className="text-[10px] text-ot-muted hover:text-ot-foreground"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {availableBookmakers.map((bookmaker) => (
+                <label
+                  key={bookmaker}
+                  className="flex items-center gap-2 text-xs text-ot-foreground cursor-pointer py-1"
+                >
+                  <input
+                    type="checkbox"
+                    checked={filterState.bookmakers.length === 0 || filterState.bookmakers.includes(bookmaker)}
+                    onChange={() => {
+                      if (filterState.bookmakers.length === 0) {
+                        // Switching from "All" to selecting specific ones
+                        // Include all except this one (inverted selection logic)
+                        filterState.setBookmakers(availableBookmakers.filter(b => b !== bookmaker))
+                      } else {
+                        filterState.toggleBookmaker(bookmaker)
+                      }
+                    }}
+                    className="rounded border-ot-border text-ot-accent focus:ring-ot-accent"
+                  />
+                  <span className="truncate" title={bookmaker}>
+                    {bookmaker}
+                  </span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <div className="text-[10px] text-ot-muted py-2">
+              No bookmakers found in current feed
+            </div>
+          )}
         </AccordionSection>
 
         <AccordionSection

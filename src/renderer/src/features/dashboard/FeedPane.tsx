@@ -7,6 +7,7 @@ import { useStalenessTicker } from './useStalenessTicker'
 import { useAutoRefresh } from './hooks/useAutoRefresh'
 import { applyDashboardFilters } from './filters'
 import type { ArbitrageOpportunity } from '../../../../../shared/types'
+import type { AggressiveScanSelection } from '../../../../../shared/aggressiveScanPresets'
 
 import StatusBar from './StatusBar'
 import { FeedToolbar } from './components/FeedToolbar'
@@ -14,6 +15,8 @@ import { FeedResultsHeader } from './components/FeedResultsHeader'
 import { SurebetTable } from './components/SurebetTable'
 import { FilterSidebar } from './components/FilterSidebar'
 import SignalPreview from './SignalPreview'
+import { AggressiveScanPresetDialog } from './AggressiveScanPresetDialog'
+import { DeepScanConfigDialog } from './DeepScanConfigDialog'
 import { Button } from '../../components/ui/button'
 
 // Notification type for scan actions
@@ -30,6 +33,10 @@ interface ScanActionButtonsProps {
   isAggressiveScanning: boolean
   isDeepScanning: boolean
   deepScanProgress: ReturnType<typeof useDeepScanStore.getState>['progress']
+  continuousEnabled: boolean
+  continuousActive: boolean
+  onToggleContinuous: () => void
+  isContinuousUpdating: boolean
 }
 
 function ScanActionButtons({
@@ -37,12 +44,55 @@ function ScanActionButtons({
   onDeepScan,
   isAggressiveScanning,
   isDeepScanning,
-  deepScanProgress
+  deepScanProgress,
+  continuousEnabled,
+  continuousActive,
+  onToggleContinuous,
+  isContinuousUpdating
 }: ScanActionButtonsProps): React.JSX.Element {
   const isAnyScanning = isAggressiveScanning || isDeepScanning || deepScanProgress.status === 'scanning'
 
   return (
     <div className="flex items-center gap-2 py-2 px-3 border-t border-ot-border bg-ot-surface">
+      {/* Continuous Scan Toggle */}
+      <button
+        type="button"
+        onClick={onToggleContinuous}
+        disabled={isContinuousUpdating}
+        className={`
+          relative inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-all
+          ${continuousEnabled
+            ? 'bg-emerald-500/10 border border-emerald-500/50 text-emerald-600 hover:bg-emerald-500/20'
+            : 'bg-ot-surface border border-ot-border text-ot-muted hover:bg-ot-surface-hover hover:text-ot-foreground'
+          }
+          ${isContinuousUpdating ? 'opacity-50 cursor-not-allowed' : ''}
+        `}
+        data-testid="continuous-scan-toggle"
+        title={continuousEnabled ? 'Auto-fetch is ON - Click to disable' : 'Auto-fetch is OFF - Click to enable'}
+      >
+        {/* Status indicator dot */}
+        <span
+          className={`h-2 w-2 rounded-full ${
+            continuousActive
+              ? 'bg-emerald-500 animate-pulse'
+              : continuousEnabled
+                ? 'bg-emerald-500'
+                : 'bg-ot-muted'
+          }`}
+        />
+        {isContinuousUpdating ? (
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        ) : (
+          <span>Auto</span>
+        )}
+        {/* ON/OFF label */}
+        <span className={`text-[10px] font-bold ${continuousEnabled ? 'text-emerald-600' : 'text-ot-muted'}`}>
+          {continuousEnabled ? 'ON' : 'OFF'}
+        </span>
+      </button>
+
+      <div className="h-4 w-px bg-ot-border" />
+
       <Button
         variant="outline"
         size="sm"
@@ -100,53 +150,6 @@ function ScanActionButtons({
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-// Confirmation Dialog component
-interface ConfirmationDialogProps {
-  isOpen: boolean
-  title: string
-  message: string
-  confirmLabel: string
-  cancelLabel: string
-  onConfirm: () => void
-  onCancel: () => void
-  variant?: 'danger' | 'warning'
-}
-
-function ConfirmationDialog({
-  isOpen,
-  title,
-  message,
-  confirmLabel,
-  cancelLabel,
-  onConfirm,
-  onCancel,
-  variant = 'warning'
-}: ConfirmationDialogProps): React.JSX.Element | null {
-  if (!isOpen) return null
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="confirmation-dialog">
-      <div className="w-full max-w-md rounded-lg border border-ot-border bg-ot-surface p-6 shadow-lg">
-        <h3 className="text-lg font-semibold text-ot-foreground mb-2">{title}</h3>
-        <p className="text-sm text-ot-muted mb-6">{message}</p>
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={onCancel}>
-            {cancelLabel}
-          </Button>
-          <Button
-            variant={variant === 'danger' ? 'danger' : 'primary'}
-            size="sm"
-            onClick={onConfirm}
-            className={variant === 'warning' ? 'bg-amber-500 hover:bg-amber-600 text-white' : ''}
-          >
-            {confirmLabel}
-          </Button>
-        </div>
-      </div>
     </div>
   )
 }
@@ -264,7 +267,17 @@ function FeedPane(): React.JSX.Element {
 
   // Deep scan store
   const deepScanStore = useDeepScanStore()
-  const { setDialogOpen, progress: deepScanProgress } = deepScanStore
+  const {
+    setDialogOpen,
+    isDialogOpen,
+    lastConfig,
+    progress: deepScanProgress,
+    startScan,
+    continuousStatus,
+    setContinuousEnabled,
+    isContinuousUpdating,
+    refreshContinuousStatus
+  } = deepScanStore
 
   // Search query state
   const [searchQuery, setSearchQuery] = React.useState('')
@@ -279,8 +292,8 @@ function FeedPane(): React.JSX.Element {
   // Notification state
   const [notifications, setNotifications] = React.useState<Notification[]>([])
 
-  // Confirmation dialog state
-  const [showAggressiveConfirm, setShowAggressiveConfirm] = React.useState(false)
+  // Aggressive scan dialog state
+  const [showAggressivePresetDialog, setShowAggressivePresetDialog] = React.useState(false)
 
   // Scan loading states
   const [isAggressiveScanning, setIsAggressiveScanning] = React.useState(false)
@@ -370,6 +383,19 @@ function FeedPane(): React.JSX.Element {
   const hasUnderlyingData = totalCount > 0
   const noUnderlyingData = !hasUnderlyingData
 
+  // Extract unique bookmakers from all opportunities
+  const availableBookmakers = React.useMemo(() => {
+    const bookmakerSet = new Set<string>()
+    for (const opp of safeOpportunities) {
+      for (const leg of opp.legs) {
+        if (leg.bookmaker) {
+          bookmakerSet.add(leg.bookmaker)
+        }
+      }
+    }
+    return Array.from(bookmakerSet).sort()
+  }, [safeOpportunities])
+
   // Handle sort change
   const handleSortChange = (key: FeedSortKey, direction: FeedSortDirection): void => {
     setSortBy(key)
@@ -388,26 +414,26 @@ function FeedPane(): React.JSX.Element {
 
   // Handle aggressive scan
   const handleAggressiveScan = (): void => {
-    setShowAggressiveConfirm(true)
+    setShowAggressivePresetDialog(true)
   }
 
-  const confirmAggressiveScan = async (): Promise<void> => {
-    setShowAggressiveConfirm(false)
+  const startAggressiveScan = async (selection: AggressiveScanSelection): Promise<void> => {
+    setShowAggressivePresetDialog(false)
     setIsAggressiveScanning(true)
 
     try {
-      // Simulate aggressive scan - replace with actual implementation
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      // Start aggressive scan with selected presets/leagues
+      await window.api.deepScan.startAggressiveScanWithSelection(selection)
 
       addNotification({
         id: Date.now().toString(),
-        message: 'Aggressive scan completed successfully',
+        message: `Aggressive scan started with ${selection.presetIds.length} preset(s)`,
         type: 'success'
       })
     } catch (err) {
       addNotification({
         id: Date.now().toString(),
-        message: 'Aggressive scan failed',
+        message: 'Failed to start aggressive scan',
         type: 'error'
       })
     } finally {
@@ -419,6 +445,23 @@ function FeedPane(): React.JSX.Element {
   const handleDeepScan = (): void => {
     setDialogOpen(true)
   }
+
+  // Handle continuous scan toggle
+  const handleToggleContinuous = async (): Promise<void> => {
+    const newEnabled = !continuousStatus.enabled
+    await setContinuousEnabled(newEnabled)
+
+    addNotification({
+      id: Date.now().toString(),
+      message: newEnabled ? 'Auto-fetch enabled' : 'Auto-fetch disabled',
+      type: 'info'
+    })
+  }
+
+  // Refresh continuous status on mount
+  React.useEffect(() => {
+    void refreshContinuousStatus()
+  }, [refreshContinuousStatus])
 
   // Notification helper
   const addNotification = (notification: Notification): void => {
@@ -596,6 +639,10 @@ function FeedPane(): React.JSX.Element {
             isAggressiveScanning={isAggressiveScanning}
             isDeepScanning={deepScanStore.isStarting}
             deepScanProgress={deepScanProgress}
+            continuousEnabled={continuousStatus.enabled}
+            continuousActive={continuousStatus.isActive}
+            onToggleContinuous={handleToggleContinuous}
+            isContinuousUpdating={isContinuousUpdating}
           />
         </div>
 
@@ -607,20 +654,24 @@ function FeedPane(): React.JSX.Element {
             onSortChange={handleSortChange}
             totalCount={totalCount}
             filteredCount={filteredCount}
+            availableBookmakers={availableBookmakers}
           />
         </div>
       </div>
 
-      {/* Confirmation Dialog */}
-      <ConfirmationDialog
-        isOpen={showAggressiveConfirm}
-        title="Start Aggressive Scan?"
-        message="This will perform an intensive scan that may use more API requests and take longer. Are you sure you want to continue?"
-        confirmLabel="Start Scan"
-        cancelLabel="Cancel"
-        onConfirm={confirmAggressiveScan}
-        onCancel={() => setShowAggressiveConfirm(false)}
-        variant="warning"
+      {/* Aggressive Scan Preset Dialog */}
+      <AggressiveScanPresetDialog
+        open={showAggressivePresetDialog}
+        onClose={() => setShowAggressivePresetDialog(false)}
+        onStart={startAggressiveScan}
+      />
+
+      {/* Deep Scan Config Dialog */}
+      <DeepScanConfigDialog
+        open={isDialogOpen}
+        initialConfig={lastConfig}
+        onClose={() => setDialogOpen(false)}
+        onStart={startScan}
       />
 
       {/* Notification Toasts */}

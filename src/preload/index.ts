@@ -4,6 +4,7 @@ import { createTRPCProxyClient } from '@trpc/client'
 import { ELECTRON_TRPC_CHANNEL, ipcLink } from 'electron-trpc/renderer'
 import type { AppRouter } from '../main/services/router'
 import type { ArbitrageOpportunity, DeepScanConfig, DeepScanProgress, ProviderId, ScanHistoryEntry, DeepScanQuotaStatus, CardCountingRule, BookmakerCardRules, AggressiveScanConfig, AggressiveScanStats } from '../../shared/types'
+import type { AggressiveScanSelection } from '../../shared/aggressiveScanPresets'
 
 type CredentialsStorageStatus = {
   isUsingFallbackStorage: boolean
@@ -84,6 +85,7 @@ type DeepScanAPI = {
   getAggressiveScanStats: () => Promise<AggressiveScanStats>
   startAggressiveScan: () => Promise<void>
   stopAggressiveScan: () => Promise<void>
+  startAggressiveScanWithSelection: (selection: AggressiveScanSelection) => Promise<void>
 }
 
 // Story 7.9: Sport and League types for the UI
@@ -346,6 +348,9 @@ const deepScanApi: DeepScanAPI = {
   },
   async stopAggressiveScan() {
     await trpcClient.stopAggressiveScan.mutate()
+  },
+  async startAggressiveScanWithSelection(selection) {
+    await trpcClient.startAggressiveScanWithSelection.mutate(selection)
   }
 }
 

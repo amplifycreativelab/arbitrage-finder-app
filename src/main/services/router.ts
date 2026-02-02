@@ -788,7 +788,38 @@ export const appRouter = t.router({
   stopAggressiveScan: t.procedure.mutation(() => {
     stopAggressiveScan()
     return { ok: true }
-  })
+  }),
+
+  startAggressiveScanWithSelection: t.procedure
+    .input(
+      z.object({
+        presetIds: z.array(z.string()),
+        customLeagueIds: z.array(z.string()),
+        scanHorizonHours: z.number().min(1).max(168)
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Import the preset functions
+      const { getLeagueIdsFromPresets } = await import('../../../shared/aggressiveScanPresets')
+
+      // Get all league IDs from presets and custom selections
+      const presetLeagueIds = getLeagueIdsFromPresets(input.presetIds)
+      const allLeagueIds = [...new Set([...presetLeagueIds, ...input.customLeagueIds])]
+
+      // Configure the aggressive scan with the selection
+      setAggressiveScanConfig({
+        enabled: true,
+        scanHorizonHours: input.scanHorizonHours
+      })
+
+      // Set the enabled leagues filter
+      setEnabledLeaguesFilter(allLeagueIds)
+
+      // Start the aggressive scan
+      await startAggressiveScan()
+
+      return { ok: true, leagueCount: allLeagueIds.length }
+    })
 })
 
 export type AppRouter = typeof appRouter
