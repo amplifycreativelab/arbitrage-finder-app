@@ -1,6 +1,6 @@
 /**
  * Story 8.7: Aggressive Pre-Match Scanning with Quota Maximization
- * 
+ *
  * This module implements tiered event polling with quota-aware scheduling:
  * - Events are categorized into tiers based on time-to-kickoff
  * - Each tier gets a weighted portion of the API quota budget
@@ -23,9 +23,25 @@ import {
   DEFAULT_TIER_CONFIGS,
   DEFAULT_AGGRESSIVE_SCAN_CONFIG
 } from '../../../shared/types'
-import { type QuotaConfig, createQuotaConfig, type ApiPlanTier } from '../../../shared/aggressiveScanPresets'
-import type { DeepScanEvent } from './deepScan'
-import { logInfo, logWarn, logDebug, logError, createCorrelationId, type StructuredLogBase } from './logger'
+import {
+  type QuotaConfig,
+  createQuotaConfig,
+  type ApiPlanTier
+} from '../../../shared/aggressiveScanPresets'
+import {
+  discoverEventsForEnabledLeagues,
+  getEnabledLeaguesFilter,
+  getEnabledSportsFilter,
+  type DeepScanEvent
+} from './deepScan'
+import {
+  logInfo,
+  logWarn,
+  logDebug,
+  logError,
+  createCorrelationId,
+  type StructuredLogBase
+} from './logger'
 import { getSelectedBookmakers } from './odds-api-io-bookmakers'
 import { calculateTwoLegArbitrageRoi } from './calculator'
 import { net } from 'electron'
@@ -52,6 +68,8 @@ const BATCH_DELAY_MS = 100 // Delay between batch requests to avoid rate limitin
 const MAX_BOOKMAKERS_PER_REQUEST = 30 // API limit for bookmakers parameter
 const TIER_PROMOTION_INTERVAL_MS = 30000 // Check for tier promotions every 30 seconds
 const EVENT_EVICT_AFTER_MINUTES = 30 // Remove finished events after 30 minutes
+
+// Story 9.5.5: Event discovery interval is configurable via config.eventDiscoveryIntervalMinutes
 
 // ============================================================================
 // State
@@ -87,6 +105,14 @@ const tierPollTimers = new Map<EventTier, ReturnType<typeof setInterval>>()
 
 // Cold start tracking
 let coldStartProgress: ColdStartProgress | null = null
+
+// Story 9-5.5: Event discovery timer
+let eventDiscoveryTimer: ReturnType<typeof setInterval> | null = null
+let eventDiscoveryIntervalMsActive: number | null = null
+let lastDiscoveryChangedPollingPlan = false
+
+// Story 9.5.5: Serialize discovery/refresh operations to avoid overlap
+let discoveryQueue: Promise<unknown> = Promise.resolve()
 
 // Bookmaker list cache (cached for 5 min - bookmaker names only, NOT odds)
 let cachedBookmakers: { fetchedAtMs: number; bookmakers: string[] } | null = null
@@ -222,10 +248,10 @@ async function fetchOddsForEvents(
 
     // Add delay between batches to avoid rate limiting (skip delay for first batch)
     if (batchIndex > 0) {
-      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS))
+      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS))
     }
 
-    const eventIds = batch.map(e => e.id).join(',')
+    const eventIds = batch.map((e) => e.id).join(',')
     const url = new URL(ODDS_API_IO_ODDS_MULTI_PATH, ODDS_API_IO_BASE_URL)
     url.searchParams.set('apiKey', apiKey)
     url.searchParams.set('eventIds', eventIds)
@@ -240,7 +266,9 @@ async function fetchOddsForEvents(
       })
 
       if (!response.ok) {
-        const message = await response.text().catch(() => `Batch odds request failed with status ${response.status}`)
+        const message = await response
+          .text()
+          .catch(() => `Batch odds request failed with status ${response.status}`)
         logWarn('aggressiveScan.fetchOdds.failed', {
           context: 'service:aggressiveScan',
           operation: 'fetchOddsForEvents',
@@ -255,7 +283,7 @@ async function fetchOddsForEvents(
         continue
       }
 
-      const body = await response.json() as unknown
+      const body = (await response.json()) as unknown
       const batchResults = parseBatchOddsResponse(body, batch)
       allResults.push(...batchResults)
 
@@ -269,7 +297,6 @@ async function fetchOddsForEvents(
         batchSize: batch.length,
         resultsCount: batchResults.length
       } satisfies StructuredLogBase)
-
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         break
@@ -295,15 +322,13 @@ async function fetchOddsForEvents(
  * Parse batch odds response from /v3/odds/multi endpoint.
  * Converts API response to RawOddsPayload format.
  */
-function parseBatchOddsResponse(
-  body: unknown,
-  requestedEvents: DeepScanEvent[]
-): RawOddsPayload[] {
+function parseBatchOddsResponse(body: unknown, requestedEvents: DeepScanEvent[]): RawOddsPayload[] {
   const results: RawOddsPayload[] = []
 
   // Handle array response (expected format)
-  const items = Array.isArray(body) ? body :
-    (body && typeof body === 'object' && Array.isArray((body as { data?: unknown[] }).data))
+  const items = Array.isArray(body)
+    ? body
+    : body && typeof body === 'object' && Array.isArray((body as { data?: unknown[] }).data)
       ? (body as { data: unknown[] }).data
       : []
 
@@ -311,14 +336,14 @@ function parseBatchOddsResponse(
     if (!item || typeof item !== 'object') continue
 
     // Extract event ID
-    const rawId = (item as { id?: unknown; eventId?: unknown }).id ??
-                  (item as { eventId?: unknown }).eventId
+    const rawId =
+      (item as { id?: unknown; eventId?: unknown }).id ?? (item as { eventId?: unknown }).eventId
     const eventId = rawId != null ? String(rawId) : null
 
     if (!eventId) continue
 
     // Find matching event
-    const event = requestedEvents.find(e => e.id === eventId)
+    const event = requestedEvents.find((e) => e.id === eventId)
     if (!event) continue
 
     // Extract bookmakers
@@ -350,7 +375,8 @@ function parseBatchOddsResponse(
           if (!out || typeof out !== 'object') continue
 
           const outName = (out as { name?: unknown }).name
-          const odds = (out as { price?: unknown; odds?: unknown }).price ?? (out as { odds?: unknown }).odds
+          const odds =
+            (out as { price?: unknown; odds?: unknown }).price ?? (out as { odds?: unknown }).odds
 
           if (typeof outName === 'string' && typeof odds === 'number') {
             outcomes.push({ name: outName, odds })
@@ -454,6 +480,7 @@ function computeArbitrageFromOdds(odds: RawOddsPayload): number {
 // ============================================================================
 
 export function setAggressiveScanConfig(newConfig: Partial<AggressiveScanConfig>): void {
+  const previousIntervalMinutes = config.eventDiscoveryIntervalMinutes
   config = { ...config, ...newConfig }
   logInfo('aggressiveScan.config.updated', {
     context: 'service:aggressiveScan',
@@ -464,6 +491,15 @@ export function setAggressiveScanConfig(newConfig: Partial<AggressiveScanConfig>
     errorCategory: null,
     config: sanitizeConfigForLogging(config)
   } satisfies StructuredLogBase)
+
+  // Apply discovery interval changes immediately when running.
+  if (
+    isRunning &&
+    typeof newConfig.eventDiscoveryIntervalMinutes === 'number' &&
+    newConfig.eventDiscoveryIntervalMinutes !== previousIntervalMinutes
+  ) {
+    restartEventDiscoveryTimer()
+  }
 }
 
 /**
@@ -473,12 +509,12 @@ export function setAggressiveScanConfig(newConfig: Partial<AggressiveScanConfig>
 export function setQuotaConfig(newQuotaConfig: QuotaConfig): void {
   quotaConfig = { ...newQuotaConfig }
   HOURLY_REQUEST_LIMIT = quotaConfig.hourlyLimit
-  
+
   // Re-initialize quota budget if already running
   if (isRunning) {
     initQuotaBudget()
   }
-  
+
   logInfo('aggressiveScan.quotaConfig.updated', {
     context: 'service:aggressiveScan',
     operation: 'setQuotaConfig',
@@ -516,7 +552,7 @@ export function detectPlanTierFromRateLimit(observedLimit: number): ApiPlanTier 
   // Free tier is 100/hr, paid is 5000/hr
   // Use threshold of 1000 to distinguish between them
   const detectedTier: ApiPlanTier = observedLimit <= 1000 ? 'free' : 'paid'
-  
+
   // Auto-update if different from current
   if (quotaConfig.planTier !== detectedTier || quotaConfig.hourlyLimit !== observedLimit) {
     setQuotaConfig({
@@ -525,7 +561,7 @@ export function detectPlanTierFromRateLimit(observedLimit: number): ApiPlanTier 
       planTier: detectedTier
     })
   }
-  
+
   return detectedTier
 }
 
@@ -659,7 +695,7 @@ function initTierCache(): void {
 export function upsertTieredEvent(event: DeepScanEvent, now: number = Date.now()): TieredEvent {
   const tieredEvent = createTieredEvent(event, now)
   const tierMap = tieredEventCache.get(tieredEvent.tier)
-  
+
   if (tierMap) {
     // Preserve existing metadata if event already exists
     const existing = tierMap.get(event.id)
@@ -715,14 +751,14 @@ export function promoteEvents(now: number = Date.now()): void {
     for (const { event, newTier } of eventsToPromote) {
       // Remove from old tier
       tierMap.delete(event.id)
-      
+
       // Update and add to new tier
       const updatedEvent: TieredEvent = {
         ...event,
         tier: newTier,
         minutesToKickoff: calculateMinutesToKickoff(event, now)
       }
-      
+
       const newTierMap = tieredEventCache.get(newTier)
       if (newTierMap) {
         newTierMap.set(event.id, updatedEvent)
@@ -767,11 +803,11 @@ export function getEventCountsByTier(): Record<EventTier, number> {
     tomorrow: 0,
     distant: 0
   }
-  
+
   for (const [tier, tierMap] of tieredEventCache.entries()) {
     counts[tier] = tierMap.size
   }
-  
+
   return counts
 }
 
@@ -782,7 +818,7 @@ export function getEventCountsByTier(): Record<EventTier, number> {
 /**
  * Initialize or reset the quota budget.
  * Story 8.7 Task 3: Implement quota budget system
- * 
+ *
  * Uses quotaConfig.targetPercent if set, otherwise falls back to config.quotaTargetPercent.
  * The hourly limit is determined by setQuotaConfig() or defaults to 5000 (paid tier).
  */
@@ -796,25 +832,73 @@ export function initQuotaBudget(): QuotaBudget {
   // Calculate per-tier allocations based on weights
   const totalWeight = Object.values(config.tierWeights).reduce((sum, w) => sum + w, 0)
   const perTier: Record<EventTier, TierBudget> = {
-    imminent: { tier: 'imminent', weight: config.tierWeights.imminent, allocatedRequests: 0, usedThisHour: 0, eventCount: 0, currentPollIntervalSeconds: 0 },
-    soon: { tier: 'soon', weight: config.tierWeights.soon, allocatedRequests: 0, usedThisHour: 0, eventCount: 0, currentPollIntervalSeconds: 0 },
-    today: { tier: 'today', weight: config.tierWeights.today, allocatedRequests: 0, usedThisHour: 0, eventCount: 0, currentPollIntervalSeconds: 0 },
-    later: { tier: 'later', weight: config.tierWeights.later, allocatedRequests: 0, usedThisHour: 0, eventCount: 0, currentPollIntervalSeconds: 0 },
-    tomorrow: { tier: 'tomorrow', weight: config.tierWeights.tomorrow, allocatedRequests: 0, usedThisHour: 0, eventCount: 0, currentPollIntervalSeconds: 0 },
-    distant: { tier: 'distant', weight: config.tierWeights.distant, allocatedRequests: 0, usedThisHour: 0, eventCount: 0, currentPollIntervalSeconds: 0 }
+    imminent: {
+      tier: 'imminent',
+      weight: config.tierWeights.imminent,
+      allocatedRequests: 0,
+      usedThisHour: 0,
+      eventCount: 0,
+      currentPollIntervalSeconds: 0
+    },
+    soon: {
+      tier: 'soon',
+      weight: config.tierWeights.soon,
+      allocatedRequests: 0,
+      usedThisHour: 0,
+      eventCount: 0,
+      currentPollIntervalSeconds: 0
+    },
+    today: {
+      tier: 'today',
+      weight: config.tierWeights.today,
+      allocatedRequests: 0,
+      usedThisHour: 0,
+      eventCount: 0,
+      currentPollIntervalSeconds: 0
+    },
+    later: {
+      tier: 'later',
+      weight: config.tierWeights.later,
+      allocatedRequests: 0,
+      usedThisHour: 0,
+      eventCount: 0,
+      currentPollIntervalSeconds: 0
+    },
+    tomorrow: {
+      tier: 'tomorrow',
+      weight: config.tierWeights.tomorrow,
+      allocatedRequests: 0,
+      usedThisHour: 0,
+      eventCount: 0,
+      currentPollIntervalSeconds: 0
+    },
+    distant: {
+      tier: 'distant',
+      weight: config.tierWeights.distant,
+      allocatedRequests: 0,
+      usedThisHour: 0,
+      eventCount: 0,
+      currentPollIntervalSeconds: 0
+    }
   }
 
   // Update event counts and allocate requests
   for (const tier of Object.keys(perTier) as EventTier[]) {
     const eventCount = getEventsForTier(tier).length
     perTier[tier].eventCount = eventCount
-    perTier[tier].allocatedRequests = Math.floor((config.tierWeights[tier] / totalWeight) * usableRequests)
-    perTier[tier].currentPollIntervalSeconds = calculatePollInterval(tier, perTier[tier].allocatedRequests, eventCount)
+    perTier[tier].allocatedRequests = Math.floor(
+      (config.tierWeights[tier] / totalWeight) * usableRequests
+    )
+    perTier[tier].currentPollIntervalSeconds = calculatePollInterval(
+      tier,
+      perTier[tier].allocatedRequests,
+      eventCount
+    )
   }
 
   quotaBudget = {
     totalHourlyLimit: HOURLY_REQUEST_LIMIT,
-    targetPercent: config.quotaTargetPercent,
+    targetPercent,
     targetRequestsPerHour,
     bufferPercent: DEFAULT_BUFFER_PERCENT,
     bufferRequests,
@@ -829,6 +913,52 @@ export function initQuotaBudget(): QuotaBudget {
 }
 
 /**
+ * Recalculate quota allocations and poll intervals without resetting usage counters.
+ * Needed when tier cache contents change (e.g., event discovery / refresh).
+ */
+function recalculateQuotaBudgetPreservingUsage(): void {
+  if (!quotaBudget) return
+
+  const previousUsed = quotaBudget.currentHourUsed
+  const previousPerTierUsed: Partial<Record<EventTier, number>> = {}
+  for (const tier of Object.keys(quotaBudget.perTier) as EventTier[]) {
+    previousPerTierUsed[tier] = quotaBudget.perTier[tier].usedThisHour
+  }
+
+  const targetPercent = quotaConfig.targetPercent ?? config.quotaTargetPercent
+  const targetRequestsPerHour = Math.floor(HOURLY_REQUEST_LIMIT * (targetPercent / 100))
+  const bufferRequests = Math.floor(targetRequestsPerHour * (DEFAULT_BUFFER_PERCENT / 100))
+  const usableRequests = targetRequestsPerHour - bufferRequests
+
+  quotaBudget.totalHourlyLimit = HOURLY_REQUEST_LIMIT
+  quotaBudget.targetPercent = targetPercent
+  quotaBudget.targetRequestsPerHour = targetRequestsPerHour
+  quotaBudget.bufferPercent = DEFAULT_BUFFER_PERCENT
+  quotaBudget.bufferRequests = bufferRequests
+  quotaBudget.usableRequests = usableRequests
+
+  const totalWeight = Object.values(config.tierWeights).reduce((sum, w) => sum + w, 0)
+
+  for (const tier of Object.keys(quotaBudget.perTier) as EventTier[]) {
+    const eventCount = getEventsForTier(tier).length
+    quotaBudget.perTier[tier].weight = config.tierWeights[tier]
+    quotaBudget.perTier[tier].eventCount = eventCount
+    quotaBudget.perTier[tier].allocatedRequests = Math.floor(
+      (config.tierWeights[tier] / totalWeight) * usableRequests
+    )
+    quotaBudget.perTier[tier].currentPollIntervalSeconds = calculatePollInterval(
+      tier,
+      quotaBudget.perTier[tier].allocatedRequests,
+      eventCount
+    )
+    quotaBudget.perTier[tier].usedThisHour = previousPerTierUsed[tier] ?? 0
+  }
+
+  quotaBudget.currentHourUsed = previousUsed
+  quotaBudget.currentHourRemaining = Math.max(0, usableRequests - quotaBudget.currentHourUsed)
+}
+
+/**
  * Calculate poll interval for a tier based on budget and event count.
  * Story 8.7 Task 3.4: Implement calculatePollInterval
  */
@@ -837,7 +967,7 @@ export function calculatePollInterval(
   allocatedRequests: number,
   eventCount: number
 ): number {
-  const tierConfig = DEFAULT_TIER_CONFIGS.find(c => c.name === tier)
+  const tierConfig = DEFAULT_TIER_CONFIGS.find((c) => c.name === tier)
   if (!tierConfig) {
     return 3600 // Default to 1 hour if tier not found
   }
@@ -848,10 +978,10 @@ export function calculatePollInterval(
 
   // Calculate how many batches we need per poll cycle
   const batchesPerPoll = Math.ceil(eventCount / BATCH_SIZE_MAX)
-  
+
   // How many poll cycles can we do per hour with our budget?
   const pollsPerHour = Math.floor(allocatedRequests / batchesPerPoll)
-  
+
   if (pollsPerHour === 0) {
     return tierConfig.maxPollIntervalSeconds
   }
@@ -872,27 +1002,80 @@ export function calculatePollInterval(
  */
 export function calculateTierBudgets(
   totalBudget: number,
-  tierWeights: { imminent: number; soon: number; today: number; later: number; tomorrow: number; distant: number },
+  tierWeights: {
+    imminent: number
+    soon: number
+    today: number
+    later: number
+    tomorrow: number
+    distant: number
+  },
   eventCounts: Record<EventTier, number>
 ): Record<EventTier, TierBudget> {
   const totalWeight = Object.values(tierWeights).reduce((sum: number, w: number) => sum + w, 0)
-  
+
   const budgets: Record<EventTier, TierBudget> = {
-    imminent: { tier: 'imminent', weight: tierWeights.imminent, allocatedRequests: 0, usedThisHour: 0, eventCount: 0, currentPollIntervalSeconds: 0 },
-    soon: { tier: 'soon', weight: tierWeights.soon, allocatedRequests: 0, usedThisHour: 0, eventCount: 0, currentPollIntervalSeconds: 0 },
-    today: { tier: 'today', weight: tierWeights.today, allocatedRequests: 0, usedThisHour: 0, eventCount: 0, currentPollIntervalSeconds: 0 },
-    later: { tier: 'later', weight: tierWeights.later, allocatedRequests: 0, usedThisHour: 0, eventCount: 0, currentPollIntervalSeconds: 0 },
-    tomorrow: { tier: 'tomorrow', weight: tierWeights.tomorrow, allocatedRequests: 0, usedThisHour: 0, eventCount: 0, currentPollIntervalSeconds: 0 },
-    distant: { tier: 'distant', weight: tierWeights.distant, allocatedRequests: 0, usedThisHour: 0, eventCount: 0, currentPollIntervalSeconds: 0 }
+    imminent: {
+      tier: 'imminent',
+      weight: tierWeights.imminent,
+      allocatedRequests: 0,
+      usedThisHour: 0,
+      eventCount: 0,
+      currentPollIntervalSeconds: 0
+    },
+    soon: {
+      tier: 'soon',
+      weight: tierWeights.soon,
+      allocatedRequests: 0,
+      usedThisHour: 0,
+      eventCount: 0,
+      currentPollIntervalSeconds: 0
+    },
+    today: {
+      tier: 'today',
+      weight: tierWeights.today,
+      allocatedRequests: 0,
+      usedThisHour: 0,
+      eventCount: 0,
+      currentPollIntervalSeconds: 0
+    },
+    later: {
+      tier: 'later',
+      weight: tierWeights.later,
+      allocatedRequests: 0,
+      usedThisHour: 0,
+      eventCount: 0,
+      currentPollIntervalSeconds: 0
+    },
+    tomorrow: {
+      tier: 'tomorrow',
+      weight: tierWeights.tomorrow,
+      allocatedRequests: 0,
+      usedThisHour: 0,
+      eventCount: 0,
+      currentPollIntervalSeconds: 0
+    },
+    distant: {
+      tier: 'distant',
+      weight: tierWeights.distant,
+      allocatedRequests: 0,
+      usedThisHour: 0,
+      eventCount: 0,
+      currentPollIntervalSeconds: 0
+    }
   }
 
   for (const tier of Object.keys(budgets) as EventTier[]) {
     const eventCount = eventCounts[tier] || 0
     const allocatedRequests = Math.floor((tierWeights[tier] / totalWeight) * totalBudget)
-    
+
     budgets[tier].eventCount = eventCount
     budgets[tier].allocatedRequests = allocatedRequests
-    budgets[tier].currentPollIntervalSeconds = calculatePollInterval(tier, allocatedRequests, eventCount)
+    budgets[tier].currentPollIntervalSeconds = calculatePollInterval(
+      tier,
+      allocatedRequests,
+      eventCount
+    )
   }
 
   return budgets
@@ -905,7 +1088,10 @@ export function calculateTierBudgets(
 export function recordRequest(count: number = 1): void {
   if (quotaBudget) {
     quotaBudget.currentHourUsed += count
-    quotaBudget.currentHourRemaining = Math.max(0, quotaBudget.usableRequests - quotaBudget.currentHourUsed)
+    quotaBudget.currentHourRemaining = Math.max(
+      0,
+      quotaBudget.usableRequests - quotaBudget.currentHourUsed
+    )
   }
   pollsThisHour += count
 }
@@ -917,7 +1103,7 @@ export function canUseBurstBuffer(): boolean {
   if (!quotaBudget) {
     return false
   }
-  return quotaBudget.currentHourUsed < (quotaBudget.usableRequests + quotaBudget.bufferRequests)
+  return quotaBudget.currentHourUsed < quotaBudget.usableRequests + quotaBudget.bufferRequests
 }
 
 /**
@@ -935,12 +1121,11 @@ export function isOverBudget(tier: EventTier): boolean {
  * Reset hourly quota counters.
  */
 export function resetHourlyQuota(): void {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   hourStartedAt = Date.now()
   pollsThisHour = 0
   arbsFoundThisHour = 0
   totalPollLatencyMs = 0
-  
+
   if (quotaBudget) {
     quotaBudget.currentHourUsed = 0
     quotaBudget.currentHourRemaining = quotaBudget.usableRequests
@@ -966,8 +1151,8 @@ export function boostEvent(
   // Check max concurrent boosts
   if (boostedEvents.size >= config.maxBoostedEvents) {
     // Remove oldest boost
-    const oldest = Array.from(boostedEvents.values()).sort((a, b) => 
-      new Date(a.boostedAt).getTime() - new Date(b.boostedAt).getTime()
+    const oldest = Array.from(boostedEvents.values()).sort(
+      (a, b) => new Date(a.boostedAt).getTime() - new Date(b.boostedAt).getTime()
     )[0]
     if (oldest) {
       boostedEvents.delete(oldest.eventId)
@@ -981,7 +1166,7 @@ export function boostEvent(
 
   const now = Date.now()
   const boostDurationMs = config.arbBoostDurationMinutes * 60 * 1000
-  
+
   const boostInfo: EventBoostInfo = {
     eventId,
     boostedAt: new Date(now).toISOString(),
@@ -990,7 +1175,7 @@ export function boostEvent(
   }
 
   boostedEvents.set(eventId, boostInfo)
-  
+
   // Update event in cache
   event.isBoosted = true
   event.boostExpiresAt = boostInfo.expiresAt
@@ -1030,7 +1215,7 @@ export function removeBoost(eventId: string): void {
  */
 export function cleanupExpiredBoosts(now: number = Date.now()): void {
   const expired: string[] = []
-  
+
   for (const [eventId, boostInfo] of boostedEvents.entries()) {
     if (new Date(boostInfo.expiresAt).getTime() <= now) {
       expired.push(eventId)
@@ -1039,7 +1224,7 @@ export function cleanupExpiredBoosts(now: number = Date.now()): void {
 
   for (const eventId of expired) {
     removeBoost(eventId)
-    
+
     logDebug('aggressiveScan.boost.expired', {
       context: 'service:aggressiveScan',
       operation: 'cleanupExpiredBoosts',
@@ -1074,18 +1259,14 @@ export function getBoostedEventIds(): string[] {
  * Update the odds cache for an event.
  * Story 8.7 Task 7: Implement odds cache with history
  */
-export function updateOddsCache(
-  eventId: string,
-  odds: RawOddsPayload,
-  arbsFound: number
-): void {
+export function updateOddsCache(eventId: string, odds: RawOddsPayload, arbsFound: number): void {
   const event = getEventById(eventId)
   if (!event) {
     return
   }
 
   let cached = oddsCache.get(eventId)
-  
+
   if (!cached) {
     cached = {
       event,
@@ -1099,7 +1280,7 @@ export function updateOddsCache(
   } else {
     // Check if odds changed
     const oddsChanged = hasOddsChanged(cached.currentOdds, odds)
-    
+
     if (oddsChanged) {
       // Add current odds to history
       if (cached.currentOdds) {
@@ -1107,20 +1288,20 @@ export function updateOddsCache(
           odds: cached.currentOdds,
           fetchedAt: cached.lastOddsChangeAt || event.lastPolledAt || new Date().toISOString()
         })
-        
+
         // Keep only last N snapshots
         if (cached.oddsHistory.length > MAX_ODDS_HISTORY_SNAPSHOTS) {
           cached.oddsHistory.shift()
         }
       }
-      
+
       cached.oddsChangeCount++
       cached.lastOddsChangeAt = new Date().toISOString()
-      
+
       // Update volatility score
       event.volatilityScore = calculateVolatilityScore(cached)
     }
-    
+
     cached.currentOdds = odds
     cached.hasActiveArbs = arbsFound > 0
     cached.arbCount = arbsFound
@@ -1144,19 +1325,19 @@ function hasOddsChanged(oldOdds: RawOddsPayload | null, newOdds: RawOddsPayload)
 
   // Check if any odds values changed
   for (const oldBookmaker of oldOdds.bookmakers) {
-    const newBookmaker = newOdds.bookmakers.find(b => b.name === oldBookmaker.name)
+    const newBookmaker = newOdds.bookmakers.find((b) => b.name === oldBookmaker.name)
     if (!newBookmaker) {
       return true
     }
 
     for (const oldMarket of oldBookmaker.markets) {
-      const newMarket = newBookmaker.markets.find(m => m.key === oldMarket.key)
+      const newMarket = newBookmaker.markets.find((m) => m.key === oldMarket.key)
       if (!newMarket) {
         return true
       }
 
       for (const oldOutcome of oldMarket.outcomes) {
-        const newOutcome = newMarket.outcomes.find(o => o.name === oldOutcome.name)
+        const newOutcome = newMarket.outcomes.find((o) => o.name === oldOutcome.name)
         if (!newOutcome || newOutcome.odds !== oldOutcome.odds) {
           return true
         }
@@ -1183,7 +1364,8 @@ function calculateVolatilityScore(cached: CachedEventWithOdds): number {
 
   // Boost score if recent changes
   if (cached.lastOddsChangeAt) {
-    const minutesSinceChange = (Date.now() - new Date(cached.lastOddsChangeAt).getTime()) / (60 * 1000)
+    const minutesSinceChange =
+      (Date.now() - new Date(cached.lastOddsChangeAt).getTime()) / (60 * 1000)
     if (minutesSinceChange < 5) {
       score += 20 // Recent activity bonus
     }
@@ -1208,7 +1390,6 @@ export function evictOldEvents(now: number = Date.now()): number {
   let evictedCount = 0
 
   for (const [tier, tierMap] of tieredEventCache.entries()) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     void tier // Iteration key not used directly, tierMap is what we need
     const toEvict: string[] = []
 
@@ -1266,11 +1447,10 @@ export function evictOldEvents(now: number = Date.now()): number {
 export function getAggressiveScanStats(): AggressiveScanStats {
   const eventCounts = getEventCountsByTier()
   const totalEvents = Object.values(eventCounts).reduce((sum, c) => sum + c, 0)
-  
+
   // Calculate memory usage (rough estimate)
   let cacheMemoryMb = 0
   for (const _cached of oddsCache.values()) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     void _cached
     // Rough estimate: ~16KB per cached event
     cacheMemoryMb += 16 / 1024
@@ -1280,8 +1460,11 @@ export function getAggressiveScanStats(): AggressiveScanStats {
   const avgPollLatencyMs = pollsThisHour > 0 ? Math.floor(totalPollLatencyMs / pollsThisHour) : 0
 
   // Calculate quota efficiency
-  const quotaEfficiencyPercent = quotaBudget 
-    ? Math.min(100, Math.floor((quotaBudget.currentHourUsed / quotaBudget.targetRequestsPerHour) * 100))
+  const quotaEfficiencyPercent = quotaBudget
+    ? Math.min(
+        100,
+        Math.floor((quotaBudget.currentHourUsed / quotaBudget.targetRequestsPerHour) * 100)
+      )
     : 0
 
   // Get poll intervals by tier
@@ -1313,7 +1496,7 @@ export function getAggressiveScanStats(): AggressiveScanStats {
     cacheMemoryMb: Math.round(cacheMemoryMb * 100) / 100,
     lastPollAt,
     scanStartedAt,
-    uptimeMinutes: scanStartedAt 
+    uptimeMinutes: scanStartedAt
       ? Math.floor((Date.now() - new Date(scanStartedAt).getTime()) / (60 * 1000))
       : 0
   }
@@ -1322,6 +1505,216 @@ export function getAggressiveScanStats(): AggressiveScanStats {
 // ============================================================================
 // Lifecycle
 // ============================================================================
+
+/**
+ * Discover events and populate tier cache.
+ * Story 9.5.5 Task 1: Add event discovery to aggressive scan startup
+ */
+async function discoverAndPopulateEvents(): Promise<number> {
+  if (!isRunning || !abortController) {
+    return 0
+  }
+
+  const apiKey = await getApiKeyForAdapter('odds-api-io')
+  if (!apiKey) {
+    logWarn('aggressiveScan.discovery.noApiKey', {
+      context: 'service:aggressiveScan',
+      operation: 'discoverAndPopulateEvents',
+      providerId: 'odds-api-io',
+      correlationId: correlationId ?? undefined,
+      durationMs: null,
+      errorCategory: 'UserError',
+      message: 'No API key configured for event discovery'
+    } satisfies StructuredLogBase)
+    return 0
+  }
+
+  // Get enabled leagues filter (Story 9.5.5 Task 2)
+  const enabledLeagues = getEnabledLeaguesFilter()
+  if (enabledLeagues.length === 0) {
+    return 0
+  }
+
+  try {
+    // Story 9.6: Use API-side league filtering for efficiency
+    // This replaces client-side filtering and reduces API quota usage proportionally
+    const enabledSports = getEnabledSportsFilter()
+    const sportsToDiscover = enabledSports.length > 0 ? enabledSports : undefined
+
+    // Use the new per-league discovery function (AC: 1, 2, 4, 5)
+    const allEvents = await discoverEventsForEnabledLeagues({
+      apiKey,
+      signal: abortController.signal,
+      correlationId: correlationId ?? 'aggressive-scan-discovery',
+      enabledLeagues,
+      sports: sportsToDiscover
+    })
+
+    // Filter to pre-match events only (Story 9.5.5 Task 1)
+    // Note: Events are already filtered by league at API level (Story 9.6)
+    const now = Date.now()
+    const preMatchEvents = allEvents.filter((e) => isPreMatchEvent(e, now))
+
+    // Populate tier cache (Story 9.5.5 Task 1)
+    for (const event of preMatchEvents) {
+      upsertTieredEvent(event, now)
+    }
+
+    // Update quota budget (no usage reset) now that event counts may have changed
+    const previousPollIntervals: Partial<Record<EventTier, number>> = {}
+    if (quotaBudget) {
+      for (const tier of Object.keys(quotaBudget.perTier) as EventTier[]) {
+        previousPollIntervals[tier] = quotaBudget.perTier[tier].currentPollIntervalSeconds
+      }
+    }
+    recalculateQuotaBudgetPreservingUsage()
+    lastDiscoveryChangedPollingPlan = false
+    if (quotaBudget) {
+      for (const tier of Object.keys(quotaBudget.perTier) as EventTier[]) {
+        if (previousPollIntervals[tier] !== quotaBudget.perTier[tier].currentPollIntervalSeconds) {
+          lastDiscoveryChangedPollingPlan = true
+          break
+        }
+      }
+    }
+
+    logInfo('aggressiveScan.discovery.complete', {
+      context: 'service:aggressiveScan',
+      operation: 'discoverAndPopulateEvents',
+      providerId: 'odds-api-io',
+      correlationId: correlationId ?? undefined,
+      durationMs: null,
+      errorCategory: null,
+      totalDiscovered: allEvents.length,
+      afterPreMatchFilter: preMatchEvents.length,
+      tierDistribution: getEventCountsByTier(),
+      leaguesEnabled: enabledLeagues.length
+    } satisfies StructuredLogBase)
+
+    return preMatchEvents.length
+  } catch (error) {
+    const message = (error as Error)?.message ?? 'unknown error'
+    if (message === 'aborted' || /abort/i.test(message)) {
+      return 0
+    }
+    logError('aggressiveScan.discovery.error', {
+      context: 'service:aggressiveScan',
+      operation: 'discoverAndPopulateEvents',
+      providerId: 'odds-api-io',
+      correlationId: correlationId ?? undefined,
+      durationMs: null,
+      errorCategory: 'ProviderError',
+      message
+    } satisfies StructuredLogBase)
+    return 0
+  }
+}
+
+function enqueueDiscoveryOperation<T>(op: () => Promise<T>): Promise<T> {
+  const next = discoveryQueue.then(op, op)
+  discoveryQueue = next.then(
+    () => undefined,
+    () => undefined
+  )
+  return next
+}
+
+/**
+ * Refresh aggressive scan events when league filter changes.
+ * Story 9.5.5 Task 4: Handle league filter changes
+ */
+export async function refreshAggressiveScanEvents(): Promise<void> {
+  if (!isRunning) {
+    return
+  }
+
+  await enqueueDiscoveryOperation(async () => {
+    logInfo('aggressiveScan.events.refreshing', {
+      context: 'service:aggressiveScan',
+      operation: 'refreshAggressiveScanEvents',
+      providerId: 'odds-api-io',
+      correlationId: correlationId ?? undefined,
+      durationMs: null,
+      errorCategory: null
+    } satisfies StructuredLogBase)
+
+    // Clear existing tier cache
+    initTierCache()
+
+    // Clear odds cache to prevent stale data
+    oddsCache.clear()
+
+    // Re-discover with new filter
+    const eventCount = await discoverAndPopulateEvents()
+
+    // Restart polling loops only when we actually have events to poll.
+    stopTierPollingLoops()
+    if (eventCount > 0) {
+      startTierPollingLoops()
+    }
+
+    logInfo('aggressiveScan.events.refreshed', {
+      context: 'service:aggressiveScan',
+      operation: 'refreshAggressiveScanEvents',
+      providerId: 'odds-api-io',
+      correlationId: correlationId ?? undefined,
+      durationMs: null,
+      errorCategory: null,
+      eventCount,
+      tierDistribution: getEventCountsByTier()
+    } satisfies StructuredLogBase)
+  })
+}
+
+/**
+ * Stop all tier polling loops.
+ */
+function stopTierPollingLoops(): void {
+  for (const timer of tierPollTimers.values()) {
+    clearInterval(timer)
+  }
+  tierPollTimers.clear()
+}
+
+function getEventDiscoveryIntervalMs(): number | null {
+  const minutes = config.eventDiscoveryIntervalMinutes
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return null
+  }
+  return Math.floor(minutes * 60 * 1000)
+}
+
+function restartEventDiscoveryTimer(): void {
+  if (!isRunning) {
+    return
+  }
+
+  if (eventDiscoveryTimer) {
+    clearInterval(eventDiscoveryTimer)
+    eventDiscoveryTimer = null
+  }
+
+  const intervalMs = getEventDiscoveryIntervalMs()
+  eventDiscoveryIntervalMsActive = intervalMs
+  if (!intervalMs) {
+    return
+  }
+
+  eventDiscoveryTimer = setInterval(() => {
+    void enqueueDiscoveryOperation(async () => {
+      const eventCount = await discoverAndPopulateEvents()
+
+      // If we previously had no tier loops (e.g., started with no events),
+      // start them once discovery yields events. Otherwise, refresh intervals.
+      if (eventCount > 0 && tierPollTimers.size === 0) {
+        startTierPollingLoops()
+      } else if (eventCount > 0 && tierPollTimers.size > 0 && lastDiscoveryChangedPollingPlan) {
+        stopTierPollingLoops()
+        startTierPollingLoops()
+      }
+    })
+  }, intervalMs)
+}
 
 /**
  * Start aggressive scanning.
@@ -1343,9 +1736,13 @@ export async function startAggressiveScan(): Promise<void> {
 
   // Initialize caches
   initTierCache()
-  
+
   // Initialize quota budget
   initQuotaBudget()
+
+  // Story 9.5.5 Task 1: Discover and populate events on startup.
+  // Await discovery to ensure tier cache is populated before polling starts.
+  const discoveredCount = await enqueueDiscoveryOperation(discoverAndPopulateEvents)
 
   logInfo('aggressiveScan.start', {
     context: 'service:aggressiveScan',
@@ -1364,8 +1761,13 @@ export async function startAggressiveScan(): Promise<void> {
     evictOldEvents()
   }, TIER_PROMOTION_INTERVAL_MS)
 
+  // Story 9.5.5 Task 3: Start periodic event re-discovery (configurable)
+  restartEventDiscoveryTimer()
+
   // Start tier polling loops
-  startTierPollingLoops()
+  if (discoveredCount > 0) {
+    startTierPollingLoops()
+  }
 }
 
 /**
@@ -1389,10 +1791,14 @@ export function stopAggressiveScan(): void {
     tierPromotionTimer = null
   }
 
-  for (const timer of tierPollTimers.values()) {
-    clearInterval(timer)
+  // Story 9.5.5 Task 3: Clear event discovery timer
+  if (eventDiscoveryTimer) {
+    clearInterval(eventDiscoveryTimer)
+    eventDiscoveryTimer = null
   }
-  tierPollTimers.clear()
+  eventDiscoveryIntervalMsActive = null
+
+  stopTierPollingLoops()
 
   logInfo('aggressiveScan.stop', {
     context: 'service:aggressiveScan',
@@ -1453,14 +1859,14 @@ function startTierLoop(tier: EventTier): void {
     }
 
     const startTime = Date.now()
-    
+
     try {
       await pollTier(tier)
-      
+
       // Track latency
       const latencyMs = Date.now() - startTime
       totalPollLatencyMs += latencyMs
-      
+
       logDebug('aggressiveScan.poll.complete', {
         context: 'service:aggressiveScan',
         operation: 'pollTier',
@@ -1486,7 +1892,7 @@ function startTierLoop(tier: EventTier): void {
 
   // Calculate interval
   const intervalMs = (quotaBudget.perTier[tier].currentPollIntervalSeconds || 60) * 1000
-  
+
   // Start the loop
   const timer = setInterval(poll, intervalMs)
   tierPollTimers.set(tier, timer)
@@ -1512,7 +1918,7 @@ function startTierLoop(tier: EventTier): void {
  */
 async function pollTier(tier: EventTier): Promise<TieredPollResult> {
   const events = getEventsForTier(tier)
-  
+
   if (events.length === 0) {
     return {
       tier,
@@ -1536,7 +1942,7 @@ async function pollTier(tier: EventTier): Promise<TieredPollResult> {
       used: quotaBudget?.perTier[tier].usedThisHour,
       allocated: quotaBudget?.perTier[tier].allocatedRequests
     } satisfies StructuredLogBase)
-    
+
     return {
       tier,
       eventsPolled: 0,
@@ -1548,20 +1954,20 @@ async function pollTier(tier: EventTier): Promise<TieredPollResult> {
 
   // Handle boosted events first
   const boostedEventIds = getBoostedEventIds()
-  const boostedEventsList = events.filter(e => boostedEventIds.includes(e.id))
-  const normalEvents = events.filter(e => !boostedEventIds.includes(e.id))
+  const boostedEventsList = events.filter((e) => boostedEventIds.includes(e.id))
+  const normalEvents = events.filter((e) => !boostedEventIds.includes(e.id))
 
   // Sort by priority (volatility score, then time to kickoff)
   const sortedEvents = [...boostedEventsList, ...normalEvents].sort((a, b) => {
     // Boosted events first
     if (a.isBoosted && !b.isBoosted) return -1
     if (!a.isBoosted && b.isBoosted) return 1
-    
+
     // Higher volatility first
     if (b.volatilityScore !== a.volatilityScore) {
       return b.volatilityScore - a.volatilityScore
     }
-    
+
     // Closer to kickoff first
     return a.minutesToKickoff - b.minutesToKickoff
   })
@@ -1605,7 +2011,7 @@ async function pollTier(tier: EventTier): Promise<TieredPollResult> {
 
     // Convert TieredEvent to DeepScanEvent for the fetcher (AC4)
     // Include slug fields from Story 9.2 for proper cross-provider matching
-    const deepScanEvents: DeepScanEvent[] = batch.map(tieredEvent => ({
+    const deepScanEvents: DeepScanEvent[] = batch.map((tieredEvent) => ({
       id: tieredEvent.id,
       name: tieredEvent.name,
       date: tieredEvent.date,
@@ -1618,11 +2024,7 @@ async function pollTier(tier: EventTier): Promise<TieredPollResult> {
 
     // Fetch FRESH odds using batch endpoint (Story 9.5 AC1, AC5)
     // Bookmaker list may be cached (5min TTL), but odds are always fresh
-    const oddsResults = await fetchOddsForEvents(
-      deepScanEvents,
-      apiKey,
-      abortController!.signal
-    )
+    const oddsResults = await fetchOddsForEvents(deepScanEvents, apiKey, abortController!.signal)
 
     // Record request usage (1 request per batch)
     recordRequest(1)
@@ -1698,7 +2100,7 @@ export function updateColdStartProgress(processedEvents: number): void {
   coldStartProgress.percentComplete = Math.floor(
     (processedEvents / coldStartProgress.totalEvents) * 100
   )
-  
+
   const remainingEvents = coldStartProgress.totalEvents - processedEvents
   coldStartProgress.estimatedRemainingSeconds = Math.ceil(remainingEvents / 10) * 2
 }
@@ -1744,35 +2146,35 @@ export const __test = {
     coldStartProgress = null
     cachedBookmakers = null // Reset bookmaker cache
   },
-  
+
   getTierCache(): Map<EventTier, Map<string, TieredEvent>> {
     return tieredEventCache
   },
-  
+
   getOddsCache(): Map<string, CachedEventWithOdds> {
     return oddsCache
   },
-  
+
   getBoostedEvents(): Map<string, EventBoostInfo> {
     return boostedEvents
   },
-  
+
   getQuotaBudget(): QuotaBudget | null {
     return quotaBudget
   },
-  
+
   setQuotaBudget(budget: QuotaBudget): void {
     quotaBudget = budget
   },
-  
+
   getConfig(): AggressiveScanConfig {
     return { ...config }
   },
-  
+
   getQuotaConfig(): QuotaConfig {
     return { ...quotaConfig }
   },
-  
+
   setHourlyLimit(limit: number): void {
     HOURLY_REQUEST_LIMIT = limit
   },
@@ -1785,5 +2187,14 @@ export const __test = {
   // Story 9.5: Test helper to set bookmaker cache
   setBookmakerCache(cache: { fetchedAtMs: number; bookmakers: string[] } | null): void {
     cachedBookmakers = cache
+  },
+
+  // Story 9.5.5: Test helpers for discovery timer + polling loops
+  getTierPollTimerCount(): number {
+    return tierPollTimers.size
+  },
+
+  getEventDiscoveryIntervalMsActive(): number | null {
+    return eventDiscoveryIntervalMsActive
   }
 }

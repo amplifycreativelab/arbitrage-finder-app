@@ -1,6 +1,6 @@
 # Story 9.6: Implement API-Side League Filtering for Event Discovery
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -12,31 +12,31 @@ so that discovery traffic is reduced proportionally with league filters.
 
 ## Acceptance Criteria
 
-1. [ ] Instead of fetching all events for a sport, call `/v3/events?sport=...&league=...` per enabled `leagueSlug` (AC: 1)
-2. [ ] Use best supported filter pattern from API docs (AC: 2)
-3. [ ] Keep pagination handling (numeric `nextPage`) but reduce total pages fetched (AC: 3)
-4. [ ] Discovery traffic drops proportionally with league filters (AC: 4)
-5. [ ] Returned events are already within enabled leagues (AC: 5)
+1. [x] Instead of fetching all events for a sport, call `/v3/events?sport=...&league=...` per enabled `leagueSlug` (AC: 1)
+2. [x] Use best supported filter pattern from API docs (AC: 2)
+3. [x] Keep pagination handling (numeric `nextPage`) but reduce total pages fetched (AC: 3)
+4. [x] Discovery traffic drops proportionally with league filters (AC: 4)
+5. [x] Returned events are already within enabled leagues (AC: 5)
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Implement per-league event discovery function (AC: 1, 2)
-  - [ ] Create `discoverEventsForEnabledLeagues()` function in `deepScan.ts`
-  - [ ] Iterate over enabled leagues and fetch events per league
-  - [ ] Build URL with `sport` and `league` query params
-  - [ ] Handle both single-league and multi-league configurations
-- [ ] Task 2: Integrate with existing pagination logic (AC: 3)
-  - [ ] Reuse existing `nextPage` pagination handling
-  - [ ] Aggregate events from all league queries
-  - [ ] Ensure deduplication across league boundaries (if any)
-- [ ] Task 3: Replace sport-level discovery with league-level discovery (AC: 4, 5)
-  - [ ] Identify current sport-level fetch location in deep scan
-  - [ ] Replace with per-league fetch calls
-  - [ ] Ensure events returned match enabled league configuration
-- [ ] Task 4: Testing (AC: 4, 5)
-  - [ ] Unit: League filtering params correctly constructed
-  - [ ] Integration: Discovery traffic reduction with league filters applied
-  - [ ] Test: Events returned are within enabled leagues only
+- [x] Task 1: Implement per-league event discovery function (AC: 1, 2)
+  - [x] Create `discoverEventsForEnabledLeagues()` function in `deepScan.ts`
+  - [x] Iterate over enabled leagues and fetch events per league
+  - [x] Build URL with `sport` and `league` query params
+  - [x] Handle both single-league and multi-league configurations
+- [x] Task 2: Integrate with existing pagination logic (AC: 3)
+  - [x] Reuse existing `nextPage` pagination handling
+  - [x] Aggregate events from all league queries
+  - [x] Ensure deduplication across league boundaries (if any)
+- [x] Task 3: Replace sport-level discovery with league-level discovery (AC: 4, 5)
+  - [x] Identify current sport-level fetch location in deep scan
+  - [x] Replace with per-league fetch calls
+  - [x] Ensure events returned match enabled league configuration
+- [x] Task 4: Testing (AC: 4, 5)
+  - [x] Unit: League filtering params correctly constructed
+  - [x] Integration: Discovery traffic reduction with league filters applied
+  - [x] Test: Events returned are within enabled leagues only
 
 ## Dev Notes
 
@@ -337,14 +337,30 @@ After (API-Side):
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Debug Log References
 
 ### Completion Notes List
 
+- Implemented `discoverEventsForEnabledLeagues()` in deepScan.ts with per-league API calls
+- Added `league` parameter to `EventsFetcher` type and `defaultEventsFetcher` function
+- Created `buildLeagueSportMap()` helper for mapping league slugs to sport slugs
+- Added `inferSportFromLeagueSlug()` heuristics for common sports patterns
+- Updated aggressiveScan.ts to use new API-side filtering instead of client-side filtering
+- Removed TODO comment about Story 9.6 replacing client-side filtering
+- Created comprehensive test suite with 9 test cases covering all acceptance criteria
+- Updated 9.5.5 tests to work with API-side filtering behavior
+- All 99 Story 9 tests pass
+
 ### File List
+
+- src/main/services/deepScan.ts (modified - added discoverEventsForEnabledLeagues, buildLeagueSportMap, inferSportFromLeagueSlug, getCachedLeagues, updated EventsFetcher type)
+- src/main/services/aggressiveScan.ts (modified - replaced client-side filtering with API-side filtering via discoverEventsForEnabledLeagues)
+- tests/9.6-api-side-league-filtering.test.cjs (new - 9 test cases)
+- tests/9.5.5-aggressive-scan-event-discovery.test.cjs (modified - updated mock fetcher to respect league parameter)
 
 ## Change Log
 
 - 2026-02-02: Story 9.6 created - Implement API-Side League Filtering for Event Discovery
+- 2026-02-03: Story 9.6 implemented - API-side league filtering complete with all tests passing

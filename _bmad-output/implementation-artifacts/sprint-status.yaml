@@ -105,5 +105,5 @@ development_status:
   9-3-fix-event-extraction-priority-slug-first: done
   9-4-implement-strict-event-key-generation: done
   9-5-wire-aggressive-scan-to-multi-batching: done  # Code review complete 2026-02-02
-  9-55-aggressive-scan-event-discovery-with-league-filter: ready-for-dev
-  9-6-implement-api-side-league-filtering: ready-for-dev
+  9-5.5-aggressive-scan-event-discovery-with-league-filter: done  # Code review 2026-02-02; follow-up fixes 2026-02-03
+  9-6-implement-api-side-league-filtering: review  # Implementation complete 2026-02-03
