@@ -1,6 +1,6 @@
 # Story 9.6: Implement API-Side League Filtering for Event Discovery
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -346,21 +346,38 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 - Implemented `discoverEventsForEnabledLeagues()` in deepScan.ts with per-league API calls
 - Added `league` parameter to `EventsFetcher` type and `defaultEventsFetcher` function
 - Created `buildLeagueSportMap()` helper for mapping league slugs to sport slugs
-- Added `inferSportFromLeagueSlug()` heuristics for common sports patterns
+- Code review: resolved league→sport mapping via `/v3/leagues?sport=...` (sports-filter aware); removed heuristic sport guessing
 - Updated aggressiveScan.ts to use new API-side filtering instead of client-side filtering
 - Removed TODO comment about Story 9.6 replacing client-side filtering
 - Created comprehensive test suite with 9 test cases covering all acceptance criteria
-- Updated 9.5.5 tests to work with API-side filtering behavior
-- All 99 Story 9 tests pass
+- Validation (2026-02-03): `tsc -p tsconfig.storage-test.json` + `node --test tests/9.6-api-side-league-filtering.test.cjs`
 
 ### File List
 
-- src/main/services/deepScan.ts (modified - added discoverEventsForEnabledLeagues, buildLeagueSportMap, inferSportFromLeagueSlug, getCachedLeagues, updated EventsFetcher type)
+- src/main/services/deepScan.ts (modified - per-league discovery; league→sport resolution via /v3/leagues; defensive leagueSlug filtering; test reset clears league caches)
 - src/main/services/aggressiveScan.ts (modified - replaced client-side filtering with API-side filtering via discoverEventsForEnabledLeagues)
-- tests/9.6-api-side-league-filtering.test.cjs (new - 9 test cases)
-- tests/9.5.5-aggressive-scan-event-discovery.test.cjs (modified - updated mock fetcher to respect league parameter)
+- tests/9.6-api-side-league-filtering.test.cjs (modified - updated /v3/leagues stub + mapping assertions)
+- _bmad-output/implementation-artifacts/sprint-status.yaml (modified - story status synced)
 
 ## Change Log
 
 - 2026-02-02: Story 9.6 created - Implement API-Side League Filtering for Event Discovery
-- 2026-02-03: Story 9.6 implemented - API-side league filtering complete with all tests passing
+- 2026-02-03: Story 9.6 implemented - API-side league filtering for event discovery
+- 2026-02-03: Senior Developer Review (AI) - hardened league→sport resolution and corrected story record
+
+## Senior Developer Review (AI)
+
+Date: 2026-02-03
+
+### Summary
+
+- Removed heuristic sport guessing for league slugs; now resolves league→sport via `/v3/leagues?sport=...` using enabled sports context.
+- Added defensive filtering to ensure returned events stay within enabled `leagueSlug` and have canonical `leagueSlug` populated.
+- Fixed test harness to match `/v3/leagues` response shape (array) and made deep scan test reset clear cached leagues to avoid cross-test state bleed.
+- Corrected story File List to match actual touched files (and included sprint-status sync).
+
+### Validation
+
+- `npm run typecheck`
+- `tsc -p tsconfig.storage-test.json`
+- `node --test tests/9.6-api-side-league-filtering.test.cjs`
