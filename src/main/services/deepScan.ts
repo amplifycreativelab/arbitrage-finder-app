@@ -1504,7 +1504,11 @@ export async function discoverEventsForEnabledLeagues(args: {
   const { apiKey, signal, correlationId, enabledLeagues, sports } = args
   const fetchEvents = getEventsFetcher()
 
-  if (enabledLeagues.length === 0) {
+  const enabledLeaguesNormalized = Array.isArray(enabledLeagues)
+    ? enabledLeagues.map((value) => value.trim()).filter(Boolean)
+    : []
+
+  if (enabledLeaguesNormalized.length === 0) {
     logInfo('leagueDiscovery.skipped', {
       context: 'service:deepScan',
       operation: 'discoverEventsForEnabledLeagues',
@@ -1517,16 +1521,26 @@ export async function discoverEventsForEnabledLeagues(args: {
     return []
   }
 
-  // Build a map of league slug -> sport slug for efficient lookup
-  // We need to determine the sport for each league to make the API call
-  // Leagues are stored as slugs like 'england-premier-league', 'spain-la-liga'
-  // We need to map these to their sport (typically 'football' for soccer leagues)
-  const leagueSportMap = await buildLeagueSportMap(apiKey, signal, correlationId, enabledLeagues)
+  const requestedSports =
+    Array.isArray(sports) && sports.length > 0
+      ? sports.map((value) => value.trim()).filter(Boolean)
+      : getEnabledSportsFilter()
+
+  // Build a map of league slug -> sport slug for efficient lookup.
+  // odds-api.io /v3/events requires sport, so we must resolve sport for each league slug.
+  const leagueSportMap = await buildLeagueSportMap(
+    apiKey,
+    signal,
+    correlationId,
+    enabledLeaguesNormalized,
+    requestedSports.length > 0 ? requestedSports : ['football']
+  )
 
   // Filter leagues by sports if specified
-  const sportsFilter = Array.isArray(sports) && sports.length > 0
-    ? new Set(sports.map(s => normalizeSportSlug(s)))
-    : null
+  const sportsFilter =
+    Array.isArray(requestedSports) && requestedSports.length > 0
+      ? new Set(requestedSports.map((value) => normalizeSportSlug(value)))
+      : null
 
   const seen = new Set<string>()
   const all: DeepScanEvent[] = []
@@ -1546,10 +1560,13 @@ export async function discoverEventsForEnabledLeagues(args: {
   let leaguesSkipped = 0
 
   // Fetch events per league (AC: 1, 2)
-  for (const leagueSlug of enabledLeagues) {
+  for (const leagueSlugRaw of enabledLeaguesNormalized) {
     if (signal.aborted) break
 
-    const sportSlug = leagueSportMap.get(leagueSlug.toLowerCase())
+    const leagueSlug = leagueSlugRaw.trim()
+    const leagueSlugNormalized = leagueSlug.toLowerCase()
+
+    const sportSlug = leagueSportMap.get(leagueSlugNormalized)
     if (!sportSlug) {
       // Skip leagues with unknown sports
       leaguesSkipped++
@@ -1568,40 +1585,62 @@ export async function discoverEventsForEnabledLeagues(args: {
 
     // Filter by sports if specified
     if (sportsFilter && !sportsFilter.has(sportSlug)) {
-      leaguesSkipped++
-      continue
-    }
-
-    // Paginate through results for this league (AC: 3)
-    let page: number | null = null
-    let pageGuard = 0
-
-    do {
-      if (signal.aborted) break
-
-      const payload = await fetchEvents({
-        apiKey,
-        signal,
-        correlationId,
-        page: page ?? undefined,
-        sport: sportSlug,
-        league: leagueSlug, // Story 9.6: API-side filtering
-        from: fromTime,
-        to: toTime
-      })
-
-      const extracted = extractEvents(payload, { sport: sportSlug, league: leagueSlug })
-      for (const event of extracted) {
-        if (seen.has(event.id)) continue
-        seen.add(event.id)
-        all.push(event)
+        leaguesSkipped++
+        continue
       }
 
-      page = extractNextPage(payload)
-      pageGuard += 1
-    } while (page !== null && pageGuard < 5 && !signal.aborted)
+      // Paginate through results for this league (AC: 3)
+      let page: number | null = null
+      let pageGuard = 0
 
-    leaguesFetched++
+      do {
+        if (signal.aborted) break
+
+        const payload = await fetchEvents({
+          apiKey,
+          signal,
+          correlationId,
+          page: page ?? undefined,
+          sport: sportSlug,
+          league: leagueSlug, // Story 9.6: API-side filtering
+          from: fromTime,
+          to: toTime
+        })
+
+        // AC: 5 (Defensive) - filter to events strictly within the requested league slug.
+        // Do not accept events without a canonical leagueSlug.
+        const extracted = extractEvents(payload, { sport: sportSlug, league: leagueSlug })
+        const extractedInLeague = extracted.filter((event) => {
+          if (!event.leagueSlug) return false
+          return event.leagueSlug.toLowerCase() === leagueSlugNormalized
+        })
+
+        if (extractedInLeague.length !== extracted.length) {
+          logDebug('leagueDiscovery.filteredMismatchedLeague', {
+            context: 'service:deepScan',
+            operation: 'discoverEventsForEnabledLeagues',
+            providerId: DEEP_SCAN_PROVIDER_ID,
+            correlationId,
+            durationMs: null,
+            errorCategory: null,
+            leagueSlug,
+            sportSlug,
+            totalExtracted: extracted.length,
+            kept: extractedInLeague.length
+          } satisfies StructuredLogBase)
+        }
+
+        for (const event of extractedInLeague) {
+          if (seen.has(event.id)) continue
+          seen.add(event.id)
+          all.push(event)
+        }
+
+        page = extractNextPage(payload)
+        pageGuard += 1
+      } while (page !== null && pageGuard < 5 && !signal.aborted)
+
+      leaguesFetched++
   }
 
   // Filter to upcoming events and sort by priority
@@ -1622,7 +1661,7 @@ export async function discoverEventsForEnabledLeagues(args: {
     correlationId,
     durationMs: null,
     errorCategory: null,
-    enabledLeaguesCount: enabledLeagues.length,
+    enabledLeaguesCount: enabledLeaguesNormalized.length,
     leaguesFetched,
     leaguesSkipped,
     eventsDiscovered: sorted.length,
@@ -1635,13 +1674,15 @@ export async function discoverEventsForEnabledLeagues(args: {
 /**
  * Story 9.6: Build a mapping of league slug -> sport slug.
  *
- * Uses cached league data if available, otherwise makes API call to discover.
+ * Uses cached league data if available; otherwise fetches leagues for the provided
+ * candidate sports and maps enabled league slugs to their sport.
  */
 async function buildLeagueSportMap(
-  _apiKey: string,
-  _signal: AbortSignal,
+  apiKey: string,
+  signal: AbortSignal,
   correlationId: string,
-  leagueSlugs: string[]
+  leagueSlugs: string[],
+  sportCandidates: string[]
 ): Promise<Map<string, string>> {
   const map = new Map<string, string>()
 
@@ -1649,34 +1690,58 @@ async function buildLeagueSportMap(
   const cachedLeagues = getCachedLeagues()
   for (const leagueSlug of leagueSlugs) {
     const normalizedSlug = leagueSlug.toLowerCase()
-    const cached = cachedLeagues.find(l => l.slug.toLowerCase() === normalizedSlug)
+    const cached = cachedLeagues.find((l) => l.slug.toLowerCase() === normalizedSlug)
     if (cached) {
       map.set(normalizedSlug, normalizeSportSlug(cached.sport))
     }
   }
 
   // If all leagues found in cache, return early
-  const unmapped = leagueSlugs.filter(slug => !map.has(slug.toLowerCase()))
+  const unmapped = leagueSlugs.filter((slug) => !map.has(slug.toLowerCase()))
   if (unmapped.length === 0) {
     return map
   }
 
-  // For unmapped leagues, use heuristics or fetch from API
-  // Most leagues follow a pattern: {country}-{league-name} where sport is typically 'football'
-  // This is a fallback - the cached leagues from fetchAvailableLeagues is preferred
-  for (const leagueSlug of unmapped) {
-    // Default to football for soccer/football leagues (most common case)
-    // The API will return empty results if the sport doesn't match
-    const normalizedSlug = leagueSlug.toLowerCase()
+  const unmappedSet = new Set(unmapped.map((slug) => slug.toLowerCase()))
 
-    // Try to infer sport from known league patterns
-    const inferredSport = inferSportFromLeagueSlug(normalizedSlug)
-    if (inferredSport) {
-      map.set(normalizedSlug, inferredSport)
-    } else {
-      // Default to football as most leagues are soccer
-      map.set(normalizedSlug, 'football')
+  const normalizedCandidates = Array.from(
+    new Set(
+      Array.isArray(sportCandidates) && sportCandidates.length > 0
+        ? sportCandidates.map((value) => normalizeSportSlug(value)).filter(Boolean)
+        : ['football']
+    )
+  )
+
+  let fetchedLeagueLists = 0
+  for (const sportSlug of normalizedCandidates) {
+    if (signal.aborted) break
+
+    fetchedLeagueLists += 1
+    const leagues = await fetchAvailableLeagues({
+      apiKey,
+      sport: sportSlug,
+      signal,
+      correlationId: `${correlationId}:league-map:${sportSlug}`
+    })
+
+    for (const league of leagues) {
+      const leagueSlugNormalized = league.slug.toLowerCase()
+      if (!map.has(leagueSlugNormalized) && unmappedSet.has(leagueSlugNormalized)) {
+        map.set(leagueSlugNormalized, normalizeSportSlug(sportSlug))
+      }
     }
+
+    // If all unmapped are now mapped, stop early.
+    let remainingCount = 0
+    for (const slug of unmappedSet) {
+      if (!map.has(slug)) remainingCount += 1
+    }
+    if (remainingCount === 0) break
+  }
+
+  let unmappedRemaining = 0
+  for (const slug of unmappedSet) {
+    if (!map.has(slug)) unmappedRemaining += 1
   }
 
   logDebug('leagueDiscovery.sportMapping', {
@@ -1688,58 +1753,11 @@ async function buildLeagueSportMap(
     errorCategory: null,
     totalLeagues: leagueSlugs.length,
     fromCache: leagueSlugs.length - unmapped.length,
-    inferred: unmapped.length
+    fetchedLeagueLists,
+    unmappedRemaining
   } satisfies StructuredLogBase)
 
   return map
-}
-
-/**
- * Story 9.6: Infer sport from league slug based on known patterns.
- */
-function inferSportFromLeagueSlug(leagueSlug: string): string | null {
-  // Tennis leagues
-  if (leagueSlug.includes('atp') || leagueSlug.includes('wta') ||
-      leagueSlug.includes('wimbledon') || leagueSlug.includes('us-open') ||
-      leagueSlug.includes('australian-open') || leagueSlug.includes('french-open')) {
-    return 'tennis'
-  }
-
-  // Basketball leagues
-  if (leagueSlug.includes('nba') || leagueSlug.includes('ncaab') ||
-      leagueSlug.includes('euroleague') || leagueSlug.includes('eurocup') ||
-      leagueSlug.includes('basketball')) {
-    return 'basketball'
-  }
-
-  // American football
-  if (leagueSlug.includes('nfl') || leagueSlug.includes('ncaaf') ||
-      leagueSlug.includes('american-football')) {
-    return 'americanfootball'
-  }
-
-  // Baseball
-  if (leagueSlug.includes('mlb') || leagueSlug.includes('baseball')) {
-    return 'baseball'
-  }
-
-  // Hockey
-  if (leagueSlug.includes('nhl') || leagueSlug.includes('hockey')) {
-    return 'hockey'
-  }
-
-  // MMA/UFC
-  if (leagueSlug.includes('ufc') || leagueSlug.includes('mma')) {
-    return 'mma'
-  }
-
-  // Cricket
-  if (leagueSlug.includes('ipl') || leagueSlug.includes('cricket')) {
-    return 'cricket'
-  }
-
-  // Default: assume football (soccer) for country-league patterns
-  return null
 }
 
 const defaultBookmakersResolver: BookmakersResolver = async ({ config, apiKey }) => {
@@ -4899,6 +4917,8 @@ export const __test = {
     dailyOpportunitiesFound = 0
     dailyRequestsMade = 0
     lastDiscoveredSports = []
+    lastDiscoveredLeagues = []
+    lastDiscoveredSportsDetails = []
     enabledSportsFilter = []
     enabledLeaguesFilter = []
     eventResolverOverride = null

@@ -101,13 +101,13 @@ function stubFetch(input) {
     return Promise.resolve(makeStubResponse([]));
   }
   if (url.includes('/v3/leagues')) {
-    return Promise.resolve(makeStubResponse({
-      leagues: [
-        { name: 'Premier League', slug: 'england-premier-league', sport: 'football', eventsCount: 10 },
-        { name: 'La Liga', slug: 'spain-la-liga', sport: 'football', eventsCount: 10 },
-        { name: 'Bundesliga', slug: 'germany-bundesliga', sport: 'football', eventsCount: 10 }
-      ]
-    }));
+    // Match fetchAvailableLeagues() response shape: an array of league objects.
+    // The sport is supplied by the request query param and added by the service layer.
+    return Promise.resolve(makeStubResponse([
+      { name: 'Premier League', slug: 'england-premier-league', eventsCount: 10 },
+      { name: 'La Liga', slug: 'spain-la-liga', eventsCount: 10 },
+      { name: 'Bundesliga', slug: 'germany-bundesliga', eventsCount: 10 }
+    ]));
   }
   if (url.includes('/v3/events')) {
     // Extract league param from URL for per-league response
@@ -365,17 +365,23 @@ test('[P1][9-6-SPORT-FILTER] filters leagues by sport when specified', async () 
 });
 
 test('[P2][9-6-INFER-SPORT] infers sport from league slug patterns', async () => {
-  // Test that leagues can be discovered even without cached sport info
-  deepScan.__test.resetState(); // Clear any cached leagues
+  // Test that leagues can be discovered even without cached league mapping:
+  // buildLeagueSportMap should fetch /v3/leagues?sport=... using the enabled sports filter.
+  deepScan.__test.resetState(); // Clear cached leagues
+  deepScan.setEnabledSportsFilter(['football']);
 
-  const events = await deepScan.discoverEventsForEnabledLeagues({
+  await deepScan.discoverEventsForEnabledLeagues({
     apiKey: 'test-api-key',
     signal: new AbortController().signal,
     correlationId: 'test',
-    enabledLeagues: ['england-premier-league'] // Football league
+    enabledLeagues: ['england-premier-league']
   });
 
-  // Should still work even without cached league data by inferring sport
+  const leaguesApiCalls = apiCalls.filter(url => url.includes('/v3/leagues'));
+  assert.ok(leaguesApiCalls.length > 0, 'Should fetch leagues to resolve sport mapping when cache is empty');
+  const leaguesUrl = new URL(leaguesApiCalls[0]);
+  assert.strictEqual(leaguesUrl.searchParams.get('sport'), 'football');
+
   const eventsApiCalls = apiCalls.filter(url => url.includes('/v3/events'));
-  assert.ok(eventsApiCalls.length > 0, 'Should make API calls even without cached leagues');
+  assert.ok(eventsApiCalls.length > 0, 'Should make events API calls after resolving sport mapping');
 });
