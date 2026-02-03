@@ -188,7 +188,7 @@ export function BookmakerCardRulesSettings(): React.JSX.Element {
         if (!cancelled) {
           setRules(rules)
         }
-      } catch (err) {
+      } catch (_err) {
         if (!cancelled) {
           setError('Failed to load card counting rules.')
         }

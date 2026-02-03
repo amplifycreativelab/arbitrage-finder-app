@@ -105,12 +105,11 @@ import {
   setQuotaConfig,
   getQuotaConfig,
   setPlanTier,
-  detectPlanTierFromRateLimit
+  detectPlanTierFromRateLimit,
+  isAggressiveScanRunning,
+  refreshAggressiveScanEvents
 } from './aggressiveScan'
-import { 
-  buildDynamicPresets, 
-  type DiscoveredLeague
-} from '../../../shared/aggressiveScanPresets'
+import { buildDynamicPresets, type DiscoveredLeague } from '../../../shared/aggressiveScanPresets'
 
 const t = initTRPC.create()
 
@@ -132,11 +131,14 @@ function buildFeedMergeKey(opportunity: ArbitrageOpportunity): string {
   return `${opportunity.event.name}|${opportunity.event.date}|${opportunity.event.league}|${legsKey}`
 }
 
-function mergeDeepScanIntoFeed(
-  feedOpportunities: ArbitrageOpportunity[]
-): {
+function mergeDeepScanIntoFeed(feedOpportunities: ArbitrageOpportunity[]): {
   merged: ArbitrageOpportunity[]
-  stats: { feedCount: number; deepScanCount: number; deepScanMergedCount: number; mergedTotal: number }
+  stats: {
+    feedCount: number
+    deepScanCount: number
+    deepScanMergedCount: number
+    mergedTotal: number
+  }
 } {
   const deepScanResults = getDeepScanResults()
   if (deepScanResults.length === 0) {
@@ -177,18 +179,14 @@ function mergeDeepScanIntoFeed(
 }
 
 export const appRouter = t.router({
-  saveApiKey: t.procedure
-    .input(saveApiKeyInputSchema)
-    .mutation(async ({ input }) => {
-      await saveApiKey(input.providerId, input.apiKey)
-      return { ok: true }
-    }),
-  isProviderConfigured: t.procedure
-    .input(providerIdParamSchema)
-    .query(async ({ input }) => {
-      const configured = await isProviderConfigured(input.providerId)
-      return { isConfigured: configured }
-    }),
+  saveApiKey: t.procedure.input(saveApiKeyInputSchema).mutation(async ({ input }) => {
+    await saveApiKey(input.providerId, input.apiKey)
+    return { ok: true }
+  }),
+  isProviderConfigured: t.procedure.input(providerIdParamSchema).query(async ({ input }) => {
+    const configured = await isProviderConfigured(input.providerId)
+    return { isConfigured: configured }
+  }),
 
   // Legacy getActiveProvider/setActiveProvider removed in Story 5.1 cleanup
 
@@ -369,12 +367,10 @@ export const appRouter = t.router({
   // Deep Scan procedures (Story 7.1)
   // ============================================================
 
-  deepScanStart: t.procedure
-    .input(deepScanConfigSchema)
-    .mutation(async ({ input }) => {
-      await startDeepScan(input)
-      return { ok: true }
-    }),
+  deepScanStart: t.procedure.input(deepScanConfigSchema).mutation(async ({ input }) => {
+    await startDeepScan(input)
+    return { ok: true }
+  }),
 
   deepScanCancel: t.procedure.mutation(async () => {
     cancelDeepScan()
@@ -419,10 +415,12 @@ export const appRouter = t.router({
     }),
 
   deepScanSetDefaultThresholds: t.procedure
-    .input(z.object({
-      minRoi: z.number().min(0).optional(),
-      marketGroupThresholds: z.record(z.string(), z.number().min(0)).optional()
-    }))
+    .input(
+      z.object({
+        minRoi: z.number().min(0).optional(),
+        marketGroupThresholds: z.record(z.string(), z.number().min(0)).optional()
+      })
+    )
     .mutation(({ input }) => {
       setContinuousScanDefaultThresholds(input)
       return { ok: true }
@@ -471,8 +469,14 @@ export const appRouter = t.router({
 
   deepScanSetEnabledLeaguesFilter: t.procedure
     .input(z.object({ leagues: z.array(z.string()) }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       setEnabledLeaguesFilter(input.leagues)
+
+      // Story 9-5.5 Task 4: Refresh aggressive scan if running
+      if (isAggressiveScanRunning()) {
+        await refreshAggressiveScanEvents()
+      }
+
       return { ok: true, leagues: getEnabledLeaguesFilter() }
     }),
 
@@ -529,12 +533,10 @@ export const appRouter = t.router({
   }),
 
   // Story 7.7: Best Odds Comparison View
-  deepScanGetBestOdds: t.procedure
-    .input(z.object({ eventId: z.string() }))
-    .query(({ input }) => {
-      const bestOdds = getBestOddsForEvent(input.eventId)
-      return { bestOdds, cachedAt: bestOdds ? Date.now() : null }
-    }),
+  deepScanGetBestOdds: t.procedure.input(z.object({ eventId: z.string() })).query(({ input }) => {
+    const bestOdds = getBestOddsForEvent(input.eventId)
+    return { bestOdds, cachedAt: bestOdds ? Date.now() : null }
+  }),
 
   // Story 8.1: Odds Browser - Raw Odds Data
   deepScanGetRawOdds: t.procedure.query(() => {
@@ -766,17 +768,19 @@ export const appRouter = t.router({
   // ============================================================
 
   setAggressiveScanConfig: t.procedure
-    .input(z.object({
-      enabled: z.boolean().optional(),
-      quotaTargetPercent: z.number().min(50).max(90).optional(),
-      scanHorizonHours: z.number().min(12).max(72).optional(),
-      imminentPollIntervalSeconds: z.number().min(15).max(120).optional(),
-      arbBoostDurationMinutes: z.number().min(1).max(30).optional(),
-      arbBoostPollIntervalSeconds: z.number().min(10).max(60).optional(),
-      maxBoostedEvents: z.number().min(1).max(50).optional(),
-      maxCachedEvents: z.number().min(100).max(10000).optional(),
-      eventDiscoveryIntervalMinutes: z.number().min(10).max(120).optional()
-    }))
+    .input(
+      z.object({
+        enabled: z.boolean().optional(),
+        quotaTargetPercent: z.number().min(50).max(90).optional(),
+        scanHorizonHours: z.number().min(12).max(72).optional(),
+        imminentPollIntervalSeconds: z.number().min(15).max(120).optional(),
+        arbBoostDurationMinutes: z.number().min(1).max(30).optional(),
+        arbBoostPollIntervalSeconds: z.number().min(10).max(60).optional(),
+        maxBoostedEvents: z.number().min(1).max(50).optional(),
+        maxCachedEvents: z.number().min(100).max(10000).optional(),
+        eventDiscoveryIntervalMinutes: z.number().min(10).max(120).optional()
+      })
+    )
     .mutation(({ input }) => {
       setAggressiveScanConfig(input)
       return { ok: true, config: getAggressiveScanConfig() }
@@ -810,14 +814,14 @@ export const appRouter = t.router({
     )
     .mutation(async ({ input }) => {
       // Import the preset functions
-      const { getLeagueIdsFromPresets, generatePresets } = await import('../../../shared/aggressiveScanPresets')
-      
+      const { getLeagueIdsFromPresets, generatePresets } = await import(
+        '../../../shared/aggressiveScanPresets'
+      )
+
       // Get discovered leagues to build proper presets
       const discoveredLeagues = getAvailableLeagues()
-      const discoveredSports = getAvailableSportsDetails()
-      
       // Generate presets with actual API data
-      const presets = generatePresets(discoveredLeagues, discoveredSports)
+      const presets = generatePresets(discoveredLeagues)
 
       // Get all league IDs from presets and custom selections
       const presetLeagueIds = getLeagueIdsFromPresets(presets, input.presetIds)
@@ -880,7 +884,7 @@ export const appRouter = t.router({
 
     // Fetch fresh sports and leagues data
     const sports = await fetchAvailableSports({ apiKey })
-    
+
     // For each sport, fetch its leagues
     const allLeagues: DiscoveredLeague[] = []
     for (const sport of sports) {
@@ -930,7 +934,7 @@ export const appRouter = t.router({
     )
     .mutation(({ input }) => {
       setPlanTier(input.planTier)
-      
+
       // If target percent specified, update it
       if (input.targetPercent !== undefined) {
         const current = getQuotaConfig()
@@ -939,7 +943,7 @@ export const appRouter = t.router({
           targetPercent: input.targetPercent
         })
       }
-      
+
       return { ok: true, config: getQuotaConfig() }
     }),
 

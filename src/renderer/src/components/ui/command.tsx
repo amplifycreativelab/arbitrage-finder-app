@@ -22,7 +22,7 @@ const CommandInput = React.forwardRef<
     React.ElementRef<typeof CommandPrimitive.Input>,
     React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
 >(({ className, ...props }, ref) => (
-    <div className="flex items-center border-b border-ot-border px-3" cmdk-input-wrapper="">
+    <div className="flex items-center border-b border-ot-border px-3" data-cmdk-input-wrapper="">
         <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 24 24"

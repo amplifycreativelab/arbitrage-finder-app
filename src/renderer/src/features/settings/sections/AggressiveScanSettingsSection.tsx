@@ -31,8 +31,6 @@ export function AggressiveScanSettingsSection(): React.JSX.Element {
 
   // Local input states
   const [quotaInput, setQuotaInput] = React.useState(String(quotaTargetPercent))
-  const [horizonInput, setHorizonInput] = React.useState(String(horizonHours))
-  const [imminentInput, setImminentInput] = React.useState(String(imminentIntervalSeconds))
   const [boostDurationInput, setBoostDurationInput] = React.useState(String(boostDurationMinutes))
   const [maxBoostedInput, setMaxBoostedInput] = React.useState(String(maxBoostedEvents))
   const [showAdvanced, setShowAdvanced] = React.useState(false)
@@ -41,14 +39,6 @@ export function AggressiveScanSettingsSection(): React.JSX.Element {
   React.useEffect(() => {
     setQuotaInput(String(quotaTargetPercent))
   }, [quotaTargetPercent])
-
-  React.useEffect(() => {
-    setHorizonInput(String(horizonHours))
-  }, [horizonHours])
-
-  React.useEffect(() => {
-    setImminentInput(String(imminentIntervalSeconds))
-  }, [imminentIntervalSeconds])
 
   React.useEffect(() => {
     setBoostDurationInput(String(boostDurationMinutes))
@@ -91,38 +81,6 @@ export function AggressiveScanSettingsSection(): React.JSX.Element {
     setQuotaTargetPercent(parsed)
     try {
       void window.api.deepScan.setAggressiveScanConfig({ quotaTargetPercent: parsed })
-    } catch {
-      // Best-effort
-    }
-  }
-
-  // Horizon hours commit (used with select dropdown, but kept for consistency)
-  // @ts-expect-error - defined for potential future use
-  const commitHorizonInput = (): void => {
-    const parsed = Number(horizonInput)
-    if (!Number.isFinite(parsed)) {
-      setHorizonInput(String(horizonHours))
-      return
-    }
-    setHorizonHours(parsed)
-    try {
-      void window.api.deepScan.setAggressiveScanConfig({ scanHorizonHours: parsed })
-    } catch {
-      // Best-effort
-    }
-  }
-
-  // Imminent interval commit (used with select dropdown, but kept for consistency)
-  // @ts-expect-error - defined for potential future use
-  const commitImminentInput = (): void => {
-    const parsed = Number(imminentInput)
-    if (!Number.isFinite(parsed)) {
-      setImminentInput(String(imminentIntervalSeconds))
-      return
-    }
-    setImminentIntervalSeconds(parsed)
-    try {
-      void window.api.deepScan.setAggressiveScanConfig({ imminentPollIntervalSeconds: parsed })
     } catch {
       // Best-effort
     }

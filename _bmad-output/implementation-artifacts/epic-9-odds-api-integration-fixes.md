@@ -361,6 +361,61 @@ async function fetchOddsForEvents(events: DeepScanEvent[]): Promise<RawOddsPaylo
 
 ------------------------------------------------------------------------
 
+# Story 9-5.5: Wire Aggressive Scan Event Discovery with League Filtering
+
+**As a** User  
+**I want** aggressive scan to discover and poll only events from my selected leagues  
+**So that** the scan respects my filter preferences and doesn't waste quota on unwanted leagues and sports.
+
+## Background
+
+The aggressive scan infrastructure (tiering, polling, odds fetching) was implemented in Story 8.7 and 9.5, but **event discovery was never wired**. The tier cache starts empty and stays empty because nothing populates it.
+
+This story connects aggressive scan to the existing event discovery infrastructure in `deepScan.ts` and ensures the league filter is respected.
+
+## Acceptance Criteria
+
+- [ ] Aggressive scan fetches events from the API on startup
+- [ ] Events are filtered by the enabled leagues from `enabledLeaguesFilter`
+- [ ] Discovered events are populated into the tier cache based on kickoff time
+- [ ] Event discovery runs periodically (configurable interval, default 10 minutes)
+- [ ] When league filter changes, tier cache is refreshed with new selection
+- [ ] Aggressive scan only polls events from user-selected sports and leagues
+
+## Technical Notes
+
+**Target File:** `src/main/services/aggressiveScan.ts`
+
+**Key Functions:**
+- Import `discoverEvents()`, `getEnabledLeaguesFilter()` from `deepScan.ts`
+- Use existing `upsertTieredEvent()` to populate tier cache
+- Export `refreshAggressiveScanEvents()` for filter change handling
+
+**Implementation Highlights:**
+```typescript
+// On startup: discover → filter by enabled leagues → populate tier cache
+// Periodic: Re-discover every 10 minutes (configurable)
+// On filter change: Clear cache, re-discover with new filter
+```
+
+## Tests
+
+- Unit: Discovery populates tier cache on startup
+- Unit: Only events from enabled leagues are added
+- Unit: Periodic re-discovery updates tier cache
+- Unit: League filter change triggers cache refresh
+
+## Links
+
+- FR6 (Calculate local arbs)
+- FR8 (API rate limiting)
+- FR15 (Deep Scan all markets)
+- Story 9.5 (Aggressive scan batching - prerequisite)
+- Story 9.6 (API-side filtering - future optimization)
+- P0 Issue: Aggressive scan tier cache never populated
+
+------------------------------------------------------------------------
+
 # Story 9.6: Implement API-Side League Filtering for Event Discovery
 
 **As a** System  
@@ -653,7 +708,8 @@ async function fetchOddsUpdated(cursor: OddsUpdatedCursor): Promise<OddsUpdate[]
 
 ### Week 2: P1 Efficiency + Wiring (High Value)
 6. **Story 9.5** - Wire Aggressive Scan to `/v3/odds/multi` Batching
-7. **Story 9.6** - Implement API-Side League Filtering
+7. **Story 9-5.5** - Wire Aggressive Scan Event Discovery with League Filtering
+8. **Story 9.6** - Implement API-Side League Filtering
 8. **Story 9.7** - Implement Full Retry-After Rate Limit Handling
 
 ### Week 3: P2 Quality Improvements (Nice to Have)
@@ -691,6 +747,7 @@ async function fetchOddsUpdated(cursor: OddsUpdatedCursor): Promise<OddsUpdate[]
 | 9.3 | Slug priority, string fallback | Cross-provider matching |
 | 9.4 | Key collision scenarios, strict mode | Regression: previously colliding fixtures |
 | 9.5 | Batch construction | 23 events → 3 calls verification |
+| 9-5.5 | Discovery filtering, cache refresh | Tier cache population, filter change handling |
 | 9.6 | League filtering params | Discovery traffic reduction |
 | 9.7 | Retry-After parsing (both formats) | Rate limit recovery behavior |
 | 9.8 | ROI calculation preservation | Analytics data integrity |
@@ -722,6 +779,6 @@ async function fetchOddsUpdated(cursor: OddsUpdatedCursor): Promise<OddsUpdate[]
 | Requirement | Story |
 |-------------|-------|
 | FR5 | 9.1, 9.5 |
-| FR6 | 9.5, 9.8 |
+| FR6 | 9.5, 9-5.5, 9.8 |
 | FR7 | 9.2, 9.3, 9.4, 9.6, 9.9 |
 | FR8 | 9.5, 9.7, 9.10 |

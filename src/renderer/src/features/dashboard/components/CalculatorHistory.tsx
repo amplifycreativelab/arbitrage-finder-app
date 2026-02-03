@@ -122,13 +122,13 @@ function HistoryItem({ entry, onLoad, onRemove }: HistoryItemProps): React.JSX.E
   const baseSymbol = CURRENCY_DETAILS['USD']?.symbol || '$'
 
   // NEW: Format rates timestamp (Story 8.5)
-  const ratesTimeAgo = entry.exchangeRateTimestamp ?
-    React.useMemo(() => {
-      const hours = Math.floor((Date.now() - new Date(entry.exchangeRateTimestamp).getTime()) / (60 * 60 * 1000))
-      if (hours < 1) return '<1h'
-      if (hours < 24) return `${hours}h`
-      return `${Math.floor(hours / 24)}d`
-    }, [entry.exchangeRateTimestamp]) : null
+  const ratesTimeAgo = React.useMemo(() => {
+    if (!entry.exchangeRateTimestamp) return null
+    const hours = Math.floor((Date.now() - new Date(entry.exchangeRateTimestamp).getTime()) / (60 * 60 * 1000))
+    if (hours < 1) return '<1h'
+    if (hours < 24) return `${hours}h`
+    return `${Math.floor(hours / 24)}d`
+  }, [entry.exchangeRateTimestamp])
 
   return (
     <div

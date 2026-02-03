@@ -213,7 +213,7 @@ export function SportLeagueFilter({
                             <div className="flex flex-wrap gap-1">
                                 {sports.length === 0 ? (
                                     <span className="text-[9px] text-ot-muted">
-                                        Click "Refresh Sports" to load available sports
+                                        Click &quot;Refresh Sports&quot; to load available sports
                                     </span>
                                 ) : (
                                     sports.map((sport) => (
@@ -306,7 +306,7 @@ export function SportLeagueFilter({
                             <div className="max-h-40 overflow-y-auto">
                                 {filteredLeagues.length === 0 ? (
                                     <span className="text-[9px] text-ot-muted">
-                                        Click "Refresh Leagues" to load available leagues
+                                        Click &quot;Refresh Leagues&quot; to load available leagues
                                     </span>
                                 ) : (
                                     <div className="space-y-1">

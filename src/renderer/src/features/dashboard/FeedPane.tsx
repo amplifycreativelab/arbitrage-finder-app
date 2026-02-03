@@ -430,7 +430,7 @@ function FeedPane(): React.JSX.Element {
         message: `Aggressive scan started with ${selection.presetIds.length} preset(s)`,
         type: 'success'
       })
-    } catch (err) {
+    } catch (_err) {
       addNotification({
         id: Date.now().toString(),
         message: 'Failed to start aggressive scan',

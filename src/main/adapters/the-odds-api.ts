@@ -342,20 +342,9 @@ export class TheOddsApiAdapter extends BaseArbitrageAdapter {
     apiKey: string,
     context?: ProviderRequestContext
   ): Promise<ArbitrageOpportunity[]> {
-    const httpFetch = (globalThis as any).fetch as
-      | ((
-          input: string,
-          init?: {
-            method?: string
-            headers?: Record<string, string>
-          }
-        ) => Promise<{
-          ok: boolean
-          status: number
-          json(): Promise<unknown>
-          text(): Promise<string>
-        }>)
-      | undefined
+    const fetchCandidate = (globalThis as { fetch?: unknown }).fetch
+    const httpFetch =
+      typeof fetchCandidate === 'function' ? (fetchCandidate as typeof fetch).bind(globalThis) : undefined
 
     const correlationId = context?.correlationId ?? createCorrelationId()
     const startedAt = Date.now()

@@ -33,8 +33,8 @@ export type ApiPlanTier = 'free' | 'paid'
  * Rate limits by plan tier.
  */
 export const RATE_LIMITS_BY_TIER: Record<ApiPlanTier, number> = {
-  free: 100,   // Free tier: 100 requests/hour
-  paid: 5000   // Paid tier: 5000 requests/hour
+  free: 100, // Free tier: 100 requests/hour
+  paid: 5000 // Paid tier: 5000 requests/hour
 }
 
 /**
@@ -97,12 +97,7 @@ export const KNOWN_MAJOR_LEAGUES: Record<string, string[]> = {
     'atp-masters-1000',
     'wta-1000'
   ],
-  basketball: [
-    'usa-nba',
-    'usa-ncaab',
-    'europe-euroleague',
-    'europe-eurocup'
-  ]
+  basketball: ['usa-nba', 'usa-ncaab', 'europe-euroleague', 'europe-eurocup']
 }
 
 /**
@@ -230,10 +225,7 @@ function applyLeagueRules(
  * Generate presets from templates using discovered API data.
  * Falls back to known major leagues if no API data is available.
  */
-export function generatePresets(
-  discoveredLeagues: DiscoveredLeague[],
-  _discoveredSports: DiscoveredSport[]
-): AggressiveScanPreset[] {
+export function generatePresets(discoveredLeagues: DiscoveredLeague[]): AggressiveScanPreset[] {
   const hasApiData = discoveredLeagues.length > 0
 
   return PRESET_TEMPLATES.map((template) => {
@@ -399,9 +391,10 @@ export function estimateRequestsPerHour(
 
   // Calculate discovery requests: 1 per sport + 1 per league for initial discovery
   // Plus ongoing polling for updates (12 per hour per sport)
-  const discoveryRequests = selectedSports.size * 12 + // Ongoing sport polling
-                           selectedLeagues.size * 1 +   // League discovery (one-time, amortized)
-                           selectedSports.size * 1      // Sport discovery (one-time, amortized)
+  const discoveryRequests =
+    selectedSports.size * 12 + // Ongoing sport polling
+    selectedLeagues.size * 1 + // League discovery (one-time, amortized)
+    selectedSports.size * 1 // Sport discovery (one-time, amortized)
 
   const breakdown = {
     imminent: {
@@ -607,36 +600,34 @@ export interface DynamicPresetResult {
 /**
  * Builds dynamic presets using actual API data when available.
  * Falls back to static templates if API data is not available.
- * 
+ *
  * This is the recommended way to generate presets - it ensures:
  * 1. Presets use real league slugs from the API
  * 2. Event counts come from API's eventsCount field
  * 3. Quota limits match the user's plan tier
- * 
+ *
  * @param options - Configuration options
  * @returns Dynamic preset result with presets and quota config
  */
 export function buildDynamicPresets(options: DynamicPresetOptions): DynamicPresetResult {
-  const { 
-    discoveredLeagues, 
-    discoveredSports, 
+  const {
+    discoveredLeagues,
+    discoveredSports,
     planTier = 'paid',
     hourlyLimit,
     targetPercent
   } = options
 
   // Create quota config (use explicit limit if provided, else derive from plan tier)
-  const quotaConfig: QuotaConfig = hourlyLimit !== undefined
-    ? { hourlyLimit, targetPercent: targetPercent ?? 75, planTier }
-    : createQuotaConfig(planTier, targetPercent)
+  const quotaConfig: QuotaConfig =
+    hourlyLimit !== undefined
+      ? { hourlyLimit, targetPercent: targetPercent ?? 75, planTier }
+      : createQuotaConfig(planTier, targetPercent)
 
   const hasApiData = discoveredLeagues.length > 0
 
   // Generate presets using API data if available
-  const presets = generatePresets(
-    hasApiData ? discoveredLeagues : [],
-    hasApiData ? discoveredSports : []
-  )
+  const presets = generatePresets(hasApiData ? discoveredLeagues : [])
 
   // If no API data, enhance presets with static league info
   if (!hasApiData) {
@@ -666,7 +657,7 @@ export function buildDynamicPresets(options: DynamicPresetOptions): DynamicPrese
  * @deprecated Use buildDynamicPresets() with API data instead.
  * Static presets using known major leagues (for backward compatibility).
  */
-export const AGGRESSIVE_SCAN_PRESETS: AggressiveScanPreset[] = generatePresets([], [])
+export const AGGRESSIVE_SCAN_PRESETS: AggressiveScanPreset[] = generatePresets([])
 
 /**
  * @deprecated Use getLeagueIdsFromPresets(presets, presetIds) instead.

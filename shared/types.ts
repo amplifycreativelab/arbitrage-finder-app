@@ -1017,7 +1017,6 @@ export function formatMarketLabelFromKey(key: string): string {
     totals_1h: 'Goals O/U (1H)',
     totals_2h: 'Goals O/U (2H)',
 
-
     // Handicap group
     handicap: 'Handicap',
     spreads: 'Handicap/Spread',
@@ -1300,14 +1299,20 @@ export function formatMarketLabelFromKey(key: string): string {
   // Extract line value from key if present
   const lineMatch = key.match(/([+-]?\d+(?:\.\d+)?)/)
   const lineValue = lineMatch ? parseFloat(lineMatch[0]) : undefined
-  const formattedLine = lineValue !== undefined && Number.isFinite(lineValue)
-    ? (lineValue % 1 === 0 ? lineValue.toString() : lineValue.toFixed(1).replace(/\.0$/, ''))
-    : null
+  const formattedLine =
+    lineValue !== undefined && Number.isFinite(lineValue)
+      ? lineValue % 1 === 0
+        ? lineValue.toString()
+        : lineValue.toFixed(1).replace(/\.0$/, '')
+      : null
 
   // Try to match base key (without line) against labelMap for better labels
   if (formattedLine && lineMatch) {
     // Remove line value from key to find base key
-    const baseKey = normalized.replace(new RegExp(`_?${lineMatch[0].replace(/[.+]/g, '\\$&')}$`), '')
+    const baseKey = normalized.replace(
+      new RegExp(`_?${lineMatch[0].replace(/[.+]/g, '\\$&')}$`),
+      ''
+    )
     if (labelMap[baseKey]) {
       // Insert line value into the base label
       let baseLabel = labelMap[baseKey]
@@ -1330,15 +1335,13 @@ export function formatMarketLabelFromKey(key: string): string {
   }
 
   // Build base label from key parts (fallback)
-  let label = key
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
+  let label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
   // Task 4.2: Handle compound keys like "corners_over_9.5_ft"
   // Replace "Totals" with "O/U" for readability
   label = label.replace(/\bTotals\b/gi, 'O/U')
   label = label.replace(/\bOver Under\b/gi, 'O/U')
-  
+
   // Clean up numeric formatting in label
   if (formattedLine && lineMatch) {
     label = label.replace(new RegExp(lineMatch[0].replace(/[.+]/g, '\\$&'), 'g'), formattedLine)
@@ -1707,7 +1710,10 @@ export type BookmakerCardRules = Record<string, CardCountingRule>
 /**
  * Display metadata for card counting rules.
  */
-export const CARD_COUNTING_RULE_DISPLAY: Record<CardCountingRule, { label: string; description: string; example: string }> = {
+export const CARD_COUNTING_RULE_DISPLAY: Record<
+  CardCountingRule,
+  { label: string; description: string; example: string }
+> = {
   conservative: {
     label: 'Conservative (2 cards max)',
     description: 'Counts both yellows and the resulting red as just the red',
@@ -1752,12 +1758,48 @@ export interface TierConfig {
  * Story 8.7: Pre-configured tier boundaries and weights.
  */
 export const DEFAULT_TIER_CONFIGS: TierConfig[] = [
-  { name: 'imminent', maxMinutesToKickoff: 30, weight: 50, minPollIntervalSeconds: 15, maxPollIntervalSeconds: 60 },
-  { name: 'soon', maxMinutesToKickoff: 120, weight: 25, minPollIntervalSeconds: 60, maxPollIntervalSeconds: 180 },
-  { name: 'today', maxMinutesToKickoff: 360, weight: 12, minPollIntervalSeconds: 180, maxPollIntervalSeconds: 600 },
-  { name: 'later', maxMinutesToKickoff: 1440, weight: 8, minPollIntervalSeconds: 600, maxPollIntervalSeconds: 1800 },
-  { name: 'tomorrow', maxMinutesToKickoff: 2880, weight: 3, minPollIntervalSeconds: 1800, maxPollIntervalSeconds: 3600 },
-  { name: 'distant', maxMinutesToKickoff: Infinity, weight: 2, minPollIntervalSeconds: 3600, maxPollIntervalSeconds: 7200 }
+  {
+    name: 'imminent',
+    maxMinutesToKickoff: 30,
+    weight: 50,
+    minPollIntervalSeconds: 15,
+    maxPollIntervalSeconds: 60
+  },
+  {
+    name: 'soon',
+    maxMinutesToKickoff: 120,
+    weight: 25,
+    minPollIntervalSeconds: 60,
+    maxPollIntervalSeconds: 180
+  },
+  {
+    name: 'today',
+    maxMinutesToKickoff: 360,
+    weight: 12,
+    minPollIntervalSeconds: 180,
+    maxPollIntervalSeconds: 600
+  },
+  {
+    name: 'later',
+    maxMinutesToKickoff: 1440,
+    weight: 8,
+    minPollIntervalSeconds: 600,
+    maxPollIntervalSeconds: 1800
+  },
+  {
+    name: 'tomorrow',
+    maxMinutesToKickoff: 2880,
+    weight: 3,
+    minPollIntervalSeconds: 1800,
+    maxPollIntervalSeconds: 3600
+  },
+  {
+    name: 'distant',
+    maxMinutesToKickoff: Infinity,
+    weight: 2,
+    minPollIntervalSeconds: 3600,
+    maxPollIntervalSeconds: 7200
+  }
 ]
 
 /**
@@ -1964,7 +2006,7 @@ export const DEFAULT_AGGRESSIVE_SCAN_CONFIG: AggressiveScanConfig = {
   arbBoostPollIntervalSeconds: 20,
   maxBoostedEvents: 10,
   maxCachedEvents: 3000,
-  eventDiscoveryIntervalMinutes: 30
+  eventDiscoveryIntervalMinutes: 10
 }
 
 /**

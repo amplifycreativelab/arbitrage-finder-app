@@ -27,23 +27,12 @@ function getHttpFetch(): (
     return net.fetch as typeof fetch
   }
 
-  const httpFetch = (globalThis as any).fetch as
-    | ((
-        input: string,
-        init?: { method?: string; headers?: Record<string, string> }
-      ) => Promise<{
-        ok: boolean
-        status: number
-        json(): Promise<unknown>
-        text(): Promise<string>
-      }>)
-    | undefined
-
-  if (typeof httpFetch !== 'function') {
+  const fetchCandidate = (globalThis as { fetch?: unknown }).fetch
+  if (typeof fetchCandidate !== 'function') {
     throw new Error('Global fetch is not available for Odds-API.io bookmaker management')
   }
 
-  return httpFetch
+  return (fetchCandidate as typeof fetch).bind(globalThis)
 }
 
 function extractStringList(payload: unknown): string[] {

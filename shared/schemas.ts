@@ -122,13 +122,10 @@ export const arbitrageOpportunitySchema = z
     isCrossProvider: z.boolean().optional(), // Cross-provider arbitrage indicator (Story 5.4)
     cardRulesWarning: cardRulesWarningSchema.optional() // Story 6.5: Card rules mismatch warning
   })
-  .refine(
-    (value) => value.legs[0].bookmaker !== value.legs[1].bookmaker,
-    {
-      message: 'legs must reference distinct bookmakers',
-      path: ['legs']
-    }
-  )
+  .refine((value) => value.legs[0].bookmaker !== value.legs[1].bookmaker, {
+    message: 'legs must reference distinct bookmakers',
+    path: ['legs']
+  })
 
 export const arbitrageOpportunityListSchema = z.array(arbitrageOpportunitySchema)
 
@@ -136,13 +133,7 @@ export const arbitrageOpportunityListSchema = z.array(arbitrageOpportunitySchema
 // Deep Scan schemas (Story 7.1)
 // ============================================================
 
-export const deepScanStatusSchema = z.enum([
-  'idle',
-  'scanning',
-  'completed',
-  'cancelled',
-  'error'
-])
+export const deepScanStatusSchema = z.enum(['idle', 'scanning', 'completed', 'cancelled', 'error'])
 
 export const deepScanQuotaStatusSchema = z.object({
   hourlyUsed: z.number().int().min(0),

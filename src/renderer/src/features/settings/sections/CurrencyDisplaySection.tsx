@@ -253,7 +253,7 @@ export function CurrencyDisplaySection(): React.JSX.Element {
             <span className="font-medium">No exchange rates fetched yet</span>
           </div>
           <p className="mt-1 pl-5 text-amber-200/80">
-            Click "Fetch Rates" to get the latest exchange rates.
+            Click &quot;Fetch Rates&quot; to get the latest exchange rates.
           </p>
         </div>
       )}

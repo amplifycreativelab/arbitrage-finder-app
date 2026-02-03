@@ -1,4 +1,5 @@
 out
+out-tests
 dist
 pnpm-lock.yaml
 LICENSE.md
